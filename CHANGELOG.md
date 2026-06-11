@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-06-11 — v2.0.0 原生 Swift 重写
+
+main 从 Tauri 版切换到原生 Swift 版。Tauri 版（v1.1.0）保留在 `tauri-version` 分支与 `v1.1.0-tauri` 标签。
+
+- 技术栈：SwiftUI + AppKit（NSStatusItem + NSPopover 菜单栏外壳）+ Swift Charts，XcodeGen 生成工程，最低 macOS 14。
+- 凭据安全升级：API Key 与用量 Token 改存 macOS Keychain，不再落明文 config.json。
+- 开机自启：用 SMAppService（macOS 13+ 官方登录项 API），系统设置「登录项」里可见可控。
+- 登录抓 token：WKWebView 注入 JS hook fetch/XHR 的 Authorization 头，WKScriptMessageHandler 直接回原生。
+- 功能对齐：余额查询、双模型用量、7 天缓存命中堆叠柱图、模型详情、自动刷新、手动粘贴 token，全部保留。
+- main 移除 Tauri 源码（src/ src-tauri/ 等），完整保存在 tauri-version 分支。
+
+
 ## 2026-06-11 — 发布后优化
 
 - 主窗口 `visible: false`：启动静默，只驻留菜单栏，不再自动弹面板。
