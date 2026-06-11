@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-11 — 发布后优化
+
+- 主窗口 `visible: false`：启动静默，只驻留菜单栏，不再自动弹面板。
+- token 同步降频：watcher 不再每 1.5s 递归全量扫缓存。macOS 上用量接口响应多为 no-cache、几乎不落盘，缓存扫描命中率低且开销大，改为每约 15s 兜底扫一次；即时捕获主要靠登录窗口注入的 JS（抓 Authorization 头），这是 macOS 上最可靠的主通道。
+- 清理 Windows 残留 `icon.ico`（macOS 用 `.icns`）；修正过时的 WebView2 注释。
+- LICENSE 保留上游版权行并追加 macOS 移植署名；README 增加溯源致谢节。
+
 ## 2026-06-11 — v1.1.0 macOS 首版（从 Windows 版移植）
 
 从 [Joyi-code/DeepSeekMonitorWindows](https://github.com/Joyi-code/DeepSeekMonitorWindows) 移植。Tauri 2 + React + Rust 技术栈本身跨平台，业务逻辑（余额/用量接口、数据解析、UI）完全保留，仅替换平台相关层。

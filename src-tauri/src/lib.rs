@@ -523,12 +523,18 @@ pub fn run() {
 
     fn start_usage_title_watcher(app: tauri::AppHandle) {
         thread::spawn(move || {
-            // 登录页加载并触发平台 API 请求需要时间，等待后再开始扫缓存
+            // 登录页加载并触发平台 API 请求需要时间，等待后再开始轮询
             thread::sleep(Duration::from_secs(3));
-            for _ in 0..1200 {
-                if let Some(token) = find_webview_cached_usage_token() {
-                    let _ = capture_usage_token(&app, token);
-                    return;
+            for round in 0..1200u32 {
+                // macOS 上用量接口响应多为 no-cache，几乎不会落盘到 WKWebView 缓存，
+                // 缓存扫描命中率很低且需递归遍历大量文件，开销大。因此不每轮都扫，
+                // 首轮扫一次、之后每 10 轮(约 15s)兜底扫一次；即时捕获主要靠下方
+                // title hook(注入 JS 从 Authorization 头抓 token)。
+                if round % 10 == 0 {
+                    if let Some(token) = find_webview_cached_usage_token() {
+                        let _ = capture_usage_token(&app, token);
+                        return;
+                    }
                 }
 
                 let Some(window) = app.get_webview_window("login-sync") else {
@@ -580,7 +586,7 @@ pub fn run() {
 
     // 在登录窗口注入，hook fetch / XMLHttpRequest，主动从平台 API 请求的
     // Authorization 头里抓 Bearer token。登录后页面自动调 API 即可即时捕获，
-    // 不再依赖 WebView2 磁盘缓存的延迟落盘。
+    // 不依赖磁盘缓存的延迟落盘(这是 macOS 上最可靠的主通道)。
     const USAGE_SYNC_POLL_JS: &str = r#"
     (function() {
       if (window.__dsm_token_hook__) return;
