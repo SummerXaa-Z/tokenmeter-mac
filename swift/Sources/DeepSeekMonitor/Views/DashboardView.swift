@@ -38,6 +38,8 @@ struct DashboardView: View {
             Text("DeepSeek Monitor")
                 .font(.system(size: 15, weight: .bold))
             Spacer()
+            iconButton("globe") { PlatformPortal.shared.open() }
+                .help("打开 DeepSeek 开放平台")
             iconButton("arrow.clockwise") { state.refreshAll() }
             iconButton("gearshape") { onSettings() }
         }
