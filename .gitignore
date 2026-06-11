@@ -64,3 +64,9 @@ document.title'
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# ---------- Swift / Xcode ----------
+swift/build/
+swift/DerivedData/
+swift/*.xcodeproj/xcuserdata/
+*.xcuserstate
