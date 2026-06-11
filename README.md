@@ -6,6 +6,16 @@ DeepSeek Monitor 是一个常驻 macOS 菜单栏的 DeepSeek API 用量监控应
 
 郑重声明：本项目不是 DeepSeek 官方产品。
 
+## 致谢与许可
+
+本项目是在他人开源成果之上的 macOS 移植，溯源链如下：
+
+- [JayHome137/deepseek-monitor](https://github.com/JayHome137/DeepSeekMonitor) — 最初的 macOS / Web Dashboard 思路
+- [Joyi-code/DeepSeekMonitorWindows](https://github.com/Joyi-code/DeepSeekMonitorWindows) — Windows 桌面版，本项目的直接来源
+- 本项目 — 基于 Windows 版做的 macOS 菜单栏移植
+
+三者均采用 MIT License。本项目完整保留上游版权声明（见 [LICENSE](LICENSE)），并在其后追加 macOS 移植方的署名，不替换、不删除原作者信息。衷心感谢上游作者的开源工作。
+
 ## 当前能力
 
 - 查询 DeepSeek API 账户余额，使用 DeepSeek 官方余额接口。
