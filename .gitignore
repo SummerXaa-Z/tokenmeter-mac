@@ -1,0 +1,66 @@
+# ---------- Node.js / dependencies ----------
+node_modules/
+
+# ---------- Build artifacts ----------
+dist/
+src-tauri/target/
+
+# ---------- Markdown docs policy ----------
+*.md
+*.MD
+!README.md
+!CHANGELOG.md
+
+# ---------- Internal docs ----------
+PRD.md
+IMPLEMENTATION_NOTES.md
+docs/
+
+# ---------- Local environment and secrets ----------
+.npmrc
+.env
+.env.local
+.env.*.local
+*.local.json
+config.json
+
+# ---------- Runtime cache / local app data (macOS) ----------
+# 运行期凭据/缓存在 ~/Library 下，不在仓库内；此处仅防误放
+
+# ---------- Development and test outputs ----------
+*.log
+*.err.log
+*.out.log
+cargo-check.*
+tauri-check.*
+tauri-dev.*
+tauri-open.*
+tauri-dev-run.*
+test-output/
+
+# ---------- Temporary screenshots ----------
+dashboard-mvp.png
+settings-mvp.png
+detail-mvp.png
+
+# ---------- Temporary dirty files ----------
+document.title
+document.title'
+[{]
+*.tmp
+
+# ---------- IDE / editors ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# ---------- OS files ----------
+Thumbs.db
+Desktop.ini
+.DS_Store
