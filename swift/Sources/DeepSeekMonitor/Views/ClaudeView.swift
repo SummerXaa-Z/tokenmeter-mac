@@ -16,6 +16,7 @@ struct ClaudeView: View {
                     todayCard(r)
                     hoursCard(r)
                     weekChartCard(r)
+                    weekCompareCard(r)
                     modelCard(r)
                     projectCard(r)
                 } else if loading {
@@ -148,6 +149,52 @@ struct ClaudeView: View {
                 ])
                 .chartLegend(position: .bottom, spacing: 4)
                 .frame(height: 150)
+            }
+        }
+    }
+
+    // MARK: - 周趋势（本周 vs 上周）
+    private func weekCompareCard(_ r: ClaudeUsageResult) -> some View {
+        let c = r.weekCompare
+        return Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("周趋势（本周 vs 上周）", systemImage: "arrow.up.arrow.down")
+                    .font(.system(size: 12, weight: .semibold))
+                compareRow("Token", Fmt.tokensShort(c.thisTotalTokens),
+                           Fmt.tokensShort(c.lastTotalTokens), c.totalChange)
+                compareRow("请求", "\(c.thisMessageCount)",
+                           "\(c.lastMessageCount)", c.messageChange)
+                compareRow("输出", Fmt.tokensShort(c.thisOutputTokens),
+                           Fmt.tokensShort(c.lastOutputTokens), c.outputChange)
+            }
+        }
+    }
+
+    private func compareRow(_ title: String, _ cur: String, _ prev: String,
+                            _ change: Double?) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: 40, alignment: .leading)
+            Text(cur)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+            Text("上周 \(prev)")
+                .font(.system(size: 10)).foregroundStyle(.secondary)
+            Spacer()
+            changeBadge(change)
+        }
+    }
+
+    // 用量涨=花钱多标红，降=省钱标绿；无基期显示 —
+    private func changeBadge(_ change: Double?) -> some View {
+        Group {
+            if let change {
+                Text("\(change >= 0 ? "↑" : "↓") \(String(format: "%.0f%%", abs(change)))")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(change >= 0 ? .red : .green)
+            } else {
+                Text("—")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
     }

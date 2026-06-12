@@ -15,6 +15,7 @@ final class AppState: ObservableObject {
     @Published var deepseekEnabled: Bool = true
     @Published var claudeEnabled: Bool = true
     @Published var codexEnabled: Bool = true
+    @Published var claudeDailyLimitM: Int = 0
 
     private let store = ConfigStore.shared
     private var timer: Timer?
@@ -25,6 +26,7 @@ final class AppState: ObservableObject {
         deepseekEnabled = store.deepseekMonitorEnabled
         claudeEnabled = store.claudeMonitorEnabled
         codexEnabled = store.codexMonitorEnabled
+        claudeDailyLimitM = store.claudeDailyTokenLimitM
     }
 
     // 余额加载，对应 loadBalance
@@ -143,5 +145,10 @@ final class AppState: ObservableObject {
     func setCodexEnabled(_ enabled: Bool) {
         store.codexMonitorEnabled = enabled
         codexEnabled = enabled
+    }
+
+    func setClaudeDailyLimit(_ limitM: Int) {
+        store.claudeDailyTokenLimitM = limitM
+        claudeDailyLimitM = limitM
     }
 }

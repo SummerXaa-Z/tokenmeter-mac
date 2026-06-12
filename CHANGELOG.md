@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-12 — v2.6.0 周趋势对比 + Claude 日用量预警
+
+- **Claude 周趋势卡**：本周 vs 上周三行对比（Token/请求/输出），环比箭头（↑红=费用涨 / ↓绿=省，无基期显示 —）。扫描窗口从 7 天扩到 14 天（mtime 过滤起点 -13 天），新增 ClaudeWeekCompare；7 天柱图与模型/项目分布口径不变。
+- **Claude 日用量预警**：设置 → 监控源 → Claude 下新增「日用量预警」分段选择（关/100M/300M/500M/1000M，默认关）。今日 token ≥ 阈值菜单栏图标变橙，≥ 1.5 倍变红。
+- **菜单栏告警统一**：AppDelegate 重构为 AlertLevel（normal/warn/critical），Codex 配额与 Claude 日用量两路各算等级后取最高统一着色，消除互相覆盖；开关/阈值在主线程快照后后台扫描。
+- 数字交叉验证（Python 独立实现，14 天同口径）：本周 818.4M（环比 +21%）/ 上周 677.8M；请求 2847（-8%）；输出 1.8M（-1%）。
+- 本版由两个并行 subagent 分文件域开发（A：ClaudeUsage+ClaudeView / B：AppDelegate+Store+AppState+SettingsView），主线统一构建验收。
+
 ## 2026-06-12 — v2.5.0 监控做深：项目分布 + 今日分时 + 低配额预警
 
 - Claude tab 新增两张卡：

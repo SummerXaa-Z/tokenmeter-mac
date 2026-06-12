@@ -53,11 +53,35 @@ struct ClaudeHourUsage: Equatable, Identifiable {
     var id: Int { hour }
 }
 
+// 本周（最近 7 天）vs 上周（8-14 天前）合计；上周为 0 时环比无基期，返回 nil
+struct ClaudeWeekCompare: Equatable {
+    let thisTotalTokens: Int
+    let lastTotalTokens: Int
+    let thisOutputTokens: Int
+    let lastOutputTokens: Int
+    let thisMessageCount: Int
+    let lastMessageCount: Int
+
+    var totalChange: Double? { Self.change(thisTotalTokens, lastTotalTokens) }
+    var outputChange: Double? { Self.change(thisOutputTokens, lastOutputTokens) }
+    var messageChange: Double? { Self.change(thisMessageCount, lastMessageCount) }
+
+    static let empty = ClaudeWeekCompare(thisTotalTokens: 0, lastTotalTokens: 0,
+                                         thisOutputTokens: 0, lastOutputTokens: 0,
+                                         thisMessageCount: 0, lastMessageCount: 0)
+
+    private static func change(_ cur: Int, _ prev: Int) -> Double? {
+        guard prev > 0 else { return nil }
+        return (Double(cur) - Double(prev)) / Double(prev) * 100
+    }
+}
+
 struct ClaudeUsageResult: Equatable {
     let days: [ClaudeDayUsage]        // 最近 7 天，缺失日补零，升序
     let models: [ClaudeModelUsage]    // 7 天窗口内按模型聚合，按量降序
     let projects: [ClaudeProjectUsage] // 7 天窗口内按项目聚合，按量降序
     let todayHours: [ClaudeHourUsage] // 今日 24 小时分布，缺失补零
+    let weekCompare: ClaudeWeekCompare // 本周 vs 上周环比
     var today: ClaudeDayUsage? { days.last }
     var weekTotal: Int { days.reduce(0) { $0 + $1.totalTokens } }
     var weekMessages: Int { days.reduce(0) { $0 + $1.messageCount } }
@@ -126,18 +150,22 @@ enum ClaudeUsage {
         let now = Date()
         var dayMap: [String: ClaudeDayUsage] = [:]
         let window: Set<String> = Set((0..<7).map { DateUtil.key(DateUtil.addDays(now, -$0)) })
+        let lastWeek: Set<String> = Set((7..<14).map { DateUtil.key(DateUtil.addDays(now, -$0)) })
         for key in window { dayMap[key] = ClaudeDayUsage(date: key) }
-        let windowStart = Calendar.current.startOfDay(for: DateUtil.addDays(now, -6))
+        // 扫 14 天：本周展示 + 上周做环比基期
+        let windowStart = Calendar.current.startOfDay(for: DateUtil.addDays(now, -13))
 
         var modelMap: [String: ClaudeModelUsage] = [:]
         var projectMap: [String: ClaudeProjectUsage] = [:]
         var hourMap: [Int: Int] = [:]
+        var lastTotal = 0, lastOutput = 0, lastMessages = 0
         let todayKey = DateUtil.key(now)
 
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
         guard let walker = fm.enumerator(at: projectsDir, includingPropertiesForKeys: keys) else {
             return ClaudeUsageResult(days: dayMap.values.sorted { $0.date < $1.date },
-                                     models: [], projects: [], todayHours: [])
+                                     models: [], projects: [], todayHours: [],
+                                     weekCompare: .empty)
         }
 
         for case let file as URL in walker where file.pathExtension == "jsonl" {
@@ -146,6 +174,12 @@ enum ClaudeUsage {
                   let mtime = attrs.contentModificationDate, mtime >= windowStart else { continue }
 
             let summary = summarize(file)
+            // 上周只累计三项合计，不进 days/models/projects（它们保持 7 天口径）
+            for (date, t) in summary.perDay where lastWeek.contains(date) {
+                lastTotal += t.input + t.cacheCreate + t.cacheRead + t.output
+                lastOutput += t.output
+                lastMessages += t.messages
+            }
             var counted = false
             for (date, t) in summary.perDay where window.contains(date) {
                 var d = dayMap[date] ?? ClaudeDayUsage(date: date)
@@ -181,7 +215,15 @@ enum ClaudeUsage {
         let models = modelMap.values.sorted { $0.totalTokens > $1.totalTokens }
         let projects = projectMap.values.sorted { $0.totalTokens > $1.totalTokens }
         let todayHours = (0..<24).map { ClaudeHourUsage(hour: $0, totalTokens: hourMap[$0] ?? 0) }
-        return ClaudeUsageResult(days: days, models: models, projects: projects, todayHours: todayHours)
+        let compare = ClaudeWeekCompare(
+            thisTotalTokens: days.reduce(0) { $0 + $1.totalTokens },
+            lastTotalTokens: lastTotal,
+            thisOutputTokens: days.reduce(0) { $0 + $1.outputTokens },
+            lastOutputTokens: lastOutput,
+            thisMessageCount: days.reduce(0) { $0 + $1.messageCount },
+            lastMessageCount: lastMessages)
+        return ClaudeUsageResult(days: days, models: models, projects: projects,
+                                 todayHours: todayHours, weekCompare: compare)
     }
 
     // MARK: - 单文件流式扫描（带缓存）
