@@ -14,8 +14,10 @@ struct ClaudeView: View {
                 header
                 if let r = result {
                     todayCard(r)
+                    hoursCard(r)
                     weekChartCard(r)
                     modelCard(r)
+                    projectCard(r)
                 } else if loading {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
                 } else {
@@ -92,6 +94,30 @@ struct ClaudeView: View {
         .frame(maxWidth: .infinity)
     }
 
+    // MARK: - 今日分时
+    private func hoursCard(_ r: ClaudeUsageResult) -> some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("今日分时（Token）", systemImage: "clock")
+                    .font(.system(size: 12, weight: .semibold))
+                Chart(r.todayHours) { h in
+                    BarMark(
+                        x: .value("时", h.hour),
+                        y: .value("Token", h.totalTokens),
+                        width: .ratio(0.7))
+                    .foregroundStyle(Theme.claude.opacity(h.totalTokens > 0 ? 0.9 : 0.2))
+                }
+                .chartXScale(domain: -0.5...23.5)
+                .chartXAxis {
+                    AxisMarks(values: [0, 6, 12, 18, 23]) { v in
+                        AxisValueLabel { if let h = v.as(Int.self) { Text("\(h)时") } }
+                    }
+                }
+                .frame(height: 70)
+            }
+        }
+    }
+
     // MARK: - 7 天柱图
     private func weekChartCard(_ r: ClaudeUsageResult) -> some View {
         Card {
@@ -137,20 +163,43 @@ struct ClaudeView: View {
                 } else {
                     let maxTotal = max(r.models.first?.totalTokens ?? 0, 1)
                     ForEach(r.models.prefix(5)) { m in
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack {
-                                Text(m.model)
-                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                Spacer()
-                                Text("\(Fmt.tokensShort(m.totalTokens)) · \(m.messageCount) 次")
-                                    .font(.system(size: 10)).foregroundStyle(.secondary)
-                            }
-                            ProgressView(value: Double(m.totalTokens), total: Double(maxTotal))
-                                .tint(Theme.claude)
-                        }
+                        barRow(m.model, m.totalTokens, m.messageCount, maxTotal)
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - 项目分布（7 天窗口）
+    private func projectCard(_ r: ClaudeUsageResult) -> some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("项目分布（近 7 天）", systemImage: "folder")
+                    .font(.system(size: 12, weight: .semibold))
+                if r.projects.isEmpty {
+                    Text("暂无数据").font(.system(size: 11)).foregroundStyle(.secondary)
+                } else {
+                    let maxTotal = max(r.projects.first?.totalTokens ?? 0, 1)
+                    ForEach(r.projects.prefix(6)) { p in
+                        barRow(p.project, p.totalTokens, p.messageCount, maxTotal)
+                    }
+                }
+            }
+        }
+    }
+
+    private func barRow(_ name: String, _ total: Int, _ count: Int, _ maxTotal: Int) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(name)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer()
+                Text("\(Fmt.tokensShort(total)) · \(count) 次")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+            }
+            ProgressView(value: Double(total), total: Double(maxTotal))
+                .tint(Theme.claude)
         }
     }
 }

@@ -37,6 +37,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
             Updater.shared.autoCheckIfDue()
         }
+
+        // Codex 低配额预警：状态栏图标变色（橙 ≤30% / 红 ≤10% 剩余）
+        refreshQuotaBadge()
+        quotaTimer = Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshQuotaBadge() }
+        }
+    }
+
+    private var quotaTimer: Timer?
+
+    // 后台扫一次 Codex 配额，按剩余量给状态栏图标着色；
+    // 正常水位/未启用监控时恢复模板图（跟随系统明暗）
+    private func refreshQuotaBadge() {
+        guard ConfigStore.shared.codexMonitorEnabled, CodexUsage.isAvailable else {
+            setStatusIcon(tint: nil)
+            return
+        }
+        Task.detached(priority: .utility) {
+            let limits = CodexUsage.load().rateLimits
+            let worstUsed = max(limits?.primary?.usedPercent ?? 0,
+                                limits?.secondary?.usedPercent ?? 0)
+            let remaining = 100 - worstUsed
+            await MainActor.run { [weak self] in
+                if remaining <= 10 { self?.setStatusIcon(tint: .systemRed) }
+                else if remaining <= 30 { self?.setStatusIcon(tint: .systemOrange) }
+                else { self?.setStatusIcon(tint: nil) }
+            }
+        }
+    }
+
+    private func setStatusIcon(tint: NSColor?) {
+        guard let button = statusItem?.button else { return }
+        if let tint {
+            let config = NSImage.SymbolConfiguration(paletteColors: [tint])
+            button.image = Self.statusImage()?.withSymbolConfiguration(config)
+            button.image?.isTemplate = false
+        } else {
+            button.image = Self.statusImage()
+            button.image?.isTemplate = true
+        }
     }
 
     // 状态栏图标：用 SF Symbol 生成模板图，缺失则回退到文字

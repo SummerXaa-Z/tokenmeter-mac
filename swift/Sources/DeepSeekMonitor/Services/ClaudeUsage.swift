@@ -40,9 +40,24 @@ struct ClaudeModelUsage: Equatable, Identifiable {
     var id: String { model }
 }
 
+struct ClaudeProjectUsage: Equatable, Identifiable {
+    let project: String               // cwd 目录名
+    var totalTokens: Int = 0
+    var messageCount: Int = 0
+    var id: String { project }
+}
+
+struct ClaudeHourUsage: Equatable, Identifiable {
+    let hour: Int                     // 0-23（本地时区）
+    let totalTokens: Int
+    var id: Int { hour }
+}
+
 struct ClaudeUsageResult: Equatable {
     let days: [ClaudeDayUsage]        // 最近 7 天，缺失日补零，升序
     let models: [ClaudeModelUsage]    // 7 天窗口内按模型聚合，按量降序
+    let projects: [ClaudeProjectUsage] // 7 天窗口内按项目聚合，按量降序
+    let todayHours: [ClaudeHourUsage] // 今日 24 小时分布，缺失补零
     var today: ClaudeDayUsage? { days.last }
     var weekTotal: Int { days.reduce(0) { $0 + $1.totalTokens } }
     var weekMessages: Int { days.reduce(0) { $0 + $1.messageCount } }
@@ -65,6 +80,7 @@ enum ClaudeUsage {
         let type: String?
         let timestamp: String?
         let requestId: String?
+        let cwd: String?
         let message: Message?
         struct Message: Decodable {
             let id: String?
@@ -96,6 +112,8 @@ enum ClaudeUsage {
         let mtime: Date
         let perDay: [String: Tally]
         let perModel: [String: Tally]
+        let perProject: [String: Tally]
+        let perDayHour: [String: [Int: Int]]   // day → hour → totalTokens
     }
 
     private static var cache: [String: FileSummary] = [:]
@@ -112,10 +130,14 @@ enum ClaudeUsage {
         let windowStart = Calendar.current.startOfDay(for: DateUtil.addDays(now, -6))
 
         var modelMap: [String: ClaudeModelUsage] = [:]
+        var projectMap: [String: ClaudeProjectUsage] = [:]
+        var hourMap: [Int: Int] = [:]
+        let todayKey = DateUtil.key(now)
 
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
         guard let walker = fm.enumerator(at: projectsDir, includingPropertiesForKeys: keys) else {
-            return ClaudeUsageResult(days: dayMap.values.sorted { $0.date < $1.date }, models: [])
+            return ClaudeUsageResult(days: dayMap.values.sorted { $0.date < $1.date },
+                                     models: [], projects: [], todayHours: [])
         }
 
         for case let file as URL in walker where file.pathExtension == "jsonl" {
@@ -144,11 +166,22 @@ enum ClaudeUsage {
                 m.messageCount += t.messages
                 modelMap[model] = m
             }
+            for (project, t) in summary.perProject {
+                var p = projectMap[project] ?? ClaudeProjectUsage(project: project)
+                p.totalTokens += t.input + t.cacheCreate + t.cacheRead + t.output
+                p.messageCount += t.messages
+                projectMap[project] = p
+            }
+            if let hours = summary.perDayHour[todayKey] {
+                for (h, tokens) in hours { hourMap[h, default: 0] += tokens }
+            }
         }
 
         let days = dayMap.values.sorted { $0.date < $1.date }
         let models = modelMap.values.sorted { $0.totalTokens > $1.totalTokens }
-        return ClaudeUsageResult(days: days, models: models)
+        let projects = projectMap.values.sorted { $0.totalTokens > $1.totalTokens }
+        let todayHours = (0..<24).map { ClaudeHourUsage(hour: $0, totalTokens: hourMap[$0] ?? 0) }
+        return ClaudeUsageResult(days: days, models: models, projects: projects, todayHours: todayHours)
     }
 
     // MARK: - 单文件流式扫描（带缓存）
@@ -171,7 +204,8 @@ enum ClaudeUsage {
     }
 
     private static func scan(_ file: URL, size: UInt64, mtime: Date) -> FileSummary {
-        let empty = FileSummary(size: size, mtime: mtime, perDay: [:], perModel: [:])
+        let empty = FileSummary(size: size, mtime: mtime, perDay: [:], perModel: [:],
+                                perProject: [:], perDayHour: [:])
         guard let handle = try? FileHandle(forReadingFrom: file) else { return empty }
         defer { try? handle.close() }
 
@@ -182,6 +216,8 @@ enum ClaudeUsage {
 
         var perDay: [String: Tally] = [:]
         var perModel: [String: Tally] = [:]
+        var perProject: [String: Tally] = [:]
+        var perDayHour: [String: [Int: Int]] = [:]
         var seen = Set<String>()      // (message.id|requestId) 去重，文件内
         var carry = Data()
 
@@ -227,9 +263,31 @@ enum ClaudeUsage {
                 m.output += usage.outputTokens ?? 0
                 m.messages += 1
                 perModel[model] = m
+
+                let project = Self.displayProject(row.cwd)
+                var p = perProject[project] ?? Tally()
+                p.input += usage.inputTokens ?? 0
+                p.cacheCreate += usage.cacheCreationInputTokens ?? 0
+                p.cacheRead += usage.cacheReadInputTokens ?? 0
+                p.output += usage.outputTokens ?? 0
+                p.messages += 1
+                perProject[project] = p
+
+                let lineTotal = (usage.inputTokens ?? 0) + (usage.cacheCreationInputTokens ?? 0)
+                    + (usage.cacheReadInputTokens ?? 0) + (usage.outputTokens ?? 0)
+                let hour = Calendar.current.component(.hour, from: ts)
+                perDayHour[day, default: [:]][hour, default: 0] += lineTotal
             }
         }
-        return FileSummary(size: size, mtime: mtime, perDay: perDay, perModel: perModel)
+        return FileSummary(size: size, mtime: mtime, perDay: perDay, perModel: perModel,
+                           perProject: perProject, perDayHour: perDayHour)
+    }
+
+    // cwd 最后一段作为项目名；空值归入 "(其他)"
+    private static func displayProject(_ cwd: String?) -> String {
+        guard let cwd, !cwd.isEmpty else { return "(其他)" }
+        let name = (cwd as NSString).lastPathComponent
+        return name.isEmpty ? "(其他)" : name
     }
 
     // "claude-opus-4-8" → "opus-4-8"，"claude-fable-5" → "fable-5"；其他原样

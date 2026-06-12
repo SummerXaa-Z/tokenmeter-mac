@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-12 — v2.5.0 监控做深：项目分布 + 今日分时 + 低配额预警
+
+- Claude tab 新增两张卡：
+  - **项目分布（近 7 天）**：按 transcript 的 cwd 末段聚合，Top6 横条，看 token 烧在哪个项目上。
+  - **今日分时**：24 小时 token 柱图，看用量集中在哪个时段。
+- **Codex 低配额菜单栏预警**：状态栏图标按剩余量着色（剩余 ≤30% 橙 / ≤10% 红，正常恢复模板图跟随明暗），每 15 分钟后台刷新一次；不用点开面板就能看见配额告急。关闭 Codex 监控时不扫不变色。
+- 扫描层为项目/分时维度扩展了 FileSummary（perProject / perDayHour），缓存结构同步升级，口径与日/模型维度一致（同一去重键）。
+
 ## 2026-06-12 — v2.4.0 新增 Claude 监控源
 
 - 新增 Claude tab（Services/ClaudeUsage.swift + Views/ClaudeView.swift）：数据源纯本地 `~/.claude/projects/**/*.jsonl`（会话 transcript），零网络、零凭据。
