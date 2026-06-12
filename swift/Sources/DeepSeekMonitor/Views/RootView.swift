@@ -9,6 +9,7 @@ enum AppView: Equatable {
 // 顶部切换的监控源；后续加新工具在这里扩 case
 enum Provider: String, CaseIterable, Identifiable {
     case deepseek = "DeepSeek"
+    case claude = "Claude"
     case codex = "Codex"
     var id: String { rawValue }
 
@@ -16,6 +17,7 @@ enum Provider: String, CaseIterable, Identifiable {
     var available: Bool {
         switch self {
         case .deepseek: return true
+        case .claude: return ClaudeUsage.isAvailable
         case .codex: return CodexUsage.isAvailable
         }
     }
@@ -32,6 +34,7 @@ struct RootView: View {
             guard p.available else { return false }
             switch p {
             case .deepseek: return state.deepseekEnabled
+            case .claude: return state.claudeEnabled
             case .codex: return state.codexEnabled
             }
         }
@@ -54,6 +57,8 @@ struct RootView: View {
                             DashboardView(
                                 onSettings: { view = .settings },
                                 onDetail: { key in view = .detail(key) })
+                        case .claude:
+                            ClaudeView(onSettings: { view = .settings })
                         case .codex:
                             CodexView(onSettings: { view = .settings })
                         }

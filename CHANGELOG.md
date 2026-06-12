@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-12 — v2.4.0 新增 Claude 监控源
+
+- 新增 Claude tab（Services/ClaudeUsage.swift + Views/ClaudeView.swift）：数据源纯本地 `~/.claude/projects/**/*.jsonl`（会话 transcript），零网络、零凭据。
+- 展示：今日 Token/请求数/缓存命中率/输出 + 近 7 天四段堆叠柱图（缓存读取/缓存写入/新输入/输出）+ 模型分布 Top5（opus/fable/deepseek 等横条）。
+- 与 Codex 解析的关键差异：usage 是单条消息值非累计，不做差分；但同一消息流式输出会写多行，按 (message.id, requestId) 文件内去重，否则量级翻倍（实测 92 行 → 37 条唯一请求）。
+- 扫描沿用 Codex 架构：全树枚举 + mtime 过滤 + 8MB chunk 流式读 + (size, mtime) 内存缓存；107 个活跃文件扫描无感。
+- 监控源开关、tab 自适应、未安装隐藏等行为与 Codex 一致；Theme 新增 Anthropic 橙（0xD97757）。
+- 预期数字（Python 独立实现，同口径）：6/10 2.85 亿 / 6/11 1.40 亿 / 6/12 2890 万，模型分布 opus-4-8 4.4 亿居首；面板数字以此为对照基准。
+
 ## 2026-06-12 — 签名切换到本机自签证书，修"每次更新都要授权钥匙串"
 
 - 根因：ad-hoc 签名（`--sign -`）的 designated requirement 是当次构建的代码哈希，每次更新哈希变化，macOS 视为新 app，Keychain 条目授权失效。

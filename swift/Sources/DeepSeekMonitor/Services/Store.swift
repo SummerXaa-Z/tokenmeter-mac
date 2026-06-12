@@ -64,6 +64,7 @@ final class ConfigStore {
         static let autoRefresh = "autoRefreshEnabled"
         static let autostart = "autostart"
         static let deepseekMonitor = "deepseekMonitorEnabled"
+        static let claudeMonitor = "claudeMonitorEnabled"
         static let codexMonitor = "codexMonitorEnabled"
         static let autoUpdateCheck = "autoUpdateCheckEnabled"
         static let lastUpdateCheck = "lastUpdateCheckAt"
@@ -113,6 +114,11 @@ final class ConfigStore {
     var deepseekMonitorEnabled: Bool {
         get { defaults.object(forKey: DKey.deepseekMonitor) as? Bool ?? true }
         set { defaults.set(newValue, forKey: DKey.deepseekMonitor) }
+    }
+
+    var claudeMonitorEnabled: Bool {
+        get { defaults.object(forKey: DKey.claudeMonitor) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: DKey.claudeMonitor) }
     }
 
     var codexMonitorEnabled: Bool {

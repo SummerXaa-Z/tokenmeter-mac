@@ -13,6 +13,7 @@ final class AppState: ObservableObject {
     @Published var refreshIntervalSeconds: Int = 60
     @Published var autoRefreshEnabled: Bool = false
     @Published var deepseekEnabled: Bool = true
+    @Published var claudeEnabled: Bool = true
     @Published var codexEnabled: Bool = true
 
     private let store = ConfigStore.shared
@@ -22,6 +23,7 @@ final class AppState: ObservableObject {
         refreshIntervalSeconds = store.refreshIntervalSeconds
         autoRefreshEnabled = store.autoRefreshEnabled
         deepseekEnabled = store.deepseekMonitorEnabled
+        claudeEnabled = store.claudeMonitorEnabled
         codexEnabled = store.codexMonitorEnabled
     }
 
@@ -131,6 +133,11 @@ final class AppState: ObservableObject {
         store.deepseekMonitorEnabled = enabled
         deepseekEnabled = enabled
         if enabled { refreshAll() }
+    }
+
+    func setClaudeEnabled(_ enabled: Bool) {
+        store.claudeMonitorEnabled = enabled
+        claudeEnabled = enabled
     }
 
     func setCodexEnabled(_ enabled: Bool) {

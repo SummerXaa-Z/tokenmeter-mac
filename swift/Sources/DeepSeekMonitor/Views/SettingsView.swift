@@ -67,6 +67,14 @@ struct SettingsView: View {
                 Toggle("DeepSeek（余额 + 模型用量）", isOn: Binding(
                     get: { state.deepseekEnabled },
                     set: { state.setDeepseekEnabled($0) }))
+                Toggle("Claude（本地 transcript 用量）", isOn: Binding(
+                    get: { state.claudeEnabled },
+                    set: { state.setClaudeEnabled($0) }))
+                    .disabled(!ClaudeUsage.isAvailable)
+                if !ClaudeUsage.isAvailable {
+                    Text("未检测到 Claude 本地数据（~/.claude/projects），开关不生效。")
+                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                }
                 Toggle("Codex（本地 session 用量 + 配额）", isOn: Binding(
                     get: { state.codexEnabled },
                     set: { state.setCodexEnabled($0) }))
