@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-12 — v3.2.0 菜单栏信息展示 + Cursor 新计费口径 + 修运行状态误判
+
+- **菜单栏图标旁可显示核心指标**（设置 → 监控源 → 菜单栏图标旁显示）：Claude 今日 token（默认）/ Codex 配额剩余 % / 不显示。等宽数字字体防跳动，15 分钟随预警一起刷新，切换立即生效。
+- **Cursor 接口换 dashboard 新口径**：旧 `/api/usage` 只统计请求数计费时代的 gpt-4 计数器，新版按 token/费用计费的用户恒为 0（"日常在用却显示无用量"）。改用 `get-aggregated-usage-events`（与官网 Dashboard 同源），展示本月按模型 token 与费用（美元），需带 Origin/Referer 头否则 403。
+- **修运行状态误判**：进程判定从 sysctl 短名（16 字节 p_comm，撞名+漏报）改为 libproc 全路径精确匹配——排除 Claude Desktop / Codex Desktop 的辅助进程（旧逻辑把桌面版内嵌 codex 算成 CLI ×2），npm 安装的 claude 可执行名是 claude.exe（旧逻辑漏报"未运行"）。多实例文案从「运行中 ×N」改为「N 个会话」。
+- **周趋势卡对齐**：本周值列定宽，三行"上周"列对齐。
+
 ## 2026-06-12 — v3.1.1 修复：Cursor 登录信息读取失败
 
 - 根因：state.vscdb 是 WAL 模式且体积可达数 GB,v3.1.0 的"拷贝副本再读"丢掉 -wal 未合并页,拷出的副本 prepare 报 SQLITE_CANTOPEN,面板误报"未找到 Cursor 登录信息"。

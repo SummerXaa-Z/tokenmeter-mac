@@ -173,6 +173,7 @@ struct ClaudeView: View {
         }
     }
 
+    // 本周值列定宽，三行的"上周"列才能对齐（数字长短不一）
     private func compareRow(_ title: String, _ cur: String, _ prev: String,
                             _ change: Double?) -> some View {
         HStack {
@@ -181,6 +182,7 @@ struct ClaudeView: View {
                 .frame(width: 40, alignment: .leading)
             Text(cur)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .frame(width: 52, alignment: .leading)
             Text("上周 \(prev)")
                 .font(.system(size: 10)).foregroundStyle(.secondary)
             Spacer()

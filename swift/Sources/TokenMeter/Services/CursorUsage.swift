@@ -2,17 +2,23 @@ import Foundation
 import SQLite3
 
 // Cursor 用量监控：本地 state.vscdb（SQLite）读登录 token，
-// 调 cursor.com 官方用量接口（与 Cursor 设置页同源数据）。
+// 调 cursor.com dashboard 用量接口（与官网 Dashboard 同源数据）。
+//
+// 接口口径：get-aggregated-usage-events（按 token/费用计费的新口径）。
+// 老 /api/usage 只统计请求数计费时代的 gpt-4 计数器，新版恒为 0，弃用。
+// 该接口要求 Origin/Referer 为 cursor.com，否则 403 "Invalid origin"。
 //
 // 与 Claude/Codex 纯本地不同，这里有网络请求；token 只在本机读取、
 // 只发往 cursor.com，不落任何中间存储。
 
 struct CursorModelUsage: Equatable, Identifiable {
-    let model: String
-    let numRequests: Int
-    let numTokens: Int
-    let maxRequests: Int?    // 配额（free 计划为 nil）
+    let model: String            // modelIntent，如 composer-2.5-fast
+    let inputTokens: Int
+    let outputTokens: Int
+    let cacheReadTokens: Int
+    let costCents: Double
     var id: String { model }
+    var totalTokens: Int { inputTokens + outputTokens }
 }
 
 struct CursorUsageResult: Equatable {
@@ -20,7 +26,8 @@ struct CursorUsageResult: Equatable {
     let membership: String?      // free / pro / business
     let startOfMonth: Date?
     let models: [CursorModelUsage]
-    var totalRequests: Int { models.reduce(0) { $0 + $1.numRequests } }
+    let totalCostCents: Double
+    var totalTokens: Int { models.reduce(0) { $0 + $1.totalTokens } }
 }
 
 enum CursorUsageError: LocalizedError {
@@ -110,57 +117,59 @@ enum CursorUsage {
 
     // MARK: - 用量接口
 
-    private struct UsageEntry: Decodable {
-        let numRequests: Int?
-        let numTokens: Int?
-        let maxRequestUsage: Int?
+    private struct AggregatedResponse: Decodable {
+        let aggregations: [Aggregation]?
+        let totalCostCents: Double?
+        struct Aggregation: Decodable {
+            let modelIntent: String?
+            let inputTokens: String?      // 服务端用字符串表示大整数
+            let outputTokens: String?
+            let cacheReadTokens: String?
+            let totalCents: Double?
+        }
     }
 
     static func load() async throws -> CursorUsageResult {
         let cred = try readCredential()
+        let cal = Calendar.current
+        let now = Date()
+        let monthStart = cal.date(from: cal.dateComponents([.year, .month], from: now)) ?? now
+
         var req = URLRequest(
-            url: URL(string: "https://cursor.com/api/usage?user=\(cred.userId)")!,
+            url: URL(string: "https://cursor.com/api/dashboard/get-aggregated-usage-events")!,
             timeoutInterval: 15)
+        req.httpMethod = "POST"
+        req.httpBody = try JSONSerialization.data(withJSONObject: [
+            "teamId": 0,
+            "startDate": String(Int(monthStart.timeIntervalSince1970 * 1000)),
+            "endDate": String(Int(now.timeIntervalSince1970 * 1000)),
+        ])
         req.setValue("WorkosCursorSessionToken=\(cred.userId)%3A%3A\(cred.token)",
                      forHTTPHeaderField: "Cookie")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // dashboard 接口校验来源，缺这两个头返回 403 "Invalid origin"
+        req.setValue("https://cursor.com", forHTTPHeaderField: "Origin")
+        req.setValue("https://cursor.com/dashboard", forHTTPHeaderField: "Referer")
+
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw CursorUsageError.http(-1) }
         guard http.statusCode == 200 else {
             throw http.statusCode == 401 ? CursorUsageError.tokenExpired
                                          : CursorUsageError.http(http.statusCode)
         }
+        let parsed = try JSONDecoder().decode(AggregatedResponse.self, from: data)
 
-        // 顶层是 {模型名: {...}, "startOfMonth": "..."} 的混合结构，手动拆
-        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-            throw CursorUsageError.http(200)
+        var models: [CursorModelUsage] = (parsed.aggregations ?? []).map { a in
+            CursorModelUsage(
+                model: a.modelIntent ?? "unknown",
+                inputTokens: Int(a.inputTokens ?? "") ?? 0,
+                outputTokens: Int(a.outputTokens ?? "") ?? 0,
+                cacheReadTokens: Int(a.cacheReadTokens ?? "") ?? 0,
+                costCents: a.totalCents ?? 0)
         }
-        var models: [CursorModelUsage] = []
-        var start: Date?
-        let decoder = JSONDecoder()
-        for (key, value) in root {
-            if key == "startOfMonth", let s = value as? String {
-                start = ISO8601DateFormatter.cursor.date(from: s)
-                continue
-            }
-            guard let dict = value as? [String: Any],
-                  let entryData = try? JSONSerialization.data(withJSONObject: dict),
-                  let e = try? decoder.decode(UsageEntry.self, from: entryData) else { continue }
-            models.append(CursorModelUsage(
-                model: key,
-                numRequests: e.numRequests ?? 0,
-                numTokens: e.numTokens ?? 0,
-                maxRequests: e.maxRequestUsage))
-        }
-        models.sort { $0.numRequests > $1.numRequests }
+        models.sort { $0.costCents > $1.costCents }
         return CursorUsageResult(email: cred.email, membership: cred.membership,
-                                 startOfMonth: start, models: models)
+                                 startOfMonth: monthStart, models: models,
+                                 totalCostCents: parsed.totalCostCents ?? 0)
     }
-}
-
-private extension ISO8601DateFormatter {
-    static let cursor: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
 }

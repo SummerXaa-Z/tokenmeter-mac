@@ -89,7 +89,7 @@ struct CursorView: View {
                     Text(email).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 if let start = r.startOfMonth {
-                    Text("计费周期自 \(Self.mmdd(start)) 起 · 本月 \(r.totalRequests) 次请求")
+                    Text("自 \(Self.mmdd(start)) 起 · 本月 \(Fmt.tokensShort(r.totalTokens)) tokens · $\(String(format: "%.2f", r.totalCostCents / 100))")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
                 }
             }
@@ -102,28 +102,23 @@ struct CursorView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("本月模型用量", systemImage: "cpu")
                     .font(.system(size: 12, weight: .semibold))
-                if r.models.allSatisfy({ $0.numRequests == 0 }) {
+                if r.models.isEmpty {
                     Text("本月暂无用量")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 } else {
+                    let maxCost = max(r.models.first?.costCents ?? 0, 0.01)
                     ForEach(r.models) { m in
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(m.model)
                                     .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                    .lineLimit(1).truncationMode(.middle)
                                 Spacer()
-                                if let quota = m.maxRequests {
-                                    Text("\(m.numRequests) / \(quota) 次")
-                                        .font(.system(size: 10)).foregroundStyle(.secondary)
-                                } else {
-                                    Text("\(m.numRequests) 次")
-                                        .font(.system(size: 10)).foregroundStyle(.secondary)
-                                }
+                                Text("\(Fmt.tokensShort(m.totalTokens)) · $\(String(format: "%.2f", m.costCents / 100))")
+                                    .font(.system(size: 10)).foregroundStyle(.secondary)
                             }
-                            if let quota = m.maxRequests, quota > 0 {
-                                ProgressView(value: Double(m.numRequests), total: Double(quota))
-                                    .tint(Theme.cursor)
-                            }
+                            ProgressView(value: m.costCents, total: maxCost)
+                                .tint(Theme.cursor)
                         }
                     }
                 }

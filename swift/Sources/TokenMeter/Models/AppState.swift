@@ -2,6 +2,11 @@ import Foundation
 import Combine
 import SwiftUI
 
+extension Notification.Name {
+    // 设置改菜单栏显示模式后通知 AppDelegate 立刻刷新，不等下个定时周期
+    static let menubarInfoModeChanged = Notification.Name("menubarInfoModeChanged")
+}
+
 // 全局状态，对应原版 App 组件的 state + effect + 自动刷新定时器。
 @MainActor
 final class AppState: ObservableObject {
@@ -17,6 +22,7 @@ final class AppState: ObservableObject {
     @Published var codexEnabled: Bool = true
     @Published var cursorEnabled: Bool = true
     @Published var claudeDailyLimitM: Int = 0
+    @Published var menubarInfoMode: String = "claude"
 
     private let store = ConfigStore.shared
     private var timer: Timer?
@@ -29,6 +35,7 @@ final class AppState: ObservableObject {
         codexEnabled = store.codexMonitorEnabled
         cursorEnabled = store.cursorMonitorEnabled
         claudeDailyLimitM = store.claudeDailyTokenLimitM
+        menubarInfoMode = store.menubarInfoMode
     }
 
     // 余额加载，对应 loadBalance
@@ -157,5 +164,11 @@ final class AppState: ObservableObject {
     func setClaudeDailyLimit(_ limitM: Int) {
         store.claudeDailyTokenLimitM = limitM
         claudeDailyLimitM = limitM
+    }
+
+    func setMenubarInfoMode(_ mode: String) {
+        store.menubarInfoMode = mode
+        menubarInfoMode = mode
+        NotificationCenter.default.post(name: .menubarInfoModeChanged, object: nil)
     }
 }

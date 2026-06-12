@@ -38,9 +38,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Updater.shared.autoCheckIfDue()
         }
 
-        // 配额/用量预警：Codex 低配额 + Claude 日用量超阈值，状态栏图标统一变色
+        // 配额/用量预警 + 菜单栏信息文字，统一 15 分钟刷新
         refreshQuotaBadge()
         quotaTimer = Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshQuotaBadge() }
+        }
+        // 设置页切换显示模式后立刻生效
+        NotificationCenter.default.addObserver(forName: .menubarInfoModeChanged, object: nil,
+                                               queue: .main) { [weak self] _ in
             Task { @MainActor in self?.refreshQuotaBadge() }
         }
     }
@@ -63,46 +68,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // 后台扫一次 Codex 配额 + Claude 今日用量，取两路最高等级给状态栏图标着色；
-    // 正常水位/未启用监控时恢复模板图（跟随系统明暗）
+    // 后台扫一次 Codex 配额 + Claude 今日用量：告警等级给图标着色，
+    // 同时按设置把核心指标（Claude 今日 token / Codex 配额剩余）写到图标旁
     private func refreshQuotaBadge() {
         // 开关与阈值在主线程一次性快照，detached 任务里不再碰共享状态
         let codexOn = ConfigStore.shared.codexMonitorEnabled && CodexUsage.isAvailable
         let claudeLimitM = ConfigStore.shared.claudeDailyTokenLimitM
-        let claudeOn = ConfigStore.shared.claudeMonitorEnabled
+        let claudeAlertOn = ConfigStore.shared.claudeMonitorEnabled
             && ClaudeUsage.isAvailable && claudeLimitM > 0
-        guard codexOn || claudeOn else {
-            setStatusIcon(tint: nil)
+        let infoMode = ConfigStore.shared.menubarInfoMode
+        let claudeInfoOn = infoMode == "claude"
+            && ConfigStore.shared.claudeMonitorEnabled && ClaudeUsage.isAvailable
+        let codexInfoOn = infoMode == "codex" && codexOn
+
+        guard codexOn || claudeAlertOn || claudeInfoOn else {
+            setStatusIcon(tint: nil, text: nil)
             return
         }
         Task.detached(priority: .utility) {
             var level = AlertLevel.normal
+            var infoText: String?
 
-            if codexOn {
+            if codexOn || codexInfoOn {
                 let limits = CodexUsage.load().rateLimits
                 let worstUsed = max(limits?.primary?.usedPercent ?? 0,
                                     limits?.secondary?.usedPercent ?? 0)
                 let remaining = 100 - worstUsed
-                if remaining <= 10 { level = max(level, .critical) }
-                else if remaining <= 30 { level = max(level, .warn) }
+                if codexOn {
+                    if remaining <= 10 { level = max(level, .critical) }
+                    else if remaining <= 30 { level = max(level, .warn) }
+                }
+                if codexInfoOn, limits != nil {
+                    infoText = "\(Int(remaining))%"
+                }
             }
 
-            if claudeOn {
+            if claudeAlertOn || claudeInfoOn {
                 let todayTokens = ClaudeUsage.load().today?.totalTokens ?? 0
-                let limit = claudeLimitM * 1_000_000
-                // 超阈值即提醒，1.5 倍才升红——日用量越线不等于不可用，留缓冲
-                if todayTokens >= limit * 3 / 2 { level = max(level, .critical) }
-                else if todayTokens >= limit { level = max(level, .warn) }
+                if claudeAlertOn {
+                    let limit = claudeLimitM * 1_000_000
+                    // 超阈值即提醒，1.5 倍才升红——日用量越线不等于不可用，留缓冲
+                    if todayTokens >= limit * 3 / 2 { level = max(level, .critical) }
+                    else if todayTokens >= limit { level = max(level, .warn) }
+                }
+                if claudeInfoOn {
+                    infoText = Fmt.tokensShort(todayTokens)
+                }
             }
 
             let tint = level.tint
+            let text = infoText
             await MainActor.run { [weak self] in
-                self?.setStatusIcon(tint: tint)
+                self?.setStatusIcon(tint: tint, text: text)
             }
         }
     }
 
-    private func setStatusIcon(tint: NSColor?) {
+    private func setStatusIcon(tint: NSColor?, text: String?) {
         guard let button = statusItem?.button else { return }
         if let tint {
             let config = NSImage.SymbolConfiguration(paletteColors: [tint])
@@ -111,6 +133,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             button.image = Self.statusImage()
             button.image?.isTemplate = true
+        }
+        // 图标旁文字：menubar 字体用 11pt monospaced digit，避免数字跳动
+        if let text {
+            button.title = " \(text)"
+            button.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+            button.imagePosition = .imageLeft
+        } else {
+            button.title = ""
+            button.imagePosition = .imageOnly
         }
     }
 

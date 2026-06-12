@@ -107,6 +107,18 @@ struct SettingsView: View {
                     Text("未检测到 Cursor 安装（无 state.vscdb），开关不生效。")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
                 }
+                Divider()
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("菜单栏图标旁显示")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    Picker("", selection: Binding(
+                        get: { state.menubarInfoMode },
+                        set: { state.setMenubarInfoMode($0) })) {
+                        Text("不显示").tag("off")
+                        Text("Claude 今日").tag("claude")
+                        Text("Codex 配额").tag("codex")
+                    }.pickerStyle(.segmented).labelsHidden()
+                }
             }
         }
     }

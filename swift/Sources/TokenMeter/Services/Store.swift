@@ -67,6 +67,7 @@ final class ConfigStore {
         static let claudeMonitor = "claudeMonitorEnabled"
         static let codexMonitor = "codexMonitorEnabled"
         static let cursorMonitor = "cursorMonitorEnabled"
+        static let menubarInfo = "menubarInfoMode"
         static let claudeDailyTokenLimit = "claudeDailyTokenLimitM"
         static let autoUpdateCheck = "autoUpdateCheckEnabled"
         static let lastUpdateCheck = "lastUpdateCheckAt"
@@ -131,6 +132,12 @@ final class ConfigStore {
     var cursorMonitorEnabled: Bool {
         get { defaults.object(forKey: DKey.cursorMonitor) as? Bool ?? true }
         set { defaults.set(newValue, forKey: DKey.cursorMonitor) }
+    }
+
+    // 菜单栏图标旁文字："off" 不显示 / "claude" 今日 token / "codex" 配额剩余
+    var menubarInfoMode: String {
+        get { defaults.string(forKey: DKey.menubarInfo) ?? "claude" }
+        set { defaults.set(newValue, forKey: DKey.menubarInfo) }
     }
 
     // Claude 日用量预警阈值（单位百万 token）：0 = 关闭预警。
