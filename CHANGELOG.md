@@ -9,6 +9,7 @@
 - 扫描层 FileSummary 扩展 perModel / perDayHour / project；turn_context/session_meta 行轻量解析（先 marker 预筛再解码），缓存结构同步升级。
 - package.sh 修复：iCloud 同步目录给构建产物挂 com.apple.fileprovider 顽固扩展属性，xattr -cr 清不掉（codesign 报 detritus）；改为 ditto --noextattr 重建干净副本再签名。
 - 修 Codex Desktop（GUI）用户显示「未运行」：运行状态同时识别 CLI 进程与 Codex Desktop 应用（两者共写 ~/.codex/sessions）。
+- 修分时图柱体不渲染：连续数值 x 轴 + width .ratio 组合下 Swift Charts 只画轴不画柱（Y 轴域正常说明数据已进图表）；改为与 7 天柱图相同的类目轴（"00"~"23" 字符串）。Y 轴刻度同步格式化为 30M 风格，替代 3.0E7 科学计数法。
 - 各面板隐藏系统滚动条（scrollIndicators(.hidden)），面板内容本就不长，去掉滚动条更干净。
 - README 同步多源能力描述（Codex 分时/模型/项目、Cursor 订阅周期、菜单栏指标）。
 

@@ -107,15 +107,23 @@ struct ClaudeView: View {
                     .font(.system(size: 12, weight: .semibold))
                 Chart(r.todayHours) { h in
                     BarMark(
-                        x: .value("时", h.hour),
-                        y: .value("Token", h.totalTokens),
-                        width: .ratio(0.7))
+                        x: .value("时", String(format: "%02d", h.hour)),
+                        y: .value("Token", h.totalTokens))
                     .foregroundStyle(Theme.claude.opacity(h.totalTokens > 0 ? 0.9 : 0.2))
                 }
-                .chartXScale(domain: -0.5...23.5)
                 .chartXAxis {
-                    AxisMarks(values: [0, 6, 12, 18, 23]) { v in
-                        AxisValueLabel { if let h = v.as(Int.self) { Text("\(h)时") } }
+                    AxisMarks(values: ["00", "06", "12", "18", "23"]) { v in
+                        AxisValueLabel {
+                            if let h = v.as(String.self) { Text("\(Int(h) ?? 0)时") }
+                        }
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks { v in
+                        AxisGridLine()
+                        AxisValueLabel {
+                            if let n = v.as(Int.self) { Text(Fmt.tokensShort(n)) }
+                        }
                     }
                 }
                 .frame(height: 70)
