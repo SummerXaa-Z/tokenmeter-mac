@@ -1,6 +1,8 @@
-# DeepSeek Monitor for macOS
+# TokenMeter
 
-DeepSeek Monitor 是一个常驻 macOS 菜单栏的 AI 用量监控应用：DeepSeek API 余额与消费、Claude（Claude CLI 本地数据）与 Codex（Codex CLI 本地数据）的 Token 用量、订阅配额与趋势，多源一个面板切换查看。点击菜单栏图标，面板以原生 NSPopover 形式贴着图标下拉。
+> 原名 DeepSeek Monitor for macOS，v3.0 起更名。
+
+TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：DeepSeek API 余额与消费、Claude（Claude CLI 本地数据）与 Codex（Codex CLI 本地数据）的 Token 用量、订阅配额与趋势，多源一个面板切换查看。点击菜单栏图标，面板以原生 NSPopover 形式贴着图标下拉。
 
 当前主版本为**原生 Swift 实现**（SwiftUI + AppKit），早期的 Tauri 2 + React + Rust 版本（v1.1.0）保留在 `tauri-version` 分支。
 
@@ -67,7 +69,7 @@ swift/
 ├── project.yml                      # XcodeGen 工程定义
 ├── scripts/package.sh               # 构建 + 签名 + 打 dmg
 ├── Resources/Assets.xcassets        # 图标资源
-└── Sources/DeepSeekMonitor/
+└── Sources/TokenMeter/
     ├── Shell/        # main + AppDelegate（状态栏 + popover 外壳 + 菜单栏预警）
     ├── Models/       # AppState（数据流）、Models（接口模型）、Format
     ├── Views/        # Dashboard / Claude / Codex / Settings / ModelDetail / 主题与组件
@@ -83,19 +85,19 @@ swift/
 
 ```bash
 git clone <your-repo-url>
-cd DeepSeekMonitorMac/swift
+cd tokenmeter-mac/swift
 xcodegen generate
-xcodebuild -project DeepSeekMonitor.xcodeproj -scheme DeepSeekMonitor -configuration Release build
+xcodebuild -project TokenMeter.xcodeproj -scheme TokenMeter -configuration Release build
 ```
 
-产物在 `swift/build/Build/Products/Release/DeepSeekMonitor.app`（用 `-derivedDataPath build` 时）。也可以 `xcodegen generate` 后直接用 Xcode 打开 `DeepSeekMonitor.xcodeproj` 运行。
+产物在 `swift/build/Build/Products/Release/TokenMeter.app`（用 `-derivedDataPath build` 时）。也可以 `xcodegen generate` 后直接用 Xcode 打开 `TokenMeter.xcodeproj` 运行。
 
 > 未签名的 `.app` 首次打开会被 Gatekeeper 拦截。右键 → 打开，或 `xattr -dr com.apple.quarantine <App路径>`。如需公证分发，自行配置 Apple Developer 签名。
 
 也可直接用打包脚本（构建 + 签名 + 打 dmg）：
 
 ```bash
-cd DeepSeekMonitorMac/swift && ./scripts/package.sh
+cd tokenmeter-mac/swift && ./scripts/package.sh
 ```
 
 > 脚本默认查找名为 `DeepSeekMonitor Dev` 的本机代码签名证书（自签即可）；找不到时回退 ad-hoc 签名。用稳定证书签名的好处：更新版本后 Keychain 授权不会重复弹窗（ad-hoc 签名每个版本视为不同 app）。

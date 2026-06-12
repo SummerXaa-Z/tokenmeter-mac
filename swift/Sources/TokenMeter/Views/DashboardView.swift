@@ -35,7 +35,7 @@ struct DashboardView: View {
             Image(systemName: "gauge.with.dots.needle.50percent")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(Theme.brand)
-            Text("DeepSeek Monitor")
+            Text("TokenMeter")
                 .font(.system(size: 15, weight: .bold))
             Spacer()
             iconButton("globe") { PlatformPortal.shared.open() }

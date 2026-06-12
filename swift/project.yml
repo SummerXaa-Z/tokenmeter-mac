@@ -1,24 +1,28 @@
-name: DeepSeekMonitor
+name: TokenMeter
 options:
-  bundleIdPrefix: com.deepseek.monitor
+  bundleIdPrefix: com.tokenmeter
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
 
 settings:
   base:
-    MARKETING_VERSION: "2.6.0"
+    MARKETING_VERSION: "3.0.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
+    # bundle ID 保持 com.deepseek.monitor.mac 不变：UserDefaults 偏好、
+    # SMAppService 自启注册、Keychain 访问授权都绑定它，改了等于让
+    # 老用户全部重新配置一遍
     PRODUCT_BUNDLE_IDENTIFIER: com.deepseek.monitor.mac
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
     CODE_SIGNING_REQUIRED: "NO"
     CODE_SIGNING_ALLOWED: "NO"
     ENABLE_HARDENED_RUNTIME: "YES"
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
 targets:
-  DeepSeekMonitor:
+  TokenMeter:
     type: application
     platform: macOS
     sources:
@@ -27,16 +31,15 @@ targets:
     info:
       path: Sources/Info.plist
       properties:
-        CFBundleDisplayName: DeepSeek Monitor
-        CFBundleName: DeepSeekMonitor
-        CFBundleShortVersionString: "2.6.0"
+        CFBundleDisplayName: TokenMeter
+        CFBundleName: TokenMeter
+        CFBundleShortVersionString: "3.0.0"
         # 菜单栏应用：不进 Dock、不抢主菜单栏
         LSUIElement: true
         LSMinimumSystemVersion: "14.0"
         NSHumanReadableCopyright: "MIT License. Ported from DeepSeekMonitorWindows."
-        # 允许访问 DeepSeek HTTPS 接口（App Transport Security 默认即允许 HTTPS，此处留空表示用默认安全策略）
     entitlements:
-      path: Sources/DeepSeekMonitor.entitlements
+      path: Sources/TokenMeter.entitlements
       properties:
         # 非沙盒：需要访问 ~/Library/LaunchAgents 写自启 plist、读 WKWebView 缓存
         com.apple.security.app-sandbox: false

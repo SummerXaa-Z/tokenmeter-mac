@@ -253,7 +253,7 @@ struct SettingsView: View {
     }
 
     private var footer: some View {
-        Text("DeepSeek Monitor v\(Updater.currentVersion) · 凭据存于本机 Keychain")
+        Text("TokenMeter v\(Updater.currentVersion) · 凭据存于本机 Keychain")
             .font(.system(size: 10)).foregroundStyle(.tertiary)
             .frame(maxWidth: .infinity, alignment: .center)
     }

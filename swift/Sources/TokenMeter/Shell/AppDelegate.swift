@@ -117,10 +117,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 状态栏图标：用 SF Symbol 生成模板图，缺失则回退到文字
     private static func statusImage() -> NSImage? {
         if let img = NSImage(systemSymbolName: "gauge.with.dots.needle.50percent",
-                             accessibilityDescription: "DeepSeek Monitor") {
+                             accessibilityDescription: "TokenMeter") {
             return img
         }
-        return NSImage(systemSymbolName: "chart.bar.fill", accessibilityDescription: "DeepSeek Monitor")
+        return NSImage(systemSymbolName: "chart.bar.fill", accessibilityDescription: "TokenMeter")
     }
 
     @objc private func togglePopover(_ sender: NSStatusBarButton) {

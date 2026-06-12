@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-12 — v3.0.0 更名 TokenMeter + 全新图标
+
+- 项目更名：DeepSeek Monitor for macOS → **TokenMeter**。早已是 DeepSeek/Claude/Codex 多源监控，旧名不再准确。GitHub 仓库改为 `tokenmeter-mac`（旧地址自动重定向，老版本的更新检查不受影响）。
+- 新 app 图标：仪表盘风格，三段彩弧对应三个监控源（蓝/橙/绿），`scripts/gen-icon.py` 生成全尺寸 AppIcon 资源。
+- app/工程/scheme/源码目录统一改名 TokenMeter；dmg 命名改为 `TokenMeter_X.Y.Z_aarch64.dmg`。
+- **bundle ID 保持 `com.deepseek.monitor.mac` 不变**：UserDefaults 偏好、Keychain 授权、SMAppService 登录项都绑定它，改了会让老用户全部重新配置。签名证书同理沿用。
+- 升级注意：自动更新会把新 app 装到旧路径 `/Applications/DeepSeekMonitor.app`（路径无关紧要,显示名已是 TokenMeter）；手动安装新 dmg 后可删除旧 `DeepSeekMonitor.app`。
+
 ## 2026-06-12 — v2.6.0 周趋势对比 + Claude 日用量预警
 
 - **Claude 周趋势卡**：本周 vs 上周三行对比（Token/请求/输出），环比箭头（↑红=费用涨 / ↓绿=省，无基期显示 —）。扫描窗口从 7 天扩到 14 天（mtime 过滤起点 -13 天），新增 ClaudeWeekCompare；7 天柱图与模型/项目分布口径不变。

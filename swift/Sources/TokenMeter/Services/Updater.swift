@@ -19,7 +19,7 @@ final class Updater: ObservableObject {
 
     @Published var phase: Phase = .idle
 
-    static let repo = "SummerXaa-Z/DeepSeekMonitorMac"
+    static let repo = "SummerXaa-Z/tokenmeter-mac"
     private var pendingAsset: (version: String, url: URL)?
 
     static var currentVersion: String {
@@ -88,7 +88,7 @@ final class Updater: ObservableObject {
                 return
             }
             let dmg = FileManager.default.temporaryDirectory
-                .appendingPathComponent("DeepSeekMonitor-\(version).dmg")
+                .appendingPathComponent("TokenMeter-\(version).dmg")
             try? FileManager.default.removeItem(at: dmg)
             try FileManager.default.moveItem(at: tmp, to: dmg)
             phase = .installing
@@ -105,7 +105,7 @@ final class Updater: ObservableObject {
         let target = Bundle.main.bundlePath
         let script = """
         #!/bin/bash
-        for i in $(seq 1 40); do pgrep -x DeepSeekMonitor >/dev/null || break; sleep 0.5; done
+        for i in $(seq 1 40); do pgrep -x TokenMeter >/dev/null || break; sleep 0.5; done
         MOUNT=$(hdiutil attach -nobrowse -readonly "\(dmg.path)" | grep -o '/Volumes/.*' | head -1)
         [ -z "$MOUNT" ] && exit 1
         APP_SRC=$(find "$MOUNT" -maxdepth 1 -name "*.app" | head -1)
