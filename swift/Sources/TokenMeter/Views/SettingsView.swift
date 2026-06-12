@@ -99,6 +99,14 @@ struct SettingsView: View {
                     Text("未检测到 Codex 本地数据（~/.codex/sessions），开关不生效。")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
                 }
+                Toggle("Cursor（账户用量，经 cursor.com 查询）", isOn: Binding(
+                    get: { state.cursorEnabled },
+                    set: { state.setCursorEnabled($0) }))
+                    .disabled(!CursorUsage.isAvailable)
+                if !CursorUsage.isAvailable {
+                    Text("未检测到 Cursor 安装（无 state.vscdb），开关不生效。")
+                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                }
             }
         }
     }

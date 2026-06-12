@@ -66,6 +66,7 @@ final class ConfigStore {
         static let deepseekMonitor = "deepseekMonitorEnabled"
         static let claudeMonitor = "claudeMonitorEnabled"
         static let codexMonitor = "codexMonitorEnabled"
+        static let cursorMonitor = "cursorMonitorEnabled"
         static let claudeDailyTokenLimit = "claudeDailyTokenLimitM"
         static let autoUpdateCheck = "autoUpdateCheckEnabled"
         static let lastUpdateCheck = "lastUpdateCheckAt"
@@ -125,6 +126,11 @@ final class ConfigStore {
     var codexMonitorEnabled: Bool {
         get { defaults.object(forKey: DKey.codexMonitor) as? Bool ?? true }
         set { defaults.set(newValue, forKey: DKey.codexMonitor) }
+    }
+
+    var cursorMonitorEnabled: Bool {
+        get { defaults.object(forKey: DKey.cursorMonitor) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: DKey.cursorMonitor) }
     }
 
     // Claude 日用量预警阈值（单位百万 token）：0 = 关闭预警。

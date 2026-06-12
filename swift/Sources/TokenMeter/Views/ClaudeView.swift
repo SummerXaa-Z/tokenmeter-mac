@@ -6,6 +6,7 @@ import Charts
 struct ClaudeView: View {
     var onSettings: () -> Void
     @State private var result: ClaudeUsageResult?
+    @State private var proc = ProcessStatus.Snapshot(running: false, count: 0)
     @State private var loading = false
 
     var body: some View {
@@ -40,6 +41,7 @@ struct ClaudeView: View {
                 .foregroundStyle(Theme.claude)
             Text("Claude Monitor")
                 .font(.system(size: 15, weight: .bold))
+            RunningBadge(snapshot: proc)
             Spacer()
             iconButton("arrow.clockwise") { Task { await reload() } }
             iconButton("gearshape") { onSettings() }
@@ -59,6 +61,7 @@ struct ClaudeView: View {
 
     func reload() async {
         loading = true
+        proc = ProcessStatus.claude()
         let r = await Task.detached(priority: .userInitiated) { ClaudeUsage.load() }.value
         result = r
         loading = false

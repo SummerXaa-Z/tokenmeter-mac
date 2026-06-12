@@ -10,6 +10,7 @@ enum Theme {
     static let response = Color(hex: 0x8B5CF6)     // 输出
     static let codex = Color(hex: 0x10A37F)        // OpenAI 绿
     static let claude = Color(hex: 0xD97757)       // Anthropic 橙
+    static let cursor = Color(hex: 0x7C8AFF)       // Cursor 紫蓝
 
     static let panelWidth: CGFloat = 360
     static let panelHeight: CGFloat = 600

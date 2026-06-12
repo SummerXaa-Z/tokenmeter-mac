@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-12 — v3.1.0 Cursor 监控 + 运行状态徽标
+
+- **新增 Cursor 监控源**（Services/CursorUsage.swift + Views/CursorView.swift）：从本地 `state.vscdb`（SQLite）读登录 token，调 cursor.com 官方用量接口（与 Cursor 设置页同源）。展示账户/订阅计划、本月按模型请求数与配额进度条。token 只在本机读取、只发往 cursor.com；DB 被占用时拷贝副本读。登录过期给出可操作提示。
+- **运行状态徽标**（Services/ProcessStatus.swift）：Claude / Codex / Cursor 三个 tab 顶栏显示进程运行状态（绿点=运行中，CLI 多实例显示 ×N；灰点=未运行）。CLI 用 sysctl 扫进程表（不 fork 子进程），Cursor 用 NSWorkspace 查 GUI app。
+- 设置 → 监控源新增 Cursor 开关；Theme 新增 Cursor 紫蓝（0x7C8AFF）。
+- 注意：Cursor 数据可用性取决于 cursor.com 接口（非公开 API，可能随版本调整）。
+
 ## 2026-06-12 — v3.0.0 更名 TokenMeter + 全新图标
 
 - 项目更名：DeepSeek Monitor for macOS → **TokenMeter**。早已是 DeepSeek/Claude/Codex 多源监控，旧名不再准确。GitHub 仓库改为 `tokenmeter-mac`（旧地址自动重定向，老版本的更新检查不受影响）。

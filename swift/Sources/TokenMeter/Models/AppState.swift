@@ -15,6 +15,7 @@ final class AppState: ObservableObject {
     @Published var deepseekEnabled: Bool = true
     @Published var claudeEnabled: Bool = true
     @Published var codexEnabled: Bool = true
+    @Published var cursorEnabled: Bool = true
     @Published var claudeDailyLimitM: Int = 0
 
     private let store = ConfigStore.shared
@@ -26,6 +27,7 @@ final class AppState: ObservableObject {
         deepseekEnabled = store.deepseekMonitorEnabled
         claudeEnabled = store.claudeMonitorEnabled
         codexEnabled = store.codexMonitorEnabled
+        cursorEnabled = store.cursorMonitorEnabled
         claudeDailyLimitM = store.claudeDailyTokenLimitM
     }
 
@@ -145,6 +147,11 @@ final class AppState: ObservableObject {
     func setCodexEnabled(_ enabled: Bool) {
         store.codexMonitorEnabled = enabled
         codexEnabled = enabled
+    }
+
+    func setCursorEnabled(_ enabled: Bool) {
+        store.cursorMonitorEnabled = enabled
+        cursorEnabled = enabled
     }
 
     func setClaudeDailyLimit(_ limitM: Int) {

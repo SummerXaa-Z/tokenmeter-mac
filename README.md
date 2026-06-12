@@ -2,7 +2,7 @@
 
 > 原名 DeepSeek Monitor for macOS，v3.0 起更名。
 
-TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：DeepSeek API 余额与消费、Claude（Claude CLI 本地数据）与 Codex（Codex CLI 本地数据）的 Token 用量、订阅配额与趋势，多源一个面板切换查看。点击菜单栏图标，面板以原生 NSPopover 形式贴着图标下拉。
+TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：DeepSeek API 余额与消费、Claude（Claude CLI 本地数据）与 Codex（Codex CLI 本地数据）的 Token 用量、Cursor 账户用量、订阅配额与趋势，多源一个面板切换查看，并显示各工具的运行状态。点击菜单栏图标，面板以原生 NSPopover 形式贴着图标下拉。
 
 当前主版本为**原生 Swift 实现**（SwiftUI + AppKit），早期的 Tauri 2 + React + Rust 版本（v1.1.0）保留在 `tauri-version` 分支。
 
@@ -38,7 +38,13 @@ TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：DeepSeek A
 - 今日用量 + 近 7 天堆叠柱图；跨天 session 按事件时间戳正确归因到天。
 - 低配额菜单栏预警：剩余 ≤30% 图标变橙、≤10% 变红，后台定时刷新，不点开面板也能看见。
 
+### Cursor
+- 从本地登录态读取 token，查询 cursor.com 官方用量接口（与 Cursor 设置页同源数据）。
+- 账户与订阅计划、本月按模型请求数、配额进度条。
+- token 只在本机读取、只发往 cursor.com，不经任何第三方。
+
 ### 通用
+- Claude / Codex / Cursor tab 顶栏显示工具运行状态（绿点运行中 / 灰点未运行）。
 - 多源顶部切换栏；未安装对应工具的 tab 自动隐藏，设置里也可手动关闭任意监控源。
 - 常驻菜单栏（状态栏）图标，点击下拉面板；应用不占用 Dock（`LSUIElement`）。
 - 自动更新：每日自动检查 GitHub Releases（可关），发现新版确认后自动下载、替换、重启；设置页也可手动检查。
@@ -49,7 +55,7 @@ TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：DeepSeek A
 
 ### 隐私说明
 
-Claude / Codex 监控只读取本机已有的 CLI 会话文件做统计，**不上传任何数据**；唯一的网络请求是 DeepSeek 官方接口（余额/用量）与 GitHub Releases（检查更新，可关闭）。
+Claude / Codex 监控只读取本机已有的 CLI 会话文件做统计，**不上传任何数据**。网络请求仅有三类：DeepSeek 官方接口（余额/用量）、cursor.com 官方用量接口（仅启用 Cursor 监控时，凭据为本机已有登录态）、GitHub Releases（检查更新，可关闭）。
 
 ## 技术架构
 
@@ -136,4 +142,4 @@ MIT License，与上游保持一致。详见 [LICENSE](LICENSE)。
 
 ## 免责声明
 
-本项目仅用于学习和研究目的。请遵守 DeepSeek 的使用条款，合理使用相关接口。DeepSeek 平台页面结构、登录状态和内部用量接口都可能变化；Claude CLI / Codex CLI 的本地会话文件格式亦可能随版本调整，本项目不保证长期可用。**API Key 和用量 Token 属于敏感凭据，使用者自行承担本机存储、账号安全、网络请求和数据展示带来的风险。**
+本项目仅用于学习和研究目的。请遵守 DeepSeek 的使用条款，合理使用相关接口。DeepSeek 平台页面结构、登录状态和内部用量接口都可能变化；Claude CLI / Codex CLI 的本地会话文件格式、Cursor 的本地登录态与用量接口亦可能随版本调整，本项目不保证长期可用。**API Key 和用量 Token 属于敏感凭据，使用者自行承担本机存储、账号安全、网络请求和数据展示带来的风险。**

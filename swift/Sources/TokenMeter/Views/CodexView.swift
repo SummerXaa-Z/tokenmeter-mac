@@ -6,6 +6,7 @@ import Charts
 struct CodexView: View {
     var onSettings: () -> Void
     @State private var result: CodexUsageResult?
+    @State private var proc = ProcessStatus.Snapshot(running: false, count: 0)
     @State private var loading = false
 
     var body: some View {
@@ -37,6 +38,7 @@ struct CodexView: View {
                 .foregroundStyle(Theme.codex)
             Text("Codex Monitor")
                 .font(.system(size: 15, weight: .bold))
+            RunningBadge(snapshot: proc)
             Spacer()
             iconButton("arrow.clockwise") { Task { await reload() } }
             iconButton("gearshape") { onSettings() }
@@ -56,6 +58,7 @@ struct CodexView: View {
 
     func reload() async {
         loading = true
+        proc = ProcessStatus.codex()
         let r = await Task.detached(priority: .userInitiated) { CodexUsage.load() }.value
         result = r
         loading = false

@@ -11,6 +11,7 @@ enum Provider: String, CaseIterable, Identifiable {
     case deepseek = "DeepSeek"
     case claude = "Claude"
     case codex = "Codex"
+    case cursor = "Cursor"
     var id: String { rawValue }
 
     // 没装对应工具就不显示该 tab
@@ -19,6 +20,7 @@ enum Provider: String, CaseIterable, Identifiable {
         case .deepseek: return true
         case .claude: return ClaudeUsage.isAvailable
         case .codex: return CodexUsage.isAvailable
+        case .cursor: return CursorUsage.isAvailable
         }
     }
 }
@@ -36,6 +38,7 @@ struct RootView: View {
             case .deepseek: return state.deepseekEnabled
             case .claude: return state.claudeEnabled
             case .codex: return state.codexEnabled
+            case .cursor: return state.cursorEnabled
             }
         }
     }
@@ -61,6 +64,8 @@ struct RootView: View {
                             ClaudeView(onSettings: { view = .settings })
                         case .codex:
                             CodexView(onSettings: { view = .settings })
+                        case .cursor:
+                            CursorView(onSettings: { view = .settings })
                         }
                     }
                 case .settings:
