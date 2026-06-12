@@ -26,6 +26,23 @@ extension Color {
     }
 }
 
+import Charts
+
+// 所有 token 数量图表共用的 Y 轴：tokensShort 格式（30M / 1.2B），
+// 替代 Swift Charts 默认的 3.0E7 科学计数法
+extension View {
+    func tokenYAxis() -> some View {
+        chartYAxis {
+            AxisMarks { v in
+                AxisGridLine()
+                AxisValueLabel {
+                    if let n = v.as(Int.self) { Text(Fmt.tokensShort(n)) }
+                }
+            }
+        }
+    }
+}
+
 // 卡片容器：原生材质背景 + 圆角，替代 Tauri 版的玻璃拟态自绘
 struct Card<Content: View>: View {
     @ViewBuilder var content: Content

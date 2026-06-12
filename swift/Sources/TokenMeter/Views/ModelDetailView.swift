@@ -52,6 +52,7 @@ struct ModelDetailView: View {
                                 .foregroundStyle(accent)
                                 .cornerRadius(3)
                         }
+                        .tokenYAxis()
                         .frame(height: 160)
                     }
                 }

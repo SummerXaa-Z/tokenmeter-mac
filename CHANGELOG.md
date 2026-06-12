@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-13 — v3.5.1 全部图表 Y 轴统一可读格式
+
+- 新增共享修饰符 `tokenYAxis()`（Theme.swift），全部 6 张 token 图表的 Y 轴统一为 tokensShort 格式（2.6K / 30M / 1218M），替代 Swift Charts 默认的 3.0E7 科学计数法。
+- 覆盖：Claude/Codex 各自的分时图与 7 天堆叠图、DeepSeek 7 天缓存图（保留 leading 位置）、模型详情页柱图。
+
 ## 2026-06-12 — v3.5.0 Codex 配额实时化（官方接口）
 
 - 根治「配额数据停在几小时前」：本地 session 快照是被动数据，只有对应通道发生请求才落盘；切到灰度模型后订阅配额通道整段时间无新事件。改为刷新时调 ChatGPT 官方 `wham/usage` 接口（Codex 客户端同源），实时返回全通道配额。

@@ -209,7 +209,14 @@ struct UsageChartCard: View {
             "命中": Theme.hit, "未命中": Theme.miss, "输出": Theme.response,
         ])
         .chartLegend(position: .bottom, spacing: 6)
-        .chartYAxis { AxisMarks(position: .leading) }
+        .chartYAxis {
+            AxisMarks(position: .leading) { v in
+                AxisGridLine()
+                AxisValueLabel {
+                    if let n = v.as(Int.self) { Text(Fmt.tokensShort(n)) }
+                }
+            }
+        }
         .frame(height: 150)
     }
 }

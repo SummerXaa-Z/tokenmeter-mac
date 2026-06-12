@@ -118,14 +118,7 @@ struct ClaudeView: View {
                         }
                     }
                 }
-                .chartYAxis {
-                    AxisMarks { v in
-                        AxisGridLine()
-                        AxisValueLabel {
-                            if let n = v.as(Int.self) { Text(Fmt.tokensShort(n)) }
-                        }
-                    }
-                }
+                .tokenYAxis()
                 .frame(height: 70)
             }
         }
@@ -160,6 +153,7 @@ struct ClaudeView: View {
                     "新输入": Theme.miss, "输出": Theme.response,
                 ])
                 .chartLegend(position: .bottom, spacing: 4)
+                .tokenYAxis()
                 .frame(height: 150)
             }
         }

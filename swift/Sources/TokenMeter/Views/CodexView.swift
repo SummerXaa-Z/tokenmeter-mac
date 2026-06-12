@@ -190,6 +190,7 @@ struct CodexView: View {
                     "缓存输入": Theme.hit, "新输入": Theme.miss, "输出": Theme.response,
                 ])
                 .chartLegend(position: .bottom, spacing: 4)
+                .tokenYAxis()
                 .frame(height: 150)
             }
         }
@@ -214,14 +215,7 @@ struct CodexView: View {
                         }
                     }
                 }
-                .chartYAxis {
-                    AxisMarks { v in
-                        AxisGridLine()
-                        AxisValueLabel {
-                            if let n = v.as(Int.self) { Text(Fmt.tokensShort(n)) }
-                        }
-                    }
-                }
+                .tokenYAxis()
                 .frame(height: 70)
             }
         }
