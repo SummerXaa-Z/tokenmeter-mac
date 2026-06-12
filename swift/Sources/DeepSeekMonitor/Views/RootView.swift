@@ -51,8 +51,9 @@ struct RootView: View {
                     ModelDetailView(modelKey: key, onBack: { view = .dashboard })
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(width: Theme.panelWidth, height: Theme.panelHeight)
+        .frame(width: Theme.panelWidth, height: Theme.panelHeight, alignment: .top)
         .background(.regularMaterial)
     }
 

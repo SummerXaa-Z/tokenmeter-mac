@@ -1,9 +1,16 @@
 import Foundation
 
 // Codex CLI 用量解析：纯本地读 ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl，
-// 零网络、零凭据。每个 session 文件的最后一条 token_count 事件携带
-// 该 session 的累计 token 用量与账号级 rate_limits（5 小时窗 + 周窗使用率）。
-// 单文件可达数百 MB，只从尾部分块倒读，绝不全量加载。
+// 零网络、零凭据。
+//
+// 归因口径：session 文件里每条 token_count 事件带累计 total_token_usage，
+// 用相邻事件的差值（cumulative diff）归到事件时间戳当天。跨天 session
+// 的用量会正确拆分到各天，而不是全记到 session 开始日。
+// 配额 rate_limits 取全部事件中时间戳最新的一条。
+//
+// 单文件可达数百 MB，顺序分块流式扫描（8MB chunk），只解码含
+// token_count 标记的行；按 (size, mtime) 做内存级缓存，刷新时未变的
+// 文件不重扫。
 
 struct CodexRateWindow: Equatable {
     let usedPercent: Double
@@ -52,7 +59,8 @@ enum CodexUsage {
         FileManager.default.fileExists(atPath: sessionsDir.path)
     }
 
-    // 解码 token_count 事件需要的字段（其余忽略）
+    // MARK: - JSONL 事件解码（只取需要的字段）
+
     private struct Event: Decodable {
         let timestamp: String?
         let payload: Payload?
@@ -67,8 +75,10 @@ enum CodexUsage {
         }
         struct Info: Decodable {
             let totalTokenUsage: TokenUsage?
+            let lastTokenUsage: TokenUsage?
             enum CodingKeys: String, CodingKey {
                 case totalTokenUsage = "total_token_usage"
+                case lastTokenUsage = "last_token_usage"
             }
         }
         struct TokenUsage: Decodable {
@@ -106,99 +116,168 @@ enum CodexUsage {
         }
     }
 
-    // 扫最近 7 天目录，聚合每日用量；rate_limits 取 mtime 最新文件里的那条
+    // MARK: - 单文件扫描结果与缓存
+
+    private struct Tally: Equatable {
+        var input = 0, cached = 0, output = 0, reasoning = 0, total = 0
+    }
+
+    private struct FileSummary {
+        let size: UInt64
+        let mtime: Date
+        let perDay: [String: Tally]
+        let lastRateLimits: (asOf: Date, limits: CodexRateLimits)?
+    }
+
+    // 内存级缓存：app 存续期内，未变的文件不重扫
+    private static var cache: [String: FileSummary] = [:]
+    private static let cacheLock = NSLock()
+
+    // MARK: - 入口
+
+    // 扫最近 10 天目录（跨天 session 的事件可能落进 7 天窗），聚合最近 7 天
     static func load() -> CodexUsageResult {
         let fm = FileManager.default
         let now = Date()
         var dayMap: [String: CodexDayUsage] = [:]
-        var latestLimits: (mtime: Date, limits: CodexRateLimits)?
+        let window: Set<String> = Set((0..<7).map { DateUtil.key(DateUtil.addDays(now, -$0)) })
+        for key in window { dayMap[key] = CodexDayUsage(date: key) }
 
-        for offset in (0..<7).reversed() {
+        var newestLimits: (asOf: Date, limits: CodexRateLimits)?
+
+        for offset in 0..<10 {
             let day = DateUtil.addDays(now, -offset)
-            let key = DateUtil.key(day)
-            dayMap[key] = CodexDayUsage(date: key)
-
-            let parts = key.split(separator: "-")
+            let parts = DateUtil.key(day).split(separator: "-")
             let dir = sessionsDir
                 .appendingPathComponent(String(parts[0]))
                 .appendingPathComponent(String(parts[1]))
                 .appendingPathComponent(String(parts[2]))
             guard let files = try? fm.contentsOfDirectory(
-                at: dir, includingPropertiesForKeys: [.contentModificationDateKey]) else { continue }
+                at: dir, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey])
+            else { continue }
 
             for file in files where file.pathExtension == "jsonl" {
-                guard let event = lastTokenCountEvent(in: file) else { continue }
-                if let usage = event.payload?.info?.totalTokenUsage {
-                    var d = dayMap[key] ?? CodexDayUsage(date: key)
-                    d.inputTokens += usage.inputTokens ?? 0
-                    d.cachedInputTokens += usage.cachedInputTokens ?? 0
-                    d.outputTokens += usage.outputTokens ?? 0
-                    d.reasoningTokens += usage.reasoningOutputTokens ?? 0
-                    d.totalTokens += usage.totalTokens ?? 0
+                let summary = summarize(file)
+                for (date, t) in summary.perDay where window.contains(date) {
+                    var d = dayMap[date] ?? CodexDayUsage(date: date)
+                    d.inputTokens += t.input
+                    d.cachedInputTokens += t.cached
+                    d.outputTokens += t.output
+                    d.reasoningTokens += t.reasoning
+                    d.totalTokens += t.total
                     d.sessionCount += 1
-                    dayMap[key] = d
+                    dayMap[date] = d
                 }
-                if let rl = event.payload?.rateLimits {
-                    let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey])
-                        .contentModificationDate) ?? .distantPast
-                    if latestLimits == nil || mtime > latestLimits!.mtime {
-                        let asOf = event.timestamp.flatMap { ISO8601DateFormatter.codex.date(from: $0) } ?? mtime
-                        latestLimits = (mtime, CodexRateLimits(
-                            primary: rl.primary.flatMap(window),
-                            secondary: rl.secondary.flatMap(window),
-                            planType: rl.planType,
-                            asOf: asOf))
-                    }
+                if let rl = summary.lastRateLimits,
+                   newestLimits == nil || rl.asOf > newestLimits!.asOf {
+                    newestLimits = rl
                 }
             }
         }
 
         let days = dayMap.values.sorted { $0.date < $1.date }
-        return CodexUsageResult(rateLimits: latestLimits?.limits, days: days)
+        return CodexUsageResult(rateLimits: newestLimits?.limits, days: days)
+    }
+
+    // MARK: - 单文件流式扫描（带缓存）
+
+    private static func summarize(_ file: URL) -> FileSummary {
+        let attrs = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        let size = UInt64(attrs?.fileSize ?? 0)
+        let mtime = attrs?.contentModificationDate ?? .distantPast
+
+        cacheLock.lock()
+        let hit = cache[file.path]
+        cacheLock.unlock()
+        if let hit, hit.size == size, hit.mtime == mtime { return hit }
+
+        let summary = scan(file, size: size, mtime: mtime)
+        cacheLock.lock()
+        cache[file.path] = summary
+        cacheLock.unlock()
+        return summary
+    }
+
+    private static func scan(_ file: URL, size: UInt64, mtime: Date) -> FileSummary {
+        let empty = FileSummary(size: size, mtime: mtime, perDay: [:], lastRateLimits: nil)
+        guard let handle = try? FileHandle(forReadingFrom: file) else { return empty }
+        defer { try? handle.close() }
+
+        let marker = Data("\"token_count\"".utf8)
+        let newline = UInt8(ascii: "\n")
+        let chunkSize = 8 * 1024 * 1024
+        let decoder = JSONDecoder()
+
+        var perDay: [String: Tally] = [:]
+        var lastRL: (asOf: Date, limits: CodexRateLimits)?
+        var prevTotal: Event.TokenUsage?
+        var carry = Data()   // chunk 边界上的半行
+
+        while let chunk = try? handle.read(upToCount: chunkSize), !chunk.isEmpty {
+            var data: Data
+            if carry.isEmpty { data = chunk } else { data = carry + chunk; carry = Data() }
+
+            var lineStart = data.startIndex
+            while lineStart < data.endIndex {
+                guard let nl = data[lineStart...].firstIndex(of: newline) else {
+                    carry = data[lineStart...]   // 行未结束，留到下个 chunk
+                    break
+                }
+                let line = data[lineStart..<nl]
+                lineStart = data.index(after: nl)
+                guard line.range(of: marker) != nil,
+                      let event = try? decoder.decode(Event.self, from: line),
+                      event.payload?.type == "token_count" else { continue }
+
+                let ts = event.timestamp.flatMap { ISO8601DateFormatter.codex.date(from: $0) }
+
+                if let cur = event.payload?.info?.totalTokenUsage, let ts {
+                    let day = DateUtil.key(ts)
+                    var t = perDay[day] ?? Tally()
+                    // 累计值差分；累计变小说明 session 内部重置，退回单轮值
+                    let d = delta(cur, prevTotal, fallback: event.payload?.info?.lastTokenUsage)
+                    t.input += d.input; t.cached += d.cached
+                    t.output += d.output; t.reasoning += d.reasoning; t.total += d.total
+                    perDay[day] = t
+                    prevTotal = cur
+                }
+
+                if let rl = event.payload?.rateLimits, let ts {
+                    if lastRL == nil || ts > lastRL!.asOf {
+                        lastRL = (ts, CodexRateLimits(
+                            primary: rl.primary.flatMap(window),
+                            secondary: rl.secondary.flatMap(window),
+                            planType: rl.planType,
+                            asOf: ts))
+                    }
+                }
+            }
+        }
+        return FileSummary(size: size, mtime: mtime, perDay: perDay, lastRateLimits: lastRL)
+    }
+
+    private static func delta(_ cur: Event.TokenUsage, _ prev: Event.TokenUsage?,
+                              fallback: Event.TokenUsage?) -> Tally {
+        let curTotal = cur.totalTokens ?? 0
+        if let prev, curTotal < (prev.totalTokens ?? 0) {
+            // 累计被重置（如 compaction），用本轮用量兜底
+            let f = fallback ?? cur
+            return Tally(input: f.inputTokens ?? 0, cached: f.cachedInputTokens ?? 0,
+                         output: f.outputTokens ?? 0, reasoning: f.reasoningOutputTokens ?? 0,
+                         total: f.totalTokens ?? 0)
+        }
+        return Tally(
+            input: max((cur.inputTokens ?? 0) - (prev?.inputTokens ?? 0), 0),
+            cached: max((cur.cachedInputTokens ?? 0) - (prev?.cachedInputTokens ?? 0), 0),
+            output: max((cur.outputTokens ?? 0) - (prev?.outputTokens ?? 0), 0),
+            reasoning: max((cur.reasoningOutputTokens ?? 0) - (prev?.reasoningOutputTokens ?? 0), 0),
+            total: max(curTotal - (prev?.totalTokens ?? 0), 0))
     }
 
     private static func window(_ w: Event.Window) -> CodexRateWindow? {
         guard let pct = w.usedPercent, let minutes = w.windowMinutes else { return nil }
         let resets = Date(timeIntervalSince1970: w.resetsAt ?? 0)
         return CodexRateWindow(usedPercent: pct, windowMinutes: minutes, resetsAt: resets)
-    }
-
-    // 从文件尾部分块倒读，找最后一条 token_count 事件。
-    // 尾部 256KB 通常够（token_count 每轮都发）；遇到超大工具输出再扩到 2MB。
-    private static func lastTokenCountEvent(in file: URL) -> Event? {
-        guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
-        defer { try? handle.close() }
-        let size = (try? handle.seekToEnd()) ?? 0
-
-        for chunkSize in [UInt64(256 * 1024), UInt64(2 * 1024 * 1024)] {
-            let offset = size > chunkSize ? size - chunkSize : 0
-            try? handle.seek(toOffset: offset)
-            guard let data = try? handle.readToEnd(), !data.isEmpty else { return nil }
-            if let event = parseLastTokenCount(data) { return event }
-            if offset == 0 { break }   // 已读到文件头，没有就是没有
-        }
-        return nil
-    }
-
-    private static func parseLastTokenCount(_ data: Data) -> Event? {
-        let marker = Data("\"token_count\"".utf8)
-        let newline = UInt8(ascii: "\n")
-        var lineEnd = data.endIndex
-        var idx = data.endIndex
-        let decoder = JSONDecoder()
-        // 从后往前按行扫，第一条含 token_count 的合法 JSON 即结果
-        while idx > data.startIndex {
-            idx = data[..<lineEnd].lastIndex(of: newline).map { data.index(after: $0) } ?? data.startIndex
-            let line = data[idx..<lineEnd]
-            if line.range(of: marker) != nil,
-               let event = try? decoder.decode(Event.self, from: line),
-               event.payload?.type == "token_count" {
-                return event
-            }
-            if idx == data.startIndex { break }
-            lineEnd = data.index(before: idx)
-        }
-        return nil
     }
 }
 

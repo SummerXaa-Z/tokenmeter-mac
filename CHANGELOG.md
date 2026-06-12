@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-06-12 — v2.1.1 修复：切换栏跳位 + Codex 归因口径
+
+- 修切换标签时标签栏上下跳位：两个 tab 内容高度不同，外层 frame 默认居中对齐导致整体浮动；改为顶对齐（RootView frame alignment: .top）。
+- 修 Codex 用量归因不准：
+  - 旧逻辑只取每个 session 文件最后一条 token_count 的累计值，全记到 session 开始日 → 跨天 session（如 6/10 启动、6/11 还在用）的量全算到 6/10。
+  - 新逻辑全文件流式扫描，相邻 token_count 事件做累计差分，按事件时间戳归到实际发生日；累计值回退（compaction）时用 last_token_usage 兜底。
+  - 配额 rate_limits 改取全部事件中时间戳最新的一条（旧逻辑按文件 mtime 选文件，再取该文件尾部，可能漏掉别的文件里更新的）。
+  - 扫描窗口从 7 天目录扩到 10 天目录（跨天 session 的事件可能落进 7 天窗）。
+  - 性能：8MB chunk 流式读 + 按 (size, mtime) 内存缓存，未变文件刷新时不重扫；与 Python 独立实现交叉验证数字一致。
+
 ## 2026-06-12 — v2.1.0 多源监控：顶部切换栏 + Codex 用量
 
 - 面板顶部新增 segmented 切换栏，可在 DeepSeek / Codex 间切换；未安装 Codex CLI（无 ~/.codex/sessions）时不显示该 tab，单 tab 时切换栏隐藏。
