@@ -70,3 +70,4 @@ swift/build/
 swift/DerivedData/
 swift/*.xcodeproj/xcuserdata/
 *.xcuserstate
+*.xcodeproj/xcuserdata/
