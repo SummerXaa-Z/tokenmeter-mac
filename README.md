@@ -58,7 +58,7 @@ TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：DeepSeek A
 
 ### 隐私说明
 
-Claude / Codex 监控只读取本机已有的 CLI 会话文件做统计，**不上传任何数据**。网络请求仅有三类：DeepSeek 官方接口（余额/用量）、cursor.com 官方用量接口（仅启用 Cursor 监控时，凭据为本机已有登录态）、GitHub Releases（检查更新，可关闭）。
+Claude / Codex 用量统计只读取本机已有的 CLI 会话文件，**不上传任何数据**。网络请求仅有四类：DeepSeek 官方接口（余额/用量）、ChatGPT 官方接口（Codex 实时配额，凭据为本机 Codex 登录态）、cursor.com 官方用量接口（仅启用 Cursor 监控时，凭据为本机已有登录态）、GitHub Releases（检查更新，可关闭）。
 
 ## 技术架构
 

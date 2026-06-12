@@ -67,7 +67,15 @@ struct CodexView: View {
     func reload() async {
         loading = true
         proc = ProcessStatus.codex()
-        let r = await Task.detached(priority: .userInitiated) { CodexUsage.load() }.value
+        // 本地扫描与官方实时配额并行；实时拿到就替换配额卡（用量统计仍是本地）
+        async let local = Task.detached(priority: .userInitiated) { CodexUsage.load() }.value
+        async let live = CodexUsage.fetchLiveRateLimits()
+        var r = await local
+        if let liveLimits = await live {
+            r = CodexUsageResult(rateLimits: liveLimits.first, allRateLimits: liveLimits,
+                                 days: r.days, models: r.models,
+                                 projects: r.projects, todayHours: r.todayHours)
+        }
         result = r
         loading = false
     }

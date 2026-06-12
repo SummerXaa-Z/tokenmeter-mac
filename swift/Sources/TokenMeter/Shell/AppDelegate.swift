@@ -93,7 +93,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             if codexOn || codexQuotaInfoOn || codexTotalInfoOn {
                 let codexResult = CodexUsage.load()
-                let limits = codexResult.rateLimits
+                // 预警优先用官方实时配额（本地快照在灰度通道期间会停更）
+                let limits = await CodexUsage.fetchLiveRateLimits()?.first ?? codexResult.rateLimits
                 let worstUsed = max(limits?.primary?.usedPercent ?? 0,
                                     limits?.secondary?.usedPercent ?? 0)
                 let remaining = 100 - worstUsed

@@ -381,6 +381,108 @@ enum CodexUsage {
         let resets = Date(timeIntervalSince1970: w.resetsAt ?? 0)
         return CodexRateWindow(usedPercent: pct, windowMinutes: minutes, resetsAt: resets)
     }
+
+    // MARK: - 实时配额（官方接口）
+
+    // 本地快照是被动的：只有对应通道发生请求才落盘，切灰度模型后订阅配额
+    // 可能数小时不更新。官方 wham/usage 接口返回全通道实时配额，凭据复用
+    // Codex CLI 自己维护的 ~/.codex/auth.json（只读，过期由 CLI 刷新）。
+    private struct AuthFile: Decodable {
+        let tokens: Tokens?
+        struct Tokens: Decodable {
+            let accessToken: String?
+            let accountId: String?
+            enum CodingKeys: String, CodingKey {
+                case accessToken = "access_token"
+                case accountId = "account_id"
+            }
+        }
+    }
+
+    private struct WhamUsage: Decodable {
+        let planType: String?
+        let rateLimit: WhamRateLimit?
+        let additionalRateLimits: [WhamAdditional]?
+        enum CodingKeys: String, CodingKey {
+            case planType = "plan_type"
+            case rateLimit = "rate_limit"
+            case additionalRateLimits = "additional_rate_limits"
+        }
+        struct WhamAdditional: Decodable {
+            let limitName: String?
+            let meteredFeature: String?
+            let rateLimit: WhamRateLimit?
+            enum CodingKeys: String, CodingKey {
+                case limitName = "limit_name"
+                case meteredFeature = "metered_feature"
+                case rateLimit = "rate_limit"
+            }
+        }
+        struct WhamRateLimit: Decodable {
+            let primaryWindow: WhamWindow?
+            let secondaryWindow: WhamWindow?
+            enum CodingKeys: String, CodingKey {
+                case primaryWindow = "primary_window"
+                case secondaryWindow = "secondary_window"
+            }
+        }
+        struct WhamWindow: Decodable {
+            let usedPercent: Double?
+            let limitWindowSeconds: Int?
+            let resetAt: Double?
+            enum CodingKeys: String, CodingKey {
+                case usedPercent = "used_percent"
+                case limitWindowSeconds = "limit_window_seconds"
+                case resetAt = "reset_at"
+            }
+        }
+    }
+
+    private static func whamWindow(_ w: WhamUsage.WhamWindow?) -> CodexRateWindow? {
+        guard let w, let pct = w.usedPercent, let secs = w.limitWindowSeconds else { return nil }
+        return CodexRateWindow(usedPercent: pct, windowMinutes: secs / 60,
+                               resetsAt: Date(timeIntervalSince1970: w.resetAt ?? 0))
+    }
+
+    // 失败（无凭据/过期/网络）返回 nil，调用方回退本地快照
+    static func fetchLiveRateLimits() async -> [CodexRateLimits]? {
+        let authURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/auth.json")
+        guard let authData = try? Data(contentsOf: authURL),
+              let auth = try? JSONDecoder().decode(AuthFile.self, from: authData),
+              let token = auth.tokens?.accessToken, !token.isEmpty else { return nil }
+
+        var req = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/usage")!,
+                             timeoutInterval: 15)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let acct = auth.tokens?.accountId {
+            req.setValue(acct, forHTTPHeaderField: "chatgpt-account-id")
+        }
+        req.setValue("codex-cli", forHTTPHeaderField: "User-Agent")
+
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              (resp as? HTTPURLResponse)?.statusCode == 200,
+              let usage = try? JSONDecoder().decode(WhamUsage.self, from: data) else { return nil }
+
+        let now = Date()
+        var out: [CodexRateLimits] = []
+        if let rl = usage.rateLimit {
+            out.append(CodexRateLimits(
+                limitId: "codex", limitName: nil,
+                primary: whamWindow(rl.primaryWindow),
+                secondary: whamWindow(rl.secondaryWindow),
+                planType: usage.planType, asOf: now))
+        }
+        for extra in usage.additionalRateLimits ?? [] {
+            guard let rl = extra.rateLimit else { continue }
+            out.append(CodexRateLimits(
+                limitId: extra.meteredFeature, limitName: extra.limitName,
+                primary: whamWindow(rl.primaryWindow),
+                secondary: whamWindow(rl.secondaryWindow),
+                planType: usage.planType, asOf: now))
+        }
+        return out.isEmpty ? nil : out
+    }
 }
 
 private extension ISO8601DateFormatter {
