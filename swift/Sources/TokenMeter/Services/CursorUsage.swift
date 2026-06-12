@@ -6,7 +6,6 @@ import SQLite3
 //
 // 与 Claude/Codex 纯本地不同，这里有网络请求；token 只在本机读取、
 // 只发往 cursor.com，不落任何中间存储。
-// DB 可能被 Cursor 进程锁住，先拷贝到临时目录再读。
 
 struct CursorModelUsage: Equatable, Identifiable {
     let model: String
@@ -58,14 +57,11 @@ enum CursorUsage {
     }
 
     private static func readCredential() throws -> Credential {
-        // Cursor 运行中会持有 DB 锁，拷贝副本读，读完即删
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("tokenmeter-cursor-\(UUID().uuidString).vscdb")
-        try FileManager.default.copyItem(at: stateDB, to: tmp)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-
+        // 直接只读打开原库：库是 WAL 模式（支持并发读），且单文件 4GB+，
+        // 拷贝既慢又会丢 -wal 未合并页（拷出的副本缺 WAL 直接打不开——
+        // prepare 报 SQLITE_CANTOPEN，v3.1.0 的"未找到登录信息"就是这么来的）
         var db: OpaquePointer?
-        guard sqlite3_open_v2(tmp.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+        guard sqlite3_open_v2(stateDB.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
             throw CursorUsageError.noToken
         }
         defer { sqlite3_close(db) }

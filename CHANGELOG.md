@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-12 — v3.1.1 修复：Cursor 登录信息读取失败
+
+- 根因：state.vscdb 是 WAL 模式且体积可达数 GB,v3.1.0 的"拷贝副本再读"丢掉 -wal 未合并页,拷出的副本 prepare 报 SQLITE_CANTOPEN,面板误报"未找到 Cursor 登录信息"。
+- 修复：直接以只读方式打开原库(WAL 支持并发读,无锁冲突),不再拷贝。
+
 ## 2026-06-12 — v3.1.0 Cursor 监控 + 运行状态徽标
 
 - **新增 Cursor 监控源**（Services/CursorUsage.swift + Views/CursorView.swift）：从本地 `state.vscdb`（SQLite）读登录 token，调 cursor.com 官方用量接口（与 Cursor 设置页同源）。展示账户/订阅计划、本月按模型请求数与配额进度条。token 只在本机读取、只发往 cursor.com；DB 被占用时拷贝副本读。登录过期给出可操作提示。
