@@ -15,6 +15,7 @@ struct CursorView: View {
                 header
                 if let r = result {
                     accountCard(r)
+                    summaryCard(r)
                     modelsCard(r)
                 } else if loading {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
@@ -96,6 +97,30 @@ struct CursorView: View {
         }
     }
 
+    // MARK: - 本月汇总
+    private func summaryCard(_ r: CursorUsageResult) -> some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("本月用量", systemImage: "sum")
+                    .font(.system(size: 12, weight: .semibold))
+                HStack(spacing: 0) {
+                    stat("Token", Fmt.tokensShort(r.totalTokens))
+                    stat("输出", Fmt.tokensShort(r.totalOutputTokens))
+                    stat("缓存命中", r.cacheHitRate.map { String(format: "%.0f%%", $0) } ?? "—")
+                    stat("费用", String(format: "$%.2f", r.totalCostCents / 100))
+                }
+            }
+        }
+    }
+
+    private func stat(_ title: String, _ value: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value).font(.system(size: 14, weight: .semibold, design: .rounded))
+            Text(title).font(.system(size: 9)).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     // MARK: - 模型用量
     private func modelsCard(_ r: CursorUsageResult) -> some View {
         Card {
@@ -114,9 +139,11 @@ struct CursorView: View {
                                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                                     .lineLimit(1).truncationMode(.middle)
                                 Spacer()
-                                Text("\(Fmt.tokensShort(m.totalTokens)) · $\(String(format: "%.2f", m.costCents / 100))")
+                                Text("$\(String(format: "%.2f", m.costCents / 100))")
                                     .font(.system(size: 10)).foregroundStyle(.secondary)
                             }
+                            Text("输入 \(Fmt.tokensShort(m.inputTokens)) · 输出 \(Fmt.tokensShort(m.outputTokens)) · 缓存 \(Fmt.tokensShort(m.cacheReadTokens))")
+                                .font(.system(size: 9)).foregroundStyle(.tertiary)
                             ProgressView(value: m.costCents, total: maxCost)
                                 .tint(Theme.cursor)
                         }

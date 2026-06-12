@@ -28,6 +28,15 @@ struct CursorUsageResult: Equatable {
     let models: [CursorModelUsage]
     let totalCostCents: Double
     var totalTokens: Int { models.reduce(0) { $0 + $1.totalTokens } }
+    var totalInputTokens: Int { models.reduce(0) { $0 + $1.inputTokens } }
+    var totalOutputTokens: Int { models.reduce(0) { $0 + $1.outputTokens } }
+    var totalCacheReadTokens: Int { models.reduce(0) { $0 + $1.cacheReadTokens } }
+    // 缓存读取占输入侧比例，与 Claude/Codex 口径一致
+    var cacheHitRate: Double? {
+        let allInput = totalInputTokens + totalCacheReadTokens
+        guard allInput > 0 else { return nil }
+        return Double(totalCacheReadTokens) / Double(allInput) * 100
+    }
 }
 
 enum CursorUsageError: LocalizedError {

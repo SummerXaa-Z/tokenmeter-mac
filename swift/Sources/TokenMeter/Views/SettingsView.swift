@@ -109,13 +109,14 @@ struct SettingsView: View {
                 }
                 Divider()
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("菜单栏图标旁显示")
+                    Text("菜单栏图标旁显示（今日合计 = Claude + Codex 本地统计）")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                     Picker("", selection: Binding(
                         get: { state.menubarInfoMode },
                         set: { state.setMenubarInfoMode($0) })) {
                         Text("不显示").tag("off")
-                        Text("Claude 今日").tag("claude")
+                        Text("今日合计").tag("total")
+                        Text("Claude").tag("claude")
                         Text("Codex 配额").tag("codex")
                     }.pickerStyle(.segmented).labelsHidden()
                 }

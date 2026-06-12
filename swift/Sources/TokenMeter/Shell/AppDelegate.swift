@@ -77,9 +77,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let claudeAlertOn = ConfigStore.shared.claudeMonitorEnabled
             && ClaudeUsage.isAvailable && claudeLimitM > 0
         let infoMode = ConfigStore.shared.menubarInfoMode
-        let claudeInfoOn = infoMode == "claude"
-            && ConfigStore.shared.claudeMonitorEnabled && ClaudeUsage.isAvailable
-        let codexInfoOn = infoMode == "codex" && codexOn
+        let claudeUsable = ConfigStore.shared.claudeMonitorEnabled && ClaudeUsage.isAvailable
+        let claudeInfoOn = (infoMode == "claude" || infoMode == "total") && claudeUsable
+        let codexQuotaInfoOn = infoMode == "codex" && codexOn
+        let codexTotalInfoOn = infoMode == "total" && codexOn
 
         guard codexOn || claudeAlertOn || claudeInfoOn else {
             setStatusIcon(tint: nil, text: nil)
@@ -87,10 +88,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         Task.detached(priority: .utility) {
             var level = AlertLevel.normal
+            var infoTokens = 0          // total/claude 模式累加今日 token
             var infoText: String?
 
-            if codexOn || codexInfoOn {
-                let limits = CodexUsage.load().rateLimits
+            if codexOn || codexQuotaInfoOn || codexTotalInfoOn {
+                let codexResult = CodexUsage.load()
+                let limits = codexResult.rateLimits
                 let worstUsed = max(limits?.primary?.usedPercent ?? 0,
                                     limits?.secondary?.usedPercent ?? 0)
                 let remaining = 100 - worstUsed
@@ -98,8 +101,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     if remaining <= 10 { level = max(level, .critical) }
                     else if remaining <= 30 { level = max(level, .warn) }
                 }
-                if codexInfoOn, limits != nil {
+                if codexQuotaInfoOn, limits != nil {
                     infoText = "\(Int(remaining))%"
+                }
+                if codexTotalInfoOn {
+                    infoTokens += codexResult.today?.totalTokens ?? 0
                 }
             }
 
@@ -112,8 +118,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     else if todayTokens >= limit { level = max(level, .warn) }
                 }
                 if claudeInfoOn {
-                    infoText = Fmt.tokensShort(todayTokens)
+                    infoTokens += todayTokens
                 }
+            }
+            if infoText == nil, claudeInfoOn || codexTotalInfoOn {
+                infoText = Fmt.tokensShort(infoTokens)
             }
 
             let tint = level.tint

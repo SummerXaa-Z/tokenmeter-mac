@@ -134,9 +134,9 @@ final class ConfigStore {
         set { defaults.set(newValue, forKey: DKey.cursorMonitor) }
     }
 
-    // 菜单栏图标旁文字："off" 不显示 / "claude" 今日 token / "codex" 配额剩余
+    // 菜单栏图标旁文字："off" / "total" 今日合计 / "claude" 今日 / "codex" 配额剩余
     var menubarInfoMode: String {
-        get { defaults.string(forKey: DKey.menubarInfo) ?? "claude" }
+        get { defaults.string(forKey: DKey.menubarInfo) ?? "total" }
         set { defaults.set(newValue, forKey: DKey.menubarInfo) }
     }
 
