@@ -15,6 +15,9 @@ struct CursorView: View {
                 header
                 if let r = result {
                     accountCard(r)
+                    if let sub = r.subscription {
+                        subscriptionCard(r, sub)
+                    }
                     summaryCard(r)
                     modelsCard(r)
                 } else if loading {
@@ -90,18 +93,62 @@ struct CursorView: View {
                     Text(email).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 if let start = r.startOfMonth {
-                    Text("自 \(Self.mmdd(start)) 起 · 本月 \(Fmt.tokensShort(r.totalTokens)) tokens · $\(String(format: "%.2f", r.totalCostCents / 100))")
+                    Text("自 \(Self.mmdd(start)) 起 · \(Fmt.tokensShort(r.totalTokens)) tokens · $\(String(format: "%.2f", r.totalCostCents / 100))")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
                 }
             }
         }
     }
 
+    // MARK: - 订阅周期
+    private func subscriptionCard(_ r: CursorUsageResult, _ sub: CursorSubscription) -> some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("订阅周期", systemImage: "calendar.badge.clock")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Text("\(Self.mmdd(sub.periodStart)) – \(Self.mmdd(sub.periodEnd))")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+                // 周期进度（时间维度）
+                let total = sub.periodEnd.timeIntervalSince(sub.periodStart)
+                let elapsed = min(max(Date().timeIntervalSince(sub.periodStart), 0), total)
+                ProgressView(value: elapsed, total: max(total, 1))
+                    .tint(Theme.cursor.opacity(0.5))
+                Text("周期已过 \(Int(elapsed / max(total, 1) * 100))% · 续订 \(Self.resetText(sub.periodEnd))")
+                    .font(.system(size: 10)).foregroundStyle(.tertiary)
+                if sub.usageBasedEnabled, sub.hardLimitDollars > 0 {
+                    Divider()
+                    let spent = r.totalCostCents / 100
+                    HStack {
+                        Text("超额消费上限")
+                            .font(.system(size: 11, weight: .medium))
+                        Spacer()
+                        Text(String(format: "$%.2f / $%.0f", spent, sub.hardLimitDollars))
+                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
+                    let ratio = spent / sub.hardLimitDollars
+                    ProgressView(value: min(spent, sub.hardLimitDollars), total: sub.hardLimitDollars)
+                        .tint(ratio >= 0.9 ? .red : ratio >= 0.7 ? .orange : Theme.cursor)
+                }
+            }
+        }
+    }
+
+    private static func resetText(_ date: Date) -> String {
+        let interval = date.timeIntervalSinceNow
+        if interval <= 0 { return "即将刷新" }
+        let days = Int(interval) / 86400
+        if days >= 1 { return "\(days) 天后" }
+        return "\(max(Int(interval) / 3600, 1)) 小时后"
+    }
+
     // MARK: - 本月汇总
     private func summaryCard(_ r: CursorUsageResult) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("本月用量", systemImage: "sum")
+                Label("本周期用量", systemImage: "sum")
                     .font(.system(size: 12, weight: .semibold))
                 HStack(spacing: 0) {
                     stat("Token", Fmt.tokensShort(r.totalTokens))
@@ -125,10 +172,10 @@ struct CursorView: View {
     private func modelsCard(_ r: CursorUsageResult) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("本月模型用量", systemImage: "cpu")
+                Label("本周期模型用量", systemImage: "cpu")
                     .font(.system(size: 12, weight: .semibold))
                 if r.models.isEmpty {
-                    Text("本月暂无用量")
+                    Text("本周期暂无用量")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 } else {
                     let maxCost = max(r.models.first?.costCents ?? 0, 0.01)

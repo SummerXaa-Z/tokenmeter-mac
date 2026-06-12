@@ -23,6 +23,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 16) {
                 header
                 monitorSection
+                sectionTitle("DeepSeek 凭据", hint: "仅 DeepSeek 监控使用，其他监控源无需配置")
                 apiKeySection
                 usageTokenSection
                 refreshSection
@@ -44,6 +45,15 @@ struct SettingsView: View {
                 usageStatus = "登录窗口已关闭，未获取到 Token。可重新同步或手动粘贴。"
             }
         }
+    }
+
+    // 设置页内分组标题：把 DeepSeek 专属凭据与通用设置区分开
+    private func sectionTitle(_ title: String, hint: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.system(size: 12, weight: .bold))
+            Text(hint).font(.system(size: 10)).foregroundStyle(.tertiary)
+        }
+        .padding(.top, 2)
     }
 
     private var header: some View {
@@ -128,7 +138,7 @@ struct SettingsView: View {
     private var apiKeySection: some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("API Key", systemImage: "key").font(.system(size: 12, weight: .semibold))
+                Label("DeepSeek API Key", systemImage: "key").font(.system(size: 12, weight: .semibold))
                 Text("用于查询账户余额。只保存在本机 Keychain。")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                 SecureField("sk-...", text: $apiKeyInput)
@@ -149,7 +159,7 @@ struct SettingsView: View {
     private var usageTokenSection: some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("用量 Token", systemImage: "chart.bar.doc.horizontal")
+                Label("DeepSeek 用量 Token", systemImage: "chart.bar.doc.horizontal")
                     .font(.system(size: 12, weight: .semibold))
                 Text("用于查询用量与消费（DeepSeek 官方未开放用量 API，需网页登录 token）。")
                     .font(.system(size: 11)).foregroundStyle(.secondary)

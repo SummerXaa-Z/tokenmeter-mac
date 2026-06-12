@@ -21,10 +21,18 @@ struct CursorModelUsage: Equatable, Identifiable {
     var totalTokens: Int { inputTokens + outputTokens }
 }
 
+struct CursorSubscription: Equatable {
+    let periodStart: Date        // 计费周期（订阅续订日对齐，非自然月）
+    let periodEnd: Date
+    let usageBasedEnabled: Bool  // 是否开了超额按量计费
+    let hardLimitDollars: Double // 用户设置的超额消费上限（0 = 未设置）
+}
+
 struct CursorUsageResult: Equatable {
     let email: String?
     let membership: String?      // free / pro / business
     let startOfMonth: Date?
+    let subscription: CursorSubscription?
     let models: [CursorModelUsage]
     let totalCostCents: Double
     var totalTokens: Int { models.reduce(0) { $0 + $1.totalTokens } }
@@ -126,6 +134,19 @@ enum CursorUsage {
 
     // MARK: - 用量接口
 
+    private struct InvoiceResponse: Decodable {
+        let periodStartMs: String?
+        let periodEndMs: String?
+    }
+
+    private struct HardLimitResponse: Decodable {
+        let hardLimit: Double?
+    }
+
+    private struct UsageBasedResponse: Decodable {
+        let usageBasedPremiumRequests: Bool?
+    }
+
     private struct AggregatedResponse: Decodable {
         let aggregations: [Aggregation]?
         let totalCostCents: Double?
@@ -138,34 +159,69 @@ enum CursorUsage {
         }
     }
 
-    static func load() async throws -> CursorUsageResult {
-        let cred = try readCredential()
-        let cal = Calendar.current
-        let now = Date()
-        let monthStart = cal.date(from: cal.dateComponents([.year, .month], from: now)) ?? now
-
+    // dashboard POST 通用封装：来源校验头缺一不可（403 Invalid origin）
+    private static func dashboardPost(_ path: String, body: [String: Any],
+                                      cred: Credential) async throws -> Data {
         var req = URLRequest(
-            url: URL(string: "https://cursor.com/api/dashboard/get-aggregated-usage-events")!,
+            url: URL(string: "https://cursor.com/api/dashboard/\(path)")!,
             timeoutInterval: 15)
         req.httpMethod = "POST"
-        req.httpBody = try JSONSerialization.data(withJSONObject: [
-            "teamId": 0,
-            "startDate": String(Int(monthStart.timeIntervalSince1970 * 1000)),
-            "endDate": String(Int(now.timeIntervalSince1970 * 1000)),
-        ])
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
         req.setValue("WorkosCursorSessionToken=\(cred.userId)%3A%3A\(cred.token)",
                      forHTTPHeaderField: "Cookie")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        // dashboard 接口校验来源，缺这两个头返回 403 "Invalid origin"
         req.setValue("https://cursor.com", forHTTPHeaderField: "Origin")
         req.setValue("https://cursor.com/dashboard", forHTTPHeaderField: "Referer")
-
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw CursorUsageError.http(-1) }
         guard http.statusCode == 200 else {
             throw http.statusCode == 401 ? CursorUsageError.tokenExpired
                                          : CursorUsageError.http(http.statusCode)
         }
+        return data
+    }
+
+    static func load() async throws -> CursorUsageResult {
+        let cred = try readCredential()
+        let cal = Calendar.current
+        let now = Date()
+        let comp = cal.dateComponents([.year, .month], from: now)
+        let monthStart = cal.date(from: comp) ?? now
+
+        // 计费周期：invoice 的 month 参数 0 起算（传 5 = 6 月）
+        var subscription: CursorSubscription?
+        var windowStart = monthStart
+        var windowEnd = now
+        if let invData = try? await dashboardPost("get-monthly-invoice", body: [
+                "month": (comp.month ?? 1) - 1, "year": comp.year ?? 2026,
+                "includeUsageEvents": false], cred: cred),
+           let inv = try? JSONDecoder().decode(InvoiceResponse.self, from: invData),
+           let sMs = inv.periodStartMs.flatMap(Double.init),
+           let eMs = inv.periodEndMs.flatMap(Double.init) {
+            let pStart = Date(timeIntervalSince1970: sMs / 1000)
+            let pEnd = Date(timeIntervalSince1970: eMs / 1000)
+            windowStart = pStart
+            windowEnd = min(pEnd, now)
+
+            // 超额计费开关 + 上限（失败不影响主数据）
+            let usageBased = (try? await dashboardPost(
+                "get-usage-based-premium-requests", body: [:], cred: cred))
+                .flatMap { try? JSONDecoder().decode(UsageBasedResponse.self, from: $0) }?
+                .usageBasedPremiumRequests ?? false
+            let hardLimit = (try? await dashboardPost(
+                "get-hard-limit", body: [:], cred: cred))
+                .flatMap { try? JSONDecoder().decode(HardLimitResponse.self, from: $0) }?
+                .hardLimit ?? 0
+            subscription = CursorSubscription(
+                periodStart: pStart, periodEnd: pEnd,
+                usageBasedEnabled: usageBased, hardLimitDollars: hardLimit)
+        }
+
+        let data = try await dashboardPost("get-aggregated-usage-events", body: [
+            "teamId": 0,
+            "startDate": String(Int(windowStart.timeIntervalSince1970 * 1000)),
+            "endDate": String(Int(windowEnd.timeIntervalSince1970 * 1000)),
+        ], cred: cred)
         let parsed = try JSONDecoder().decode(AggregatedResponse.self, from: data)
 
         var models: [CursorModelUsage] = (parsed.aggregations ?? []).map { a in
@@ -178,7 +234,8 @@ enum CursorUsage {
         }
         models.sort { $0.costCents > $1.costCents }
         return CursorUsageResult(email: cred.email, membership: cred.membership,
-                                 startOfMonth: monthStart, models: models,
+                                 startOfMonth: windowStart, subscription: subscription,
+                                 models: models,
                                  totalCostCents: parsed.totalCostCents ?? 0)
     }
 }
