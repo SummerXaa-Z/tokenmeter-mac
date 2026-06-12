@@ -16,21 +16,28 @@ xcodebuild -project TokenMeter.xcodeproj -scheme TokenMeter \
 
 VERSION=$(defaults read "$PWD/$APP/Contents/Info.plist" CFBundleShortVersionString)
 
-xattr -cr "$APP"
+# iCloud 同步目录会给 build 产物挂 com.apple.fileprovider 等顽固扩展属性，
+# xattr -cr 清不掉（codesign 报 detritus not allowed）。ditto --noextattr
+# 重建一份干净副本再签名。
+CLEAN_DIR=$(mktemp -d)
+CLEAN="$CLEAN_DIR/TokenMeter.app"
+ditto --norsrc --noextattr --noacl "$APP" "$CLEAN"
 if security find-identity -v -p codesigning | grep -q "$IDENTITY"; then
-    codesign --force --deep --sign "$IDENTITY" --timestamp=none "$APP"
+    codesign --force --deep --sign "$IDENTITY" --timestamp=none "$CLEAN"
 else
     echo "WARN: 未找到证书 $IDENTITY，回退 ad-hoc 签名" >&2
-    codesign --force --deep --sign - "$APP"
+    codesign --force --deep --sign - "$CLEAN"
 fi
-codesign -v "$APP"
+codesign -v "$CLEAN"
+rm -rf "$APP"
+ditto "$CLEAN" "$APP"
 
 DMG="/tmp/TokenMeter_${VERSION}_aarch64.dmg"
 STAGE=$(mktemp -d)
-ditto "$APP" "$STAGE/TokenMeter.app"
+ditto "$CLEAN" "$STAGE/TokenMeter.app"
 ln -s /Applications "$STAGE/Applications"
 rm -f "$DMG"
 hdiutil create -volname "TokenMeter" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
-rm -rf "$STAGE"
+rm -rf "$STAGE" "$CLEAN_DIR"
 
 echo "OK: $DMG"

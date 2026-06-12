@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-12 — v3.4.0 Codex 面板对齐 Claude：分时 + 模型 + 项目
+
+- Codex tab 新增三张卡，与 Claude 面板能力对齐：
+  - **今日分时**：24 小时 token 柱图。
+  - **模型分布（近 7 天）**：从 turn_context 事件取 model + effort（如 `gpt-5.5 (xhigh)`），token 差分归到当前生效模型，Top5 横条。
+  - **项目分布（近 7 天）**：session_meta 的 cwd 末段聚合，附会话数，Top6 横条。
+- 扫描层 FileSummary 扩展 perModel / perDayHour / project；turn_context/session_meta 行轻量解析（先 marker 预筛再解码），缓存结构同步升级。
+- package.sh 修复：iCloud 同步目录给构建产物挂 com.apple.fileprovider 顽固扩展属性，xattr -cr 清不掉（codesign 报 detritus）；改为 ditto --noextattr 重建干净副本再签名。
+
 ## 2026-06-12 — v3.3.0 Cursor 订阅周期监控
 
 - **新增订阅周期卡**：计费周期起止（来自 get-monthly-invoice 的 periodStart/End，订阅续订日对齐而非自然月，month 参数 0 起算）、周期时间进度条、续订倒计时。

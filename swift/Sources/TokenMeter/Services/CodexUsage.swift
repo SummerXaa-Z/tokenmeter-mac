@@ -41,12 +41,34 @@ struct CodexDayUsage: Equatable, Identifiable {
     }
 }
 
+struct CodexModelUsage: Equatable, Identifiable {
+    let model: String            // 含 effort 后缀，如 "gpt-5.5 (xhigh)"
+    var totalTokens: Int = 0
+    var id: String { model }
+}
+
+struct CodexProjectUsage: Equatable, Identifiable {
+    let project: String          // session_meta cwd 末段
+    var totalTokens: Int = 0
+    var sessionCount: Int = 0
+    var id: String { project }
+}
+
 struct CodexUsageResult: Equatable {
     let rateLimits: CodexRateLimits?
     let days: [CodexDayUsage]         // 最近 7 天，缺失日补零，升序
+    let models: [CodexModelUsage]     // 7 天窗口按模型聚合，按量降序
+    let projects: [CodexProjectUsage] // 7 天窗口按项目聚合，按量降序
+    let todayHours: [CodexHourUsage]  // 今日 24 小时分布
     var today: CodexDayUsage? { days.last }
     var weekTotal: Int { days.reduce(0) { $0 + $1.totalTokens } }
     var weekSessions: Int { days.reduce(0) { $0 + $1.sessionCount } }
+}
+
+struct CodexHourUsage: Equatable, Identifiable {
+    let hour: Int
+    let totalTokens: Int
+    var id: Int { hour }
 }
 
 enum CodexUsage {
@@ -68,8 +90,11 @@ enum CodexUsage {
             let type: String?
             let info: Info?
             let rateLimits: RateLimits?
+            let model: String?       // turn_context
+            let effort: String?      // turn_context
+            let cwd: String?         // session_meta / turn_context
             enum CodingKeys: String, CodingKey {
-                case type, info
+                case type, info, model, effort, cwd
                 case rateLimits = "rate_limits"
             }
         }
@@ -126,6 +151,9 @@ enum CodexUsage {
         let size: UInt64
         let mtime: Date
         let perDay: [String: Tally]
+        let perModel: [String: Int]          // 模型 → totalTokens
+        let perDayHour: [String: [Int: Int]] // day → hour → totalTokens
+        let project: String?                 // session cwd 末段（每文件一个）
         let lastRateLimits: (asOf: Date, limits: CodexRateLimits)?
     }
 
@@ -147,10 +175,15 @@ enum CodexUsage {
         let windowStart = Calendar.current.startOfDay(for: DateUtil.addDays(now, -6))
 
         var newestLimits: (asOf: Date, limits: CodexRateLimits)?
+        var modelMap: [String: CodexModelUsage] = [:]
+        var projectMap: [String: CodexProjectUsage] = [:]
+        var hourMap: [Int: Int] = [:]
+        let todayKey = DateUtil.key(now)
 
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
         guard let walker = fm.enumerator(at: sessionsDir, includingPropertiesForKeys: keys) else {
-            return CodexUsageResult(rateLimits: nil, days: dayMap.values.sorted { $0.date < $1.date })
+            return CodexUsageResult(rateLimits: nil, days: dayMap.values.sorted { $0.date < $1.date },
+                                    models: [], projects: [], todayHours: [])
         }
 
         for case let file as URL in walker where file.pathExtension == "jsonl" {
@@ -159,6 +192,8 @@ enum CodexUsage {
                   let mtime = attrs.contentModificationDate, mtime >= windowStart else { continue }
 
             let summary = summarize(file)
+            var counted = false
+            var fileTokens = 0
             for (date, t) in summary.perDay where window.contains(date) {
                 var d = dayMap[date] ?? CodexDayUsage(date: date)
                 d.inputTokens += t.input
@@ -168,15 +203,35 @@ enum CodexUsage {
                 d.totalTokens += t.total
                 d.sessionCount += 1
                 dayMap[date] = d
+                counted = true
+                fileTokens += t.total
             }
             if let rl = summary.lastRateLimits,
                newestLimits == nil || rl.asOf > newestLimits!.asOf {
                 newestLimits = rl
             }
+            guard counted else { continue }
+            for (model, tokens) in summary.perModel {
+                var m = modelMap[model] ?? CodexModelUsage(model: model)
+                m.totalTokens += tokens
+                modelMap[model] = m
+            }
+            let proj = summary.project ?? "(其他)"
+            var pj = projectMap[proj] ?? CodexProjectUsage(project: proj)
+            pj.totalTokens += fileTokens
+            pj.sessionCount += 1
+            projectMap[proj] = pj
+            if let hours = summary.perDayHour[todayKey] {
+                for (h, tokens) in hours { hourMap[h, default: 0] += tokens }
+            }
         }
 
         let days = dayMap.values.sorted { $0.date < $1.date }
-        return CodexUsageResult(rateLimits: newestLimits?.limits, days: days)
+        let models = modelMap.values.sorted { $0.totalTokens > $1.totalTokens }
+        let projects = projectMap.values.sorted { $0.totalTokens > $1.totalTokens }
+        let todayHours = (0..<24).map { CodexHourUsage(hour: $0, totalTokens: hourMap[$0] ?? 0) }
+        return CodexUsageResult(rateLimits: newestLimits?.limits, days: days,
+                                models: models, projects: projects, todayHours: todayHours)
     }
 
     // MARK: - 单文件流式扫描（带缓存）
@@ -199,16 +254,23 @@ enum CodexUsage {
     }
 
     private static func scan(_ file: URL, size: UInt64, mtime: Date) -> FileSummary {
-        let empty = FileSummary(size: size, mtime: mtime, perDay: [:], lastRateLimits: nil)
+        let empty = FileSummary(size: size, mtime: mtime, perDay: [:], perModel: [:],
+                                perDayHour: [:], project: nil, lastRateLimits: nil)
         guard let handle = try? FileHandle(forReadingFrom: file) else { return empty }
         defer { try? handle.close() }
 
         let marker = Data("\"token_count\"".utf8)
+        let ctxMarker = Data("\"turn_context\"".utf8)
+        let metaMarker = Data("\"session_meta\"".utf8)
         let newline = UInt8(ascii: "\n")
         let chunkSize = 8 * 1024 * 1024
         let decoder = JSONDecoder()
 
         var perDay: [String: Tally] = [:]
+        var perModel: [String: Int] = [:]
+        var perDayHour: [String: [Int: Int]] = [:]
+        var project: String?
+        var currentModel = "unknown"     // turn_context 声明后续 turn 的模型
         var lastRL: (asOf: Date, limits: CodexRateLimits)?
         var prevTotal: Event.TokenUsage?
         var carry = Data()   // chunk 边界上的半行
@@ -225,6 +287,21 @@ enum CodexUsage {
                 }
                 let line = data[lineStart..<nl]
                 lineStart = data.index(after: nl)
+
+                // 轻量行:turn_context 行更新当前模型,session_meta 行取项目
+                if line.range(of: ctxMarker) != nil || (project == nil && line.range(of: metaMarker) != nil) {
+                    if let event = try? decoder.decode(Event.self, from: line) {
+                        if let m = event.payload?.model {
+                            let effort = event.payload?.effort
+                            currentModel = effort.map { "\(m) (\($0))" } ?? m
+                        }
+                        if project == nil, let cwd = event.payload?.cwd, !cwd.isEmpty {
+                            let name = (cwd as NSString).lastPathComponent
+                            project = name.isEmpty ? nil : name
+                        }
+                    }
+                    continue
+                }
                 guard line.range(of: marker) != nil,
                       let event = try? decoder.decode(Event.self, from: line),
                       event.payload?.type == "token_count" else { continue }
@@ -240,6 +317,9 @@ enum CodexUsage {
                     t.output += d.output; t.reasoning += d.reasoning; t.total += d.total
                     perDay[day] = t
                     prevTotal = cur
+                    perModel[currentModel, default: 0] += d.total
+                    let hour = Calendar.current.component(.hour, from: ts)
+                    perDayHour[day, default: [:]][hour, default: 0] += d.total
                 }
 
                 if let rl = event.payload?.rateLimits, let ts {
@@ -255,7 +335,8 @@ enum CodexUsage {
                 }
             }
         }
-        return FileSummary(size: size, mtime: mtime, perDay: perDay, lastRateLimits: lastRL)
+        return FileSummary(size: size, mtime: mtime, perDay: perDay, perModel: perModel,
+                           perDayHour: perDayHour, project: project, lastRateLimits: lastRL)
     }
 
     private static func delta(_ cur: Event.TokenUsage, _ prev: Event.TokenUsage?,
