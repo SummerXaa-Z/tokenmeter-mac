@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-12 — 签名切换到本机自签证书，修"每次更新都要授权钥匙串"
+
+- 根因：ad-hoc 签名（`--sign -`）的 designated requirement 是当次构建的代码哈希，每次更新哈希变化，macOS 视为新 app，Keychain 条目授权失效。
+- 修复：本机生成自签代码签名证书「DeepSeekMonitor Dev」（openssl 生成 + security import + add-trusted-cert -p codeSign），签名后 requirement 锚定证书指纹，跨版本稳定，更新后不再弹钥匙串授权。
+- 新增 `swift/scripts/package.sh`：xcodegen → xcodebuild → xattr -cr → 证书签名（缺证书回退 ad-hoc 并告警）→ 打 dmg 一条龙；v2.3.0 release 资产已用证书签名版替换。
+- 注意：换签名身份后的第一次启动仍会弹一次钥匙串授权（旧 ad-hoc 授权不延续），点「始终允许」后以后版本不再弹。证书只存在于本机；其他人安装属首次使用，无感知差异。
+
 ## 2026-06-12 — v2.3.0 自动更新
 
 - 新增 Services/Updater.swift：GitHub Releases 检查新版本 → 下载 dmg → 独立 bash 脚本等进程退出后挂载替换 .app（含 xattr -cr 清扩展属性）→ 自动重启。
