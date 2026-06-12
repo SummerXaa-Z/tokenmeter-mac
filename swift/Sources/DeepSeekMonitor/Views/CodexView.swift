@@ -53,10 +53,10 @@ struct CodexView: View {
                 }
                 if let limits {
                     if let p = limits.primary {
-                        gaugeRow("5 小时窗口", p)
+                        gaugeRow(Self.windowTitle(p.windowMinutes), p)
                     }
                     if let s = limits.secondary {
-                        gaugeRow("周窗口", s)
+                        gaugeRow(Self.windowTitle(s.windowMinutes), s)
                     }
                     Text("数据截至 \(Self.relative(limits.asOf))")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
@@ -147,6 +147,17 @@ struct CodexView: View {
     }
 
     // MARK: - helpers
+    // 窗口标签从 window_minutes 推导，订阅计划/官方调整窗口时长时自动跟随
+    private static func windowTitle(_ minutes: Int) -> String {
+        if minutes % 10080 == 0 {
+            let w = minutes / 10080
+            return w == 1 ? "周窗口" : "\(w) 周窗口"
+        }
+        if minutes % 1440 == 0 { return "\(minutes / 1440) 天窗口" }
+        if minutes % 60 == 0 { return "\(minutes / 60) 小时窗口" }
+        return "\(minutes) 分钟窗口"
+    }
+
     private static func remainingColor(_ remaining: Double) -> Color {
         if remaining <= 10 { return .red }
         if remaining <= 30 { return .orange }
