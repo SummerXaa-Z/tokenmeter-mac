@@ -135,43 +135,43 @@ enum CodexUsage {
 
     // MARK: - 入口
 
-    // 扫最近 10 天目录（跨天 session 的事件可能落进 7 天窗），聚合最近 7 天
+    // 全树扫描，按 mtime 过滤：长期复用的 session（Codex Desktop 可挂数周）
+    // 落在很老的日期目录里，但只要还在写 mtime 就是新的，按目录日期扫会漏掉。
+    // mtime 早于 7 天窗起点的文件不可能含窗内事件，直接跳过。
     static func load() -> CodexUsageResult {
         let fm = FileManager.default
         let now = Date()
         var dayMap: [String: CodexDayUsage] = [:]
         let window: Set<String> = Set((0..<7).map { DateUtil.key(DateUtil.addDays(now, -$0)) })
         for key in window { dayMap[key] = CodexDayUsage(date: key) }
+        let windowStart = Calendar.current.startOfDay(for: DateUtil.addDays(now, -6))
 
         var newestLimits: (asOf: Date, limits: CodexRateLimits)?
 
-        for offset in 0..<10 {
-            let day = DateUtil.addDays(now, -offset)
-            let parts = DateUtil.key(day).split(separator: "-")
-            let dir = sessionsDir
-                .appendingPathComponent(String(parts[0]))
-                .appendingPathComponent(String(parts[1]))
-                .appendingPathComponent(String(parts[2]))
-            guard let files = try? fm.contentsOfDirectory(
-                at: dir, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey])
-            else { continue }
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
+        guard let walker = fm.enumerator(at: sessionsDir, includingPropertiesForKeys: keys) else {
+            return CodexUsageResult(rateLimits: nil, days: dayMap.values.sorted { $0.date < $1.date })
+        }
 
-            for file in files where file.pathExtension == "jsonl" {
-                let summary = summarize(file)
-                for (date, t) in summary.perDay where window.contains(date) {
-                    var d = dayMap[date] ?? CodexDayUsage(date: date)
-                    d.inputTokens += t.input
-                    d.cachedInputTokens += t.cached
-                    d.outputTokens += t.output
-                    d.reasoningTokens += t.reasoning
-                    d.totalTokens += t.total
-                    d.sessionCount += 1
-                    dayMap[date] = d
-                }
-                if let rl = summary.lastRateLimits,
-                   newestLimits == nil || rl.asOf > newestLimits!.asOf {
-                    newestLimits = rl
-                }
+        for case let file as URL in walker where file.pathExtension == "jsonl" {
+            guard let attrs = try? file.resourceValues(forKeys: Set(keys)),
+                  attrs.isRegularFile == true,
+                  let mtime = attrs.contentModificationDate, mtime >= windowStart else { continue }
+
+            let summary = summarize(file)
+            for (date, t) in summary.perDay where window.contains(date) {
+                var d = dayMap[date] ?? CodexDayUsage(date: date)
+                d.inputTokens += t.input
+                d.cachedInputTokens += t.cached
+                d.outputTokens += t.output
+                d.reasoningTokens += t.reasoning
+                d.totalTokens += t.total
+                d.sessionCount += 1
+                dayMap[date] = d
+            }
+            if let rl = summary.lastRateLimits,
+               newestLimits == nil || rl.asOf > newestLimits!.asOf {
+                newestLimits = rl
             }
         }
 
@@ -243,10 +243,12 @@ enum CodexUsage {
                 }
 
                 if let rl = event.payload?.rateLimits, let ts {
-                    if lastRL == nil || ts > lastRL!.asOf {
+                    let p = rl.primary.flatMap(window)
+                    let s = rl.secondary.flatMap(window)
+                    // 两个窗口都空的事件（偶发 primary: null）不顶掉有效快照
+                    if p != nil || s != nil, lastRL == nil || ts > lastRL!.asOf {
                         lastRL = (ts, CodexRateLimits(
-                            primary: rl.primary.flatMap(window),
-                            secondary: rl.secondary.flatMap(window),
+                            primary: p, secondary: s,
                             planType: rl.planType,
                             asOf: ts))
                     }

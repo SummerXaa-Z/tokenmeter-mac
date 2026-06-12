@@ -68,19 +68,21 @@ struct CodexView: View {
         }
     }
 
+    // 与官方面板口径一致：展示「剩余」百分比，进度条表示剩余量
     private func gaugeRow(_ title: String, _ w: CodexRateWindow) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        let remaining = max(100 - w.usedPercent, 0)
+        return VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(title).font(.system(size: 11))
                 Spacer()
-                Text("\(Int(w.usedPercent))%")
+                Text("剩余 \(Int(remaining))%")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Self.usageColor(w.usedPercent))
+                    .foregroundStyle(Self.remainingColor(remaining))
                 Text("· \(Self.resetText(w.resetsAt)) 重置")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
-            ProgressView(value: min(w.usedPercent, 100), total: 100)
-                .tint(Self.usageColor(w.usedPercent))
+            ProgressView(value: min(remaining, 100), total: 100)
+                .tint(Self.remainingColor(remaining))
         }
     }
 
@@ -145,9 +147,9 @@ struct CodexView: View {
     }
 
     // MARK: - helpers
-    private static func usageColor(_ pct: Double) -> Color {
-        if pct >= 90 { return .red }
-        if pct >= 70 { return .orange }
+    private static func remainingColor(_ remaining: Double) -> Color {
+        if remaining <= 10 { return .red }
+        if remaining <= 30 { return .orange }
         return Theme.codex
     }
 
