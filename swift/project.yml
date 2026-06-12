@@ -7,7 +7,7 @@ options:
 
 settings:
   base:
-    MARKETING_VERSION: "2.2.0"
+    MARKETING_VERSION: "2.3.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     PRODUCT_BUNDLE_IDENTIFIER: com.deepseek.monitor.mac
@@ -29,7 +29,7 @@ targets:
       properties:
         CFBundleDisplayName: DeepSeek Monitor
         CFBundleName: DeepSeekMonitor
-        CFBundleShortVersionString: "2.2.0"
+        CFBundleShortVersionString: "2.3.0"
         # 菜单栏应用：不进 Dock、不抢主菜单栏
         LSUIElement: true
         LSMinimumSystemVersion: "14.0"

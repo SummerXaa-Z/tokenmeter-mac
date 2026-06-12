@@ -21,6 +21,7 @@
 		71D3F712092AF90C701D38F3 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 245AB0C2447FBC014A398C7C /* AppDelegate.swift */; };
 		792D3D4A9C0178955C727B27 /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5B1419AB8F506B644A3340D /* Format.swift */; };
 		868036DAB3F2AC07CA485C36 /* PlatformPortal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08F1756D581037AF03C4103E /* PlatformPortal.swift */; };
+		9EAF2DA1EB767D7523C7F546 /* Updater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E3A0EBF04A9613EA788337D /* Updater.swift */; };
 		A9C6C6B8B19B43540EDF0109 /* LoginSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0A1DF71F2FEF17735B8339C /* LoginSync.swift */; };
 		ABD691871A6BD8AC9A628F8A /* Autostart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 072046A1EC9BD16F1DC3FAB9 /* Autostart.swift */; };
 		AE05D89FBB3F8A1E34C6DA3A /* DashboardComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BA266BD07EB4BE87D4EF386 /* DashboardComponents.swift */; };
@@ -34,6 +35,7 @@
 		1E448E5D65F7E9AA68A654F9 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		22C578B6CE9B018152609CD4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		245AB0C2447FBC014A398C7C /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		2E3A0EBF04A9613EA788337D /* Updater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updater.swift; sourceTree = "<group>"; };
 		43721C87F69E11DE76629D4B /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		43AE97FB6028C4ECF35CAC57 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		4D2418F08BE2179FF995533A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -72,6 +74,7 @@
 				F0A1DF71F2FEF17735B8339C /* LoginSync.swift */,
 				08F1756D581037AF03C4103E /* PlatformPortal.swift */,
 				6C44F4169F55CFCB17ED373F /* Store.swift */,
+				2E3A0EBF04A9613EA788337D /* Updater.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -219,6 +222,7 @@
 				41CC2CC0F24D0CEBD4B30940 /* SettingsView.swift in Sources */,
 				1D9C6D228E7B415184B8929F /* Store.swift in Sources */,
 				3BFE649C271B2B12F26D2D02 /* Theme.swift in Sources */,
+				9EAF2DA1EB767D7523C7F546 /* Updater.swift in Sources */,
 				3A59F9516E19438A40904CC1 /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -278,7 +282,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.2.0;
+				MARKETING_VERSION = 2.3.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.deepseek.monitor.mac;
@@ -348,7 +352,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.2.0;
+				MARKETING_VERSION = 2.3.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

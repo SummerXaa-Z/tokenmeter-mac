@@ -13,8 +13,10 @@ struct SettingsView: View {
     @State private var busy = false
     @State private var syncing = false
     @State private var autostartOn = false
+    @State private var autoUpdateOn = true
 
     @StateObject private var sync = LoginSyncController()
+    @ObservedObject private var updater = Updater.shared
 
     var body: some View {
         ScrollView {
@@ -25,6 +27,7 @@ struct SettingsView: View {
                 usageTokenSection
                 refreshSection
                 autostartSection
+                updateSection
                 footer
             }
             .padding(14)
@@ -166,8 +169,67 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - 软件更新
+    private var updateSection: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("软件更新", systemImage: "arrow.down.circle")
+                    .font(.system(size: 12, weight: .semibold))
+                Toggle("自动检查更新（每日一次）", isOn: Binding(
+                    get: { autoUpdateOn },
+                    set: { v in
+                        ConfigStore.shared.autoUpdateCheckEnabled = v
+                        autoUpdateOn = v
+                    }))
+                HStack {
+                    Button(updateButtonTitle) { updateAction() }
+                        .disabled(updateBusy)
+                    Spacer()
+                }
+                if !updateStatusText.isEmpty {
+                    Text(updateStatusText)
+                        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+        }
+    }
+
+    private var updateBusy: Bool {
+        switch updater.phase {
+        case .checking, .downloading, .installing: return true
+        default: return false
+        }
+    }
+
+    private var updateButtonTitle: String {
+        switch updater.phase {
+        case .checking: return "正在检查…"
+        case .downloading: return "正在下载…"
+        case .installing: return "正在安装…"
+        case .available(let v): return "下载并更新到 v\(v)"
+        default: return "检查更新"
+        }
+    }
+
+    private var updateStatusText: String {
+        switch updater.phase {
+        case .upToDate: return "已是最新版本 v\(Updater.currentVersion)"
+        case .available(let v): return "发现新版本 v\(v)，更新完成后应用会自动重启"
+        case .failed(let msg): return msg
+        default: return ""
+        }
+    }
+
+    private func updateAction() {
+        if case .available = updater.phase {
+            Task { await updater.downloadAndInstall() }
+        } else {
+            Task { await updater.check() }
+        }
+    }
+
     private var footer: some View {
-        Text("DeepSeek Monitor v2.2.0 · 凭据存于本机 Keychain")
+        Text("DeepSeek Monitor v\(Updater.currentVersion) · 凭据存于本机 Keychain")
             .font(.system(size: 10)).foregroundStyle(.tertiary)
             .frame(maxWidth: .infinity, alignment: .center)
     }
@@ -177,6 +239,7 @@ struct SettingsView: View {
         apiStatus = store.apiKeyConfigured ? "已配置 \(store.apiKeyPreview() ?? "")" : "未配置 API Key"
         usageStatus = store.usageTokenConfigured ? "用量 Token 已配置" : "未配置用量 Token"
         autostartOn = Autostart.isEnabled
+        autoUpdateOn = ConfigStore.shared.autoUpdateCheckEnabled
     }
 
     private func saveApiKey() {

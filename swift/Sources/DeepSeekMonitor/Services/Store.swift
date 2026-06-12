@@ -65,6 +65,8 @@ final class ConfigStore {
         static let autostart = "autostart"
         static let deepseekMonitor = "deepseekMonitorEnabled"
         static let codexMonitor = "codexMonitorEnabled"
+        static let autoUpdateCheck = "autoUpdateCheckEnabled"
+        static let lastUpdateCheck = "lastUpdateCheckAt"
     }
 
     // 合法刷新间隔，对应 Rust normalize_refresh_interval_seconds
@@ -116,6 +118,17 @@ final class ConfigStore {
     var codexMonitorEnabled: Bool {
         get { defaults.object(forKey: DKey.codexMonitor) as? Bool ?? true }
         set { defaults.set(newValue, forKey: DKey.codexMonitor) }
+    }
+
+    // 自动检查更新：默认开，每日最多一次（启动时触发）
+    var autoUpdateCheckEnabled: Bool {
+        get { defaults.object(forKey: DKey.autoUpdateCheck) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: DKey.autoUpdateCheck) }
+    }
+
+    var lastUpdateCheckAt: TimeInterval {
+        get { defaults.double(forKey: DKey.lastUpdateCheck) }
+        set { defaults.set(newValue, forKey: DKey.lastUpdateCheck) }
     }
 
     // 凭据预览，对应 Rust api_key_preview（脱敏，只露头尾）

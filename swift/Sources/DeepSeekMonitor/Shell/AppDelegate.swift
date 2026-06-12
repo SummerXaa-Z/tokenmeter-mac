@@ -32,6 +32,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         appState.rearmTimer()
+
+        // 启动 5s 后做每日一次的更新检查（静默，仅有新版时弹窗）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            Updater.shared.autoCheckIfDue()
+        }
     }
 
     // 状态栏图标：用 SF Symbol 生成模板图，缺失则回退到文字
