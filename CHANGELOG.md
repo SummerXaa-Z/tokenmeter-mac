@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-12 — v2.2.0 设置新增监控源开关
+
+- 设置页新增「监控源」节：DeepSeek（余额 + 模型用量）与 Codex（本地 session 用量 + 配额）可分别开关，存 UserDefaults，默认全开。
+- 关闭即生效：对应 tab 从切换栏消失；关 DeepSeek 后 refreshAll 不再发余额/用量请求，关 Codex 后不再扫描 ~/.codex/sessions。当前 tab 被关掉时自动跳到剩余可用 tab；全关时面板显示占位 +「打开设置」入口。
+- Codex tab 隐藏后设置入口不丢失：CodexView 补了与 DeepSeek 面板一致的顶栏（标题 + 刷新 + 设置按钮）。未安装 Codex 时开关置灰并说明。
+
 ## 2026-06-12 — 订阅计划自适应说明 + 窗口标签动态化
 
 - Codex 配额展示天然跟随订阅计划：used_percent 由服务端按当前 plan 计算，本地不存额度表；plan_type 角标动态读取，换订阅后下次请求即更新。

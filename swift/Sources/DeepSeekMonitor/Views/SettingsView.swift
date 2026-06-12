@@ -20,6 +20,7 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                monitorSection
                 apiKeySection
                 usageTokenSection
                 refreshSection
@@ -50,6 +51,28 @@ struct SettingsView: View {
             }.buttonStyle(.plain)
             Text("设置").font(.system(size: 15, weight: .bold))
             Spacer()
+        }
+    }
+
+    // MARK: - 监控源开关
+    private var monitorSection: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("监控源", systemImage: "switch.2").font(.system(size: 12, weight: .semibold))
+                Text("关闭后隐藏对应面板，且不再发起查询/扫描。")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                Toggle("DeepSeek（余额 + 模型用量）", isOn: Binding(
+                    get: { state.deepseekEnabled },
+                    set: { state.setDeepseekEnabled($0) }))
+                Toggle("Codex（本地 session 用量 + 配额）", isOn: Binding(
+                    get: { state.codexEnabled },
+                    set: { state.setCodexEnabled($0) }))
+                    .disabled(!CodexUsage.isAvailable)
+                if !CodexUsage.isAvailable {
+                    Text("未检测到 Codex 本地数据（~/.codex/sessions），开关不生效。")
+                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                }
+            }
         }
     }
 
@@ -144,7 +167,7 @@ struct SettingsView: View {
     }
 
     private var footer: some View {
-        Text("DeepSeek Monitor v2.1.2 · 凭据存于本机 Keychain")
+        Text("DeepSeek Monitor v2.2.0 · 凭据存于本机 Keychain")
             .font(.system(size: 10)).foregroundStyle(.tertiary)
             .frame(maxWidth: .infinity, alignment: .center)
     }

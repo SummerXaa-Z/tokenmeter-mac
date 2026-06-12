@@ -63,6 +63,8 @@ final class ConfigStore {
         static let refreshInterval = "refreshIntervalSeconds"
         static let autoRefresh = "autoRefreshEnabled"
         static let autostart = "autostart"
+        static let deepseekMonitor = "deepseekMonitorEnabled"
+        static let codexMonitor = "codexMonitorEnabled"
     }
 
     // 合法刷新间隔，对应 Rust normalize_refresh_interval_seconds
@@ -103,6 +105,17 @@ final class ConfigStore {
     var autostart: Bool {
         get { defaults.bool(forKey: DKey.autostart) }
         set { defaults.set(newValue, forKey: DKey.autostart) }
+    }
+
+    // 监控源开关：默认开（无记录视为 true），关闭后对应 tab 隐藏且不再扫描/请求
+    var deepseekMonitorEnabled: Bool {
+        get { defaults.object(forKey: DKey.deepseekMonitor) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: DKey.deepseekMonitor) }
+    }
+
+    var codexMonitorEnabled: Bool {
+        get { defaults.object(forKey: DKey.codexMonitor) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: DKey.codexMonitor) }
     }
 
     // 凭据预览，对应 Rust api_key_preview（脱敏，只露头尾）

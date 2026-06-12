@@ -4,12 +4,14 @@ import Charts
 // Codex 用量面板：配额双窗口（5 小时 / 周）+ 今日用量 + 7 天柱图。
 // 数据全部来自本地 ~/.codex/sessions，刷新即重扫。
 struct CodexView: View {
+    var onSettings: () -> Void
     @State private var result: CodexUsageResult?
     @State private var loading = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 10) {
+                header
                 if let r = result {
                     rateLimitCard(r.rateLimits)
                     todayCard(r)
@@ -26,6 +28,30 @@ struct CodexView: View {
             .padding(14)
         }
         .task { await reload() }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "terminal")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Theme.codex)
+            Text("Codex Monitor")
+                .font(.system(size: 15, weight: .bold))
+            Spacer()
+            iconButton("arrow.clockwise") { Task { await reload() } }
+            iconButton("gearshape") { onSettings() }
+        }
+    }
+
+    private func iconButton(_ name: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: name)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 26)
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
     }
 
     func reload() async {
