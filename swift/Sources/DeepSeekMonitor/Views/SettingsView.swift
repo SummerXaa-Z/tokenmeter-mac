@@ -75,17 +75,22 @@ struct SettingsView: View {
                     Text("未检测到 Claude 本地数据（~/.claude/projects），开关不生效。")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
                 }
-                // 日用量预警：超阈值菜单栏图标变橙，超 1.5 倍变红；0 = 不预警
-                Picker("日用量预警", selection: Binding(
-                    get: { state.claudeDailyLimitM },
-                    set: { state.setClaudeDailyLimit($0) })) {
-                    Text("关").tag(0)
-                    Text("100M").tag(100)
-                    Text("300M").tag(300)
-                    Text("500M").tag(500)
-                    Text("1000M").tag(1000)
-                }.pickerStyle(.segmented)
-                    .disabled(!state.claudeEnabled || !ClaudeUsage.isAvailable)
+                // 日用量预警：超阈值菜单栏图标变橙，超 1.5 倍变红；0 = 不预警。
+                // 标签独立成行：内联 label 会被 5 个 segment 挤成竖排
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Claude 日用量预警（菜单栏图标变色）")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    Picker("", selection: Binding(
+                        get: { state.claudeDailyLimitM },
+                        set: { state.setClaudeDailyLimit($0) })) {
+                        Text("关").tag(0)
+                        Text("100M").tag(100)
+                        Text("300M").tag(300)
+                        Text("500M").tag(500)
+                        Text("1000M").tag(1000)
+                    }.pickerStyle(.segmented).labelsHidden()
+                }
+                .disabled(!state.claudeEnabled || !ClaudeUsage.isAvailable)
                 Toggle("Codex（本地 session 用量 + 配额）", isOn: Binding(
                     get: { state.codexEnabled },
                     set: { state.setCodexEnabled($0) }))
