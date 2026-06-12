@@ -32,19 +32,22 @@ TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：DeepSeek A
 - 模型分布与项目分布 Top 榜，看 token 用在哪个模型、哪个项目上。
 - 可设日用量阈值（100M–1000M tokens）：超阈值菜单栏图标变橙，超 1.5 倍变红。
 
-### Codex（Codex CLI 用户）
-- 数据源纯本地 `~/.codex/sessions/**/rollout-*.jsonl`，零网络、零凭据。
+### Codex（Codex CLI / Codex Desktop 用户）
+- 数据源纯本地 `~/.codex/sessions/**/rollout-*.jsonl`，零网络、零凭据，CLI 与 Desktop 共用。
 - 订阅配额双窗口（小时窗 / 周窗自适应）剩余百分比进度条 + 重置倒计时 + plan 标识。
-- 今日用量 + 近 7 天堆叠柱图；跨天 session 按事件时间戳正确归因到天。
+- 今日用量 + 今日 24 小时分时柱图 + 近 7 天堆叠柱图；跨天 session 按事件时间戳正确归因到天。
+- 模型分布（含 reasoning effort，如 gpt-5.5 (xhigh)）与项目分布 Top 榜。
 - 低配额菜单栏预警：剩余 ≤30% 图标变橙、≤10% 变红，后台定时刷新，不点开面板也能看见。
 
 ### Cursor
-- 从本地登录态读取 token，查询 cursor.com 官方用量接口（与 Cursor 设置页同源数据）。
-- 账户与订阅计划、本月按模型请求数、配额进度条。
+- 从本地登录态读取 token，查询 cursor.com Dashboard 同源接口。
+- 账户与订阅计划、计费周期进度与续订倒计时、本周期按模型 token 与费用、超额消费上限进度（开通 usage-based 的账户）。
 - token 只在本机读取、只发往 cursor.com，不经任何第三方。
 
 ### 通用
-- Claude / Codex / Cursor tab 顶栏显示工具运行状态（绿点运行中 / 灰点未运行）。
+- Claude / Codex / Cursor tab 顶栏显示工具运行状态（绿点运行中 / 灰点未运行，CLI 与桌面版都识别）。
+- 菜单栏图标旁可显示核心指标：今日合计 token（默认，Claude + Codex）/ Claude 单源 / Codex 配额剩余 %，可关闭。
+- 配额/用量预警时菜单栏图标变色（橙=警告 / 红=严重），Codex 配额与 Claude 日用量两路取最高。
 - 多源顶部切换栏；未安装对应工具的 tab 自动隐藏，设置里也可手动关闭任意监控源。
 - 常驻菜单栏（状态栏）图标，点击下拉面板；应用不占用 Dock（`LSUIElement`）。
 - 自动更新：每日自动检查 GitHub Releases（可关），发现新版确认后自动下载、替换、重启；设置页也可手动检查。

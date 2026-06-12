@@ -32,6 +32,7 @@ struct CursorView: View {
             }
             .padding(14)
         }
+        .scrollIndicators(.hidden)
         .task { await reload() }
     }
 

@@ -31,6 +31,7 @@ struct ClaudeView: View {
             }
             .padding(14)
         }
+        .scrollIndicators(.hidden)
         .task { await reload() }
     }
 

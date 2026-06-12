@@ -31,6 +31,7 @@ struct CodexView: View {
             }
             .padding(14)
         }
+        .scrollIndicators(.hidden)
         .task { await reload() }
     }
 

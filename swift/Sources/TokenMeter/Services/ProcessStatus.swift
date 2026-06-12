@@ -42,13 +42,18 @@ enum ProcessStatus {
         return Snapshot(running: n > 0, count: n)
     }
 
-    // codex CLI：排除 /Applications/Codex.app（桌面版，其 Resources/codex 是桌面版内嵌，不算 CLI）
+    // codex：CLI 进程（排除桌面版内嵌的 Resources/codex）+ Codex Desktop GUI。
+    // 数据源 ~/.codex/sessions 两者共写，GUI 在用也是"运行中"
     static func codex() -> Snapshot {
-        let n = processPaths().filter { path in
+        let cli = processPaths().filter { path in
             guard !path.contains("Codex.app") else { return false }
             return (path as NSString).lastPathComponent == "codex"
         }.count
-        return Snapshot(running: n > 0, count: n)
+        let gui = NSWorkspace.shared.runningApplications.contains {
+            $0.localizedName == "Codex" || $0.bundleIdentifier?.lowercased().contains("codex") == true
+        }
+        let count = cli + (gui ? 1 : 0)
+        return Snapshot(running: count > 0, count: count)
     }
 
     static func cursor() -> Snapshot {
