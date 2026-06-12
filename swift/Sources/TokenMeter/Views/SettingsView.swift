@@ -33,6 +33,7 @@ struct SettingsView: View {
             }
             .padding(14)
         }
+        .scrollIndicators(.hidden)
         .onAppear { reloadStatus() }
         .onReceive(sync.$captured.compactMap { $0 }) { _ in
             syncing = false
