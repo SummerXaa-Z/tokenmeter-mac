@@ -19,10 +19,14 @@ struct CodexRateWindow: Equatable {
 }
 
 struct CodexRateLimits: Equatable {
+    let limitId: String?              // 通道 id：codex=订阅配额，其余为灰度/实验通道
+    let limitName: String?            // 通道展示名（如 GPT-5.3-Codex-Spark）
     let primary: CodexRateWindow?     // 5 小时窗
     let secondary: CodexRateWindow?   // 周窗（10080 分钟）
     let planType: String?
     let asOf: Date                    // 数据时刻（事件时间戳）
+
+    var isMain: Bool { limitId == nil || limitId == "codex" }
 }
 
 struct CodexDayUsage: Equatable, Identifiable {
@@ -55,7 +59,8 @@ struct CodexProjectUsage: Equatable, Identifiable {
 }
 
 struct CodexUsageResult: Equatable {
-    let rateLimits: CodexRateLimits?
+    let rateLimits: CodexRateLimits?       // 主通道（订阅配额）
+    let allRateLimits: [CodexRateLimits]   // 全部通道，主通道在前
     let days: [CodexDayUsage]         // 最近 7 天，缺失日补零，升序
     let models: [CodexModelUsage]     // 7 天窗口按模型聚合，按量降序
     let projects: [CodexProjectUsage] // 7 天窗口按项目聚合，按量降序
@@ -122,12 +127,14 @@ enum CodexUsage {
         }
         struct RateLimits: Decodable {
             let limitId: String?
+            let limitName: String?
             let primary: Window?
             let secondary: Window?
             let planType: String?
             enum CodingKeys: String, CodingKey {
                 case primary, secondary
                 case limitId = "limit_id"
+                case limitName = "limit_name"
                 case planType = "plan_type"
             }
         }
@@ -156,8 +163,7 @@ enum CodexUsage {
         let perModel: [String: Int]          // 模型 → totalTokens
         let perDayHour: [String: [Int: Int]] // day → hour → totalTokens
         let project: String?                 // session cwd 末段（每文件一个）
-        let lastRateLimits: (asOf: Date, limits: CodexRateLimits)?      // limit_id == codex / 无 id
-        let lastRateLimitsOther: (asOf: Date, limits: CodexRateLimits)? // 其他通道，仅兜底
+        let rateLimitsByChannel: [String: CodexRateLimits]  // 通道 → 该文件内最新快照
     }
 
     // 内存级缓存：app 存续期内，未变的文件不重扫
@@ -177,8 +183,7 @@ enum CodexUsage {
         for key in window { dayMap[key] = CodexDayUsage(date: key) }
         let windowStart = Calendar.current.startOfDay(for: DateUtil.addDays(now, -6))
 
-        var newestLimits: (asOf: Date, limits: CodexRateLimits)?
-        var newestLimitsOther: (asOf: Date, limits: CodexRateLimits)?
+        var limitsByChannel: [String: CodexRateLimits] = [:]
         var modelMap: [String: CodexModelUsage] = [:]
         var projectMap: [String: CodexProjectUsage] = [:]
         var hourMap: [Int: Int] = [:]
@@ -186,7 +191,8 @@ enum CodexUsage {
 
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
         guard let walker = fm.enumerator(at: sessionsDir, includingPropertiesForKeys: keys) else {
-            return CodexUsageResult(rateLimits: nil, days: dayMap.values.sorted { $0.date < $1.date },
+            return CodexUsageResult(rateLimits: nil, allRateLimits: [],
+                                    days: dayMap.values.sorted { $0.date < $1.date },
                                     models: [], projects: [], todayHours: [])
         }
 
@@ -210,13 +216,9 @@ enum CodexUsage {
                 counted = true
                 fileTokens += t.total
             }
-            if let rl = summary.lastRateLimits,
-               newestLimits == nil || rl.asOf > newestLimits!.asOf {
-                newestLimits = rl
-            }
-            if let rl = summary.lastRateLimitsOther,
-               newestLimitsOther == nil || rl.asOf > newestLimitsOther!.asOf {
-                newestLimitsOther = rl
+            for (channel, rl) in summary.rateLimitsByChannel {
+                if let prev = limitsByChannel[channel], prev.asOf >= rl.asOf { continue }
+                limitsByChannel[channel] = rl
             }
             guard counted else { continue }
             for (model, tokens) in summary.perModel {
@@ -238,8 +240,12 @@ enum CodexUsage {
         let models = modelMap.values.sorted { $0.totalTokens > $1.totalTokens }
         let projects = projectMap.values.sorted { $0.totalTokens > $1.totalTokens }
         let todayHours = (0..<24).map { CodexHourUsage(hour: $0, totalTokens: hourMap[$0] ?? 0) }
-        let limits = (newestLimits ?? newestLimitsOther)?.limits
-        return CodexUsageResult(rateLimits: limits, days: days,
+        // 主通道在前，其余按数据新鲜度降序
+        let channels = limitsByChannel.values.sorted {
+            if $0.isMain != $1.isMain { return $0.isMain }
+            return $0.asOf > $1.asOf
+        }
+        return CodexUsageResult(rateLimits: channels.first, allRateLimits: channels, days: days,
                                 models: models, projects: projects, todayHours: todayHours)
     }
 
@@ -264,8 +270,7 @@ enum CodexUsage {
 
     private static func scan(_ file: URL, size: UInt64, mtime: Date) -> FileSummary {
         let empty = FileSummary(size: size, mtime: mtime, perDay: [:], perModel: [:],
-                                perDayHour: [:], project: nil,
-                                lastRateLimits: nil, lastRateLimitsOther: nil)
+                                perDayHour: [:], project: nil, rateLimitsByChannel: [:])
         guard let handle = try? FileHandle(forReadingFrom: file) else { return empty }
         defer { try? handle.close() }
 
@@ -281,8 +286,7 @@ enum CodexUsage {
         var perDayHour: [String: [Int: Int]] = [:]
         var project: String?
         var currentModel = "unknown"     // turn_context 声明后续 turn 的模型
-        var lastRL: (asOf: Date, limits: CodexRateLimits)?
-        var lastRLOther: (asOf: Date, limits: CodexRateLimits)?
+        var rlByChannel: [String: CodexRateLimits] = [:]
         var prevTotal: Event.TokenUsage?
         var carry = Data()   // chunk 边界上的半行
 
@@ -337,23 +341,21 @@ enum CodexUsage {
                     let p = rl.primary.flatMap(window)
                     let s = rl.secondary.flatMap(window)
                     // 两个窗口都空的事件（偶发 primary: null）不顶掉有效快照。
-                    // limit_id 区分通道：codex 是订阅配额；codex_bengalfox 等实验
-                    // 通道恒 0%，时间戳更新，混在一起会把真实配额顶成 100% 剩余
+                    // 按 limit_id 分通道各存最新：codex 是订阅配额，灰度通道
+                    // （如 codex_bengalfox）单独留快照，上游切换通道时 UI 全量呈现
                     guard p != nil || s != nil else { continue }
+                    let channel = rl.limitId ?? "codex"
                     let snapshot = CodexRateLimits(
+                        limitId: rl.limitId, limitName: rl.limitName,
                         primary: p, secondary: s, planType: rl.planType, asOf: ts)
-                    let isMain = rl.limitId == nil || rl.limitId == "codex"
-                    if isMain {
-                        if lastRL == nil || ts > lastRL!.asOf { lastRL = (ts, snapshot) }
-                    } else {
-                        if lastRLOther == nil || ts > lastRLOther!.asOf { lastRLOther = (ts, snapshot) }
-                    }
+                    if let prev = rlByChannel[channel], prev.asOf >= ts { continue }
+                    rlByChannel[channel] = snapshot
                 }
             }
         }
         return FileSummary(size: size, mtime: mtime, perDay: perDay, perModel: perModel,
                            perDayHour: perDayHour, project: project,
-                           lastRateLimits: lastRL, lastRateLimitsOther: lastRLOther)
+                           rateLimitsByChannel: rlByChannel)
     }
 
     private static func delta(_ cur: Event.TokenUsage, _ prev: Event.TokenUsage?,

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-12 — v3.4.2 Codex 配额全通道呈现
+
+- 现象澄清：「额度不更新/刷新不生效」不是刷新失效——v3.4.1 主通道优先后，若 Codex 切到灰度模型（如 GPT-5.3-Codex-Spark），主通道（limit_id=codex）不再产生新事件，订阅配额卡��停在最后一次主通道快照，看起来像"不更新"。
+- 改为**全通道呈现**：每个 limit_id 一张配额卡，主通道「订阅配额」在前，灰度通道用官方 limit_name（如 GPT-5.3-Codex-Spark）单独成卡（testtube 图标）；各卡显示各自的「数据截至」时间。
+- 扫描层 FileSummary 改为按通道字典存最新快照；CodexRateLimits 增加 limitId / limitName / isMain。
+
 ## 2026-06-12 — v3.4.1 修复：Codex 配额被实验通道顶成 0%
 
 - 根因：Codex 的 rate_limits 事件带 `limit_id` 区分通道——`codex` 是真实订阅配额，`codex_bengalfox` 等实验/灰度通道恒报 0%。旧逻辑只按时间戳取最新，实验通道事件更新就把真实配额顶掉，面板显示「剩余 100%」（实际已用 40%/15%）。

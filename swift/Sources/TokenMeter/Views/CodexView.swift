@@ -14,7 +14,11 @@ struct CodexView: View {
             VStack(spacing: 10) {
                 header
                 if let r = result {
-                    rateLimitCard(r.rateLimits)
+                    if r.allRateLimits.isEmpty {
+                        rateLimitCard(nil)
+                    } else {
+                        ForEach(r.allRateLimits, id: \.limitId) { rateLimitCard($0) }
+                    }
                     todayCard(r)
                     hoursCard(r)
                     weekChartCard(r)
@@ -73,7 +77,10 @@ struct CodexView: View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Label("订阅配额", systemImage: "speedometer")
+                    // 主通道是订阅配额；灰度/实验通道(如 Spark)单独成卡,用官方名
+                    Label(limits?.isMain == false ? (limits?.limitName ?? limits?.limitId ?? "其他配额")
+                                                  : "订阅配额",
+                          systemImage: limits?.isMain == false ? "testtube.2" : "speedometer")
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
                     if let plan = limits?.planType {
@@ -93,6 +100,7 @@ struct CodexView: View {
                     }
                     Text("数据截至 \(Self.relative(limits.asOf))")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        .help("配额快照来自最近一次 Codex 请求；长时间未用 Codex 时不会刷新")
                 } else {
                     Text("暂无配额数据（最近 7 天没有 Codex 会话）")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
