@@ -8,6 +8,7 @@ enum Theme {
     static let hit = Color(hex: 0x4091FF)          // 缓存命中
     static let miss = Color(hex: 0xFF9C2B)         // 缓存未命中
     static let response = Color(hex: 0x8B5CF6)     // 输出
+    static let codex = Color(hex: 0x10A37F)        // OpenAI 绿
 
     static let panelWidth: CGFloat = 360
     static let panelHeight: CGFloat = 600

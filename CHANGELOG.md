@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-06-12 — v2.1.0 多源监控：顶部切换栏 + Codex 用量
+
+- 面板顶部新增 segmented 切换栏，可在 DeepSeek / Codex 间切换；未安装 Codex CLI（无 ~/.codex/sessions）时不显示该 tab，单 tab 时切换栏隐藏。
+- 新增 Codex 用量监控（Services/CodexUsage.swift + Views/CodexView.swift）：
+  - 数据源纯本地 `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`，零网络、零凭据。
+  - 订阅配额双窗口（5 小时 / 周）使用率进度条 + 重置倒计时 + plan 标识，≥70% 橙色、≥90% 红色告警。
+  - 今日 Token/会话数/缓存命中率/输出 + 近 7 天合计 + 7 天堆叠柱图（缓存输入/新输入/输出）。
+  - 大文件安全：单 session JSONL 可达 200MB+，从尾部 256KB→2MB 分块倒读最后一条 token_count 事件，不全量加载。
+- Theme 新增 OpenAI 绿（0x10A37F）。
+
 ## 2026-06-11 — v2.0.0 收尾：清理残留 + 平台直达 + README 重写
 
 - 清理 main 残留的 Tauri 跟踪文件（src-tauri/gen/schemas/）与本地构建产物（dist/ node_modules/ src-tauri/）。

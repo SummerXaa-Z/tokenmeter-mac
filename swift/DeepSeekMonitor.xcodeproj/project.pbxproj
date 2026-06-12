@@ -11,7 +11,9 @@
 		1D9C6D228E7B415184B8929F /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C44F4169F55CFCB17ED373F /* Store.swift */; };
 		29788D9442A3BCC7FA354DF6 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43AE97FB6028C4ECF35CAC57 /* DashboardView.swift */; };
 		2CF0ACF672CAA06EB5618472 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = B654C8A5F24F82D2F51C0BCC /* Models.swift */; };
+		34CA00D2C67B29DB97A0B4B6 /* CodexUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9641CD092C741C90635D17C4 /* CodexUsage.swift */; };
 		3A59F9516E19438A40904CC1 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43721C87F69E11DE76629D4B /* main.swift */; };
+		3BECF482375E59FF36AE55D8 /* CodexView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7101A90B1EF12BC486020D6 /* CodexView.swift */; };
 		3BFE649C271B2B12F26D2D02 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB56F3967B6EB228965B1B7 /* Theme.swift */; };
 		3D39127604F728B98CD8CB96 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E448E5D65F7E9AA68A654F9 /* RootView.swift */; };
 		41CC2CC0F24D0CEBD4B30940 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22C578B6CE9B018152609CD4 /* SettingsView.swift */; };
@@ -40,11 +42,13 @@
 		6BA266BD07EB4BE87D4EF386 /* DashboardComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardComponents.swift; sourceTree = "<group>"; };
 		6C44F4169F55CFCB17ED373F /* Store.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Store.swift; sourceTree = "<group>"; };
 		944C3394ECDA3217CF2A83B4 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		9641CD092C741C90635D17C4 /* CodexUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexUsage.swift; sourceTree = "<group>"; };
 		9742B7090456CB0E7A2771D1 /* DeepSeekMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DeepSeekMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AAB56F3967B6EB228965B1B7 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		B654C8A5F24F82D2F51C0BCC /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		D5B1419AB8F506B644A3340D /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
 		F0A1DF71F2FEF17735B8339C /* LoginSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginSync.swift; sourceTree = "<group>"; };
+		F7101A90B1EF12BC486020D6 /* CodexView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -63,6 +67,7 @@
 			isa = PBXGroup;
 			children = (
 				072046A1EC9BD16F1DC3FAB9 /* Autostart.swift */,
+				9641CD092C741C90635D17C4 /* CodexUsage.swift */,
 				0DD7EE19A681D7A6AFE3FB39 /* DeepSeekAPI.swift */,
 				F0A1DF71F2FEF17735B8339C /* LoginSync.swift */,
 				08F1756D581037AF03C4103E /* PlatformPortal.swift */,
@@ -74,6 +79,7 @@
 		4BE828C1243B3CA369E70D16 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				F7101A90B1EF12BC486020D6 /* CodexView.swift */,
 				6BA266BD07EB4BE87D4EF386 /* DashboardComponents.swift */,
 				43AE97FB6028C4ECF35CAC57 /* DashboardView.swift */,
 				5ACF139FCFAE6B452C0135B2 /* ModelDetailView.swift */,
@@ -199,6 +205,8 @@
 				71D3F712092AF90C701D38F3 /* AppDelegate.swift in Sources */,
 				44061F64A8B683481ECB27B0 /* AppState.swift in Sources */,
 				ABD691871A6BD8AC9A628F8A /* Autostart.swift in Sources */,
+				34CA00D2C67B29DB97A0B4B6 /* CodexUsage.swift in Sources */,
+				3BECF482375E59FF36AE55D8 /* CodexView.swift in Sources */,
 				AE05D89FBB3F8A1E34C6DA3A /* DashboardComponents.swift in Sources */,
 				29788D9442A3BCC7FA354DF6 /* DashboardView.swift in Sources */,
 				05D5F7D69431DCFFF00E3A43 /* DeepSeekAPI.swift in Sources */,
@@ -270,7 +278,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.1.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.deepseek.monitor.mac;
@@ -340,7 +348,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.1.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

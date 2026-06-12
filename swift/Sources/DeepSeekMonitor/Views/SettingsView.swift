@@ -144,7 +144,7 @@ struct SettingsView: View {
     }
 
     private var footer: some View {
-        Text("DeepSeek Monitor v2.0.0 · 凭据存于本机 Keychain")
+        Text("DeepSeek Monitor v2.1.0 · 凭据存于本机 Keychain")
             .font(.system(size: 10)).foregroundStyle(.tertiary)
             .frame(maxWidth: .infinity, alignment: .center)
     }
