@@ -18,7 +18,9 @@ struct CursorModelUsage: Equatable, Identifiable {
     let cacheReadTokens: Int
     let costCents: Double
     var id: String { model }
-    var totalTokens: Int { inputTokens + outputTokens }
+    // 总吞吐含缓存读取：与 cacheHitRate 分母（input+cacheRead）同口径，
+    // 缓存读取通常是吞吐大头，漏算会让「Token」显著低于真实用量
+    var totalTokens: Int { inputTokens + outputTokens + cacheReadTokens }
 }
 
 struct CursorSubscription: Equatable {
@@ -35,6 +37,7 @@ struct CursorUsageResult: Equatable {
     let subscription: CursorSubscription?
     let models: [CursorModelUsage]
     let totalCostCents: Double
+    var todayTokens: Int = 0     // 今日(本地0点→now)用量，与 totalTokens 同口径
     var totalTokens: Int { models.reduce(0) { $0 + $1.totalTokens } }
     var totalInputTokens: Int { models.reduce(0) { $0 + $1.inputTokens } }
     var totalOutputTokens: Int { models.reduce(0) { $0 + $1.outputTokens } }
@@ -233,9 +236,27 @@ enum CursorUsage {
                 costCents: a.totalCents ?? 0)
         }
         models.sort { $0.costCents > $1.costCents }
+
+        // 今日用量：周期接口只给整段聚合，单独按本地 0 点→now 再拉一次切出"今天"，
+        // 供总览今日合计与历史趋势按日累积。失败置 0，不影响主数据。
+        var todayTokens = 0
+        let dayStart = cal.startOfDay(for: now)
+        if let td = try? await dashboardPost("get-aggregated-usage-events", body: [
+            "teamId": 0,
+            "startDate": String(Int(dayStart.timeIntervalSince1970 * 1000)),
+            "endDate": String(Int(now.timeIntervalSince1970 * 1000)),
+        ], cred: cred),
+           let tparsed = try? JSONDecoder().decode(AggregatedResponse.self, from: td) {
+            todayTokens = (tparsed.aggregations ?? []).reduce(0) {
+                $0 + (Int($1.inputTokens ?? "") ?? 0) + (Int($1.outputTokens ?? "") ?? 0)
+                   + (Int($1.cacheReadTokens ?? "") ?? 0)
+            }
+        }
+
         return CursorUsageResult(email: cred.email, membership: cred.membership,
                                  startOfMonth: windowStart, subscription: subscription,
                                  models: models,
-                                 totalCostCents: parsed.totalCostCents ?? 0)
+                                 totalCostCents: parsed.totalCostCents ?? 0,
+                                 todayTokens: todayTokens)
     }
 }

@@ -1,5 +1,51 @@
 # Changelog
 
+## 2026-06-16 — Cursor 并入总览（四源齐全）
+
+- Cursor 接口 `get-aggregated-usage-events` 只给整段周期聚合、无按日数据。改为每次刷新时额外按"本地 0 点→now"再拉一次，切出当日用量（`CursorUsageResult.todayTokens`，与 totalTokens 同口径 input+output+cacheRead），失败置 0 不影响主数据。
+- 今日按天累积进 `HistoryStore`（新增 `.cursor` 源），趋势图按日累积。
+- 总览：今日全源合计加入 Cursor（四源齐全）、30 天趋势堆叠加 Cursor 色；底部 Cursor 卡改为「本订阅周期」累计展示，不再写"不计入今日合计"。
+- 至此四源（DeepSeek/Claude/Codex/Cursor）今日合计与历史趋势全部齐全。
+
+## 2026-06-16 — DeepSeek 余额预警（补全三源通知）
+
+- 新增余额预警阈值（设置页 DeepSeek 用量 Token 卡片：关 / ¥20 / ¥50 / ¥100，默认关）。余额低于阈值时弹系统通知，复用上一条的 `evaluateAlert` 翻转状态机，不刷屏。
+- 余额数据已在 `appState.balance`（主线程、无 I/O），评估放在 `refreshQuotaBadge` 的 detached 扫描之前、guard 之前——这样"只开余额预警、不开 Codex/Claude"时也能触发，不被提前 return 跳过。
+- 边界：余额仅在开面板或自动刷新时更新；若从未加载（balance 为 nil）则不评估，避免无数据误报。
+- 至此三源通知齐全：Codex 配额 ≤10% / Claude 超日用量阈值 / DeepSeek 余额低于阈值。
+
+## 2026-06-16 — 系统通知预警（越线翻转才推）
+
+- 新增 `Notifier`（UNUserNotificationCenter 封装，自签名非沙盒可用，权限被拒静默退回图标着色）。
+- 复用已有的 `refreshQuotaBadge`（每 15 分钟）链路，不另起轮询：在算图标着色等级的同时评估告警，回主线程过状态机推送。
+- 触发：Codex 订阅配额剩余 ≤10%、Claude 今日用量超过设定阈值（claudeDailyLimitM）。
+- 防刷屏：`firedAlerts` 状态机「翻转才推」——从正常越线到触线时推一次并记录，恢复正常后清除记录，下次越线才再推。不会每 15 分钟重复弹。
+- 设置页「监控源」卡片底部加「系统通知预警」开关（默认开）。DeepSeek 余额预警暂未做（余额不在 badge 链路、且无现成阈值）。
+
+## 2026-06-16 — 总览去重：cc 经 DeepSeek 后端不再双算
+
+- 问题：cc（Claude CLI）路由到 DeepSeek 后端（deepseek-v4-pro/flash）的消耗，既写进 Claude 源的 transcript，又计入 DeepSeek 官方账号用量（两边 model 名一致，同源）。两个 tab 各自展示都对，但总览「全源合计」把这块算了两次。
+- 修复：`ClaudeUsage` 按 model 前缀 `deepseek` 单独累计 `deepseekBackendTokens`；总览今日合计与 30 天趋势均从 Claude 侧扣掉这部分（`max(claude - backend, 0)`），口径变为 `DeepSeek官方 + (Claude − cc里的deepseek) + Codex`，不重不漏。
+- 两个 tab 自身展示不变：Claude tab 仍显示含后端的完整 cc 用量，DeepSeek tab 仍显示官方账号用量。
+- 总览今日卡在有重叠时显示一行说明（已扣除多少）；历史趋势的 Claude 改存净值，旧的全量值随 7 天窗口滚动自愈。
+
+## 2026-06-16 — 新增「总览」tab：今日全源合计 + 30 天历史趋势
+
+- **用量历史留存**：新增 `HistoryStore`（`~/Library/Application Support/TokenMeter/history.json`）。各源每次刷新把窗口内按日用量 upsert 进库（同一天用最新重算值覆盖、不累加，补零天不写），过去的天固化下来——突破了 Claude/Codex 只读 7 天、App 关掉就丢历史的限制，趋势能跨重启累积到 30 天。
+- **总览 tab（首屏）**：四源「今日全源合计」（DeepSeek+Claude+Codex，各源分列）+ 近 30 天 token 堆叠趋势图 + DeepSeek 30 天成本合计。
+- 口径取舍：今日合计只含有按日数据的三源；Cursor 接口仅按订阅周期聚合、切不出"今天"，在总览底部单列「本期」，明确不计入今日合计。成本趋势目前只有 DeepSeek（本地无 Claude/Codex 单价）。
+- 总览页触发全源加载复用 60s 缓存，打开秒回不重扫。
+
+## 2026-06-16 — 数据校准 + 切 tab 不再重复刷新
+
+数据展示全链路（取数→算数→展示）逐源审计 + 实测核对，修两处口径、一处加固：
+
+- **切 tab/重开面板不再重新加载**：Claude/Codex/Cursor 的数据原先存在各自 View 的 `@State`，View 随 tab 切换销毁重建，`.task` 必然重跑——Cursor 还每次发网络请求。数据缓存提到 `AppState`（`SourceCache<T>` + 60s TTL），切 tab、重开 popover 命中缓存秒回，只有手动点刷新（`force`）、定时器、或缓存过期才真正重扫。影响：`AppState.swift` 新增三源缓存与 `loadClaude/loadCodex/loadCursor`；三个 View 改读缓存、去掉 view-local 状态。
+- **Cursor「Token」口径修正**：`CursorModelUsage.totalTokens` 原为 `input + output`，漏掉缓存读取（吞吐大头），而同卡 `cacheHitRate` 分母又含 cacheRead，两者口径打架。统一为 `input + output + cacheRead`。
+- **DeepSeek total 防双算加固**：`tokenBreakdown` 原先 `PROMPT_TOKEN`、`CACHE_HIT`、`CACHE_MISS` 各自累加进 total，而 DeepSeek 口径 `prompt = hit + miss`，三者同时返回会让输入侧翻倍。改为输入侧只取一次（有 hit/miss 细分用其和，否则退回 prompt_token），输出侧单独加。
+- 实测核对（无需改）：Codex `input + output = total`、`cached ⊂ input`（实读 `~/.codex/sessions` JSONL 确认），命中率 `cached/input` 与 7 天柱图拆分均自洽；Claude 流式去重、Codex 累计差分 + compaction 兜底逻辑正确。
+- 已知设计取舍（保留）：DeepSeek 每月 1–6 号跨月时，7 天柱图（滚动 7 天，拼上月）与模型卡（仅当月）合计不可直接比对，语义各自正确。
+
 ## 2026-06-13 — v3.5.1 全部图表 Y 轴统一可读格式
 
 - 新增共享修饰符 `tokenYAxis()`（Theme.swift），全部 6 张 token 图表的 Y 轴统一为 tokensShort 格式（2.6K / 30M / 1218M），替代 Swift Charts 默认的 3.0E7 科学计数法。

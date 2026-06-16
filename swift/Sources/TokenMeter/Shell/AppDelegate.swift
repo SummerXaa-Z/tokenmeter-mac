@@ -33,6 +33,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         appState.rearmTimer()
 
+        // 通知授权（首次会弹系统授权框；拒绝则静默退回图标着色）
+        Notifier.requestAuthorization()
+
         // 启动 5s 后做每日一次的更新检查（静默，仅有新版时弹窗）
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
             Updater.shared.autoCheckIfDue()
@@ -51,6 +54,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var quotaTimer: Timer?
+
+    // 已推送的告警键集合：状态机做"翻转才推"——越线时若键不在集合就推一次
+    // 并记入，恢复正常后移除键，下次越线才会再推。避免每 15 分钟重复刷屏。
+    private var firedAlerts: Set<String> = []
+
+    // 根据"当前是否越线"决定推/撤。crossed=true 且未推过 → 推；crossed=false → 清除记录
+    private func evaluateAlert(key: String, crossed: Bool, title: String, body: String) {
+        guard ConfigStore.shared.notificationsEnabled else { return }
+        if crossed {
+            guard !firedAlerts.contains(key) else { return }
+            firedAlerts.insert(key)
+            Notifier.send(id: key, title: title, body: body)
+        } else {
+            firedAlerts.remove(key)
+        }
+    }
 
     // 统一告警等级：Codex 配额和 Claude 日用量两路各算一个等级，取最高着色，
     // 避免两路各自抢图标颜色互相覆盖
@@ -77,10 +96,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let claudeAlertOn = ConfigStore.shared.claudeMonitorEnabled
             && ClaudeUsage.isAvailable && claudeLimitM > 0
         let infoMode = ConfigStore.shared.menubarInfoMode
+        let balanceThreshold = ConfigStore.shared.deepseekMonitorEnabled
+            ? ConfigStore.shared.deepseekBalanceAlertThreshold : 0
         let claudeUsable = ConfigStore.shared.claudeMonitorEnabled && ClaudeUsage.isAvailable
         let claudeInfoOn = (infoMode == "claude" || infoMode == "total") && claudeUsable
         let codexQuotaInfoOn = infoMode == "codex" && codexOn
         let codexTotalInfoOn = infoMode == "total" && codexOn
+
+        // 余额预警独立于 detached 扫描：balance 已在 appState（主线程，无 I/O）。
+        // 放在 guard 前，避免"只开余额预警"时被提前 return 跳过。
+        if balanceThreshold > 0,
+           case .ok = appState.balanceState,
+           let bal = appState.balance,
+           let value = Double(bal.totalBalance) {
+            evaluateAlert(
+                key: "deepseek.balance.low", crossed: value < Double(balanceThreshold),
+                title: "DeepSeek 余额不足",
+                body: "当前余额 \(bal.symbol)\(bal.totalBalance)，低于 \(balanceThreshold) 预警线")
+        }
 
         guard codexOn || claudeAlertOn || claudeInfoOn else {
             setStatusIcon(tint: nil, text: nil)
@@ -90,6 +123,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var level = AlertLevel.normal
             var infoTokens = 0          // total/claude 模式累加今日 token
             var infoText: String?
+            // 告警事实在后台算好，回主线程统一过状态机推送
+            var codexCrossed: Bool?     // nil = 本轮未评估
+            var codexRemaining = 0
+            var claudeCrossed: Bool?
+            var claudeToday = 0
 
             if codexOn || codexQuotaInfoOn || codexTotalInfoOn {
                 let codexResult = CodexUsage.load()
@@ -101,6 +139,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if codexOn {
                     if remaining <= 10 { level = max(level, .critical) }
                     else if remaining <= 30 { level = max(level, .warn) }
+                    // 通知只在 critical 线（≤10%）翻转，且要有真实配额数据
+                    if limits != nil {
+                        codexCrossed = remaining <= 10
+                        codexRemaining = Int(remaining)
+                    }
                 }
                 if codexQuotaInfoOn, limits != nil {
                     infoText = "\(Int(remaining))%"
@@ -117,6 +160,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // 超阈值即提醒，1.5 倍才升红——日用量越线不等于不可用，留缓冲
                     if todayTokens >= limit * 3 / 2 { level = max(level, .critical) }
                     else if todayTokens >= limit { level = max(level, .warn) }
+                    claudeCrossed = todayTokens >= limit
+                    claudeToday = todayTokens
                 }
                 if claudeInfoOn {
                     infoTokens += todayTokens
@@ -128,8 +173,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             let tint = level.tint
             let text = infoText
+            let cxCrossed = codexCrossed, cxRemain = codexRemaining
+            let clCrossed = claudeCrossed, clToday = claudeToday
+            let clLimitM = claudeLimitM
             await MainActor.run { [weak self] in
                 self?.setStatusIcon(tint: tint, text: text)
+                if let c = cxCrossed {
+                    self?.evaluateAlert(
+                        key: "codex.quota.low", crossed: c,
+                        title: "Codex 配额告急",
+                        body: "订阅配额仅剩 \(cxRemain)%，留意用量")
+                }
+                if let c = clCrossed {
+                    self?.evaluateAlert(
+                        key: "claude.daily.over", crossed: c,
+                        title: "Claude 日用量越线",
+                        body: "今日已用 \(Fmt.tokensShort(clToday))，超过 \(clLimitM)M 阈值")
+                }
             }
         }
     }

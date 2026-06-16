@@ -4,23 +4,21 @@ import Charts
 // Claude 用量面板：今日用量 + 7 天柱图 + 按模型分布。
 // 数据全部来自本地 ~/.claude/projects，刷新即重扫（带缓存）。
 struct ClaudeView: View {
+    @EnvironmentObject var state: AppState
     var onSettings: () -> Void
-    @State private var result: ClaudeUsageResult?
-    @State private var proc = ProcessStatus.Snapshot(running: false, count: 0)
-    @State private var loading = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 10) {
                 header
-                if let r = result {
+                if let r = state.claude.result {
                     todayCard(r)
                     hoursCard(r)
                     weekChartCard(r)
                     weekCompareCard(r)
                     modelCard(r)
                     projectCard(r)
-                } else if loading {
+                } else if state.claude.loading {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
                 } else {
                     Text("未找到 Claude 本地数据（~/.claude/projects）")
@@ -32,7 +30,8 @@ struct ClaudeView: View {
             .padding(14)
         }
         .scrollIndicators(.hidden)
-        .task { await reload() }
+        // 命中缓存则秒回，过期才重扫
+        .task { await state.loadClaude() }
     }
 
     private var header: some View {
@@ -42,9 +41,9 @@ struct ClaudeView: View {
                 .foregroundStyle(Theme.claude)
             Text("Claude Monitor")
                 .font(.system(size: 15, weight: .bold))
-            RunningBadge(snapshot: proc)
+            RunningBadge(snapshot: state.claude.proc)
             Spacer()
-            iconButton("arrow.clockwise") { Task { await reload() } }
+            iconButton("arrow.clockwise") { Task { await state.loadClaude(force: true) } }
             iconButton("gearshape") { onSettings() }
         }
     }
@@ -58,14 +57,6 @@ struct ClaudeView: View {
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
-    }
-
-    func reload() async {
-        loading = true
-        proc = ProcessStatus.claude()
-        let r = await Task.detached(priority: .userInitiated) { ClaudeUsage.load() }.value
-        result = r
-        loading = false
     }
 
     // MARK: - 今日

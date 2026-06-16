@@ -14,6 +14,8 @@ struct SettingsView: View {
     @State private var syncing = false
     @State private var autostartOn = false
     @State private var autoUpdateOn = true
+    @State private var notificationsOn = true
+    @State private var balanceAlert = 0
 
     @StateObject private var sync = LoginSyncController()
     @ObservedObject private var updater = Updater.shared
@@ -131,6 +133,20 @@ struct SettingsView: View {
                         Text("Codex 配额").tag("codex")
                     }.pickerStyle(.segmented).labelsHidden()
                 }
+                Divider()
+                Toggle(isOn: Binding(
+                    get: { notificationsOn },
+                    set: { v in
+                        ConfigStore.shared.notificationsEnabled = v
+                        notificationsOn = v
+                        if v { Notifier.requestAuthorization() }
+                    })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("系统通知预警").font(.system(size: 12, weight: .semibold))
+                        Text("配额/用量从正常翻转到越线时弹一次系统通知（Codex 配额 ≤10% / Claude 超日用量阈值）")
+                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
+                }
             }
         }
     }
@@ -183,6 +199,22 @@ struct SettingsView: View {
                 }
                 if !usageStatus.isEmpty {
                     Text(usageStatus).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(3)
+                }
+                Divider()
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("余额预警（低于此值弹系统通知）")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    Picker("", selection: Binding(
+                        get: { balanceAlert },
+                        set: {
+                            ConfigStore.shared.deepseekBalanceAlertThreshold = $0
+                            balanceAlert = $0
+                        })) {
+                        Text("关").tag(0)
+                        Text("¥20").tag(20)
+                        Text("¥50").tag(50)
+                        Text("¥100").tag(100)
+                    }.pickerStyle(.segmented).labelsHidden()
                 }
             }
         }
@@ -296,6 +328,8 @@ struct SettingsView: View {
         usageStatus = store.usageTokenConfigured ? "用量 Token 已配置" : "未配置用量 Token"
         autostartOn = Autostart.isEnabled
         autoUpdateOn = ConfigStore.shared.autoUpdateCheckEnabled
+        notificationsOn = ConfigStore.shared.notificationsEnabled
+        balanceAlert = ConfigStore.shared.deepseekBalanceAlertThreshold
     }
 
     private func saveApiKey() {

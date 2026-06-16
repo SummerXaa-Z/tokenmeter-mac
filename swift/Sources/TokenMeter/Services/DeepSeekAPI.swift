@@ -136,21 +136,25 @@ struct DeepSeekAPI {
         }
     }
 
-    // 返回 (总token, 请求数, 命中, 未命中, 输出)，对应 Rust token_breakdown
+    // 返回 (总token, 请求数, 命中, 未命中, 输出)，对应 Rust token_breakdown。
+    // DeepSeek 口径 prompt_token = cache_hit + cache_miss（输入侧的两种细分）。
+    // 三类若同时返回，不能各自累加进 total——否则输入侧翻倍。这里输入侧只取
+    // 一次：有 hit/miss 细分就用其和，没有才退回 prompt_token；输出侧单独加。
     private static func tokenBreakdown(_ usage: [UsageEntry]) -> (Int, Int, Int, Int, Int) {
-        var total = 0, request = 0, hit = 0, miss = 0, response = 0
+        var request = 0, hit = 0, miss = 0, response = 0, prompt = 0
         for e in usage {
             let v = Int((Double(e.amount) ?? 0).rounded())
             switch e.type {
             case "REQUEST": request = v
-            case "PROMPT_CACHE_HIT_TOKEN": hit = v; total += v
-            case "PROMPT_CACHE_MISS_TOKEN": miss = v; total += v
-            case "RESPONSE_TOKEN": response = v; total += v
-            case "PROMPT_TOKEN": total += v
+            case "PROMPT_CACHE_HIT_TOKEN": hit = v
+            case "PROMPT_CACHE_MISS_TOKEN": miss = v
+            case "RESPONSE_TOKEN": response = v
+            case "PROMPT_TOKEN": prompt = v
             default: break
             }
         }
-        return (total, request, hit, miss, response)
+        let inputSide = (hit + miss) > 0 ? hit + miss : prompt
+        return (inputSide + response, request, hit, miss, response)
     }
 
     private static func costSum(_ usage: [UsageEntry]) -> Double {

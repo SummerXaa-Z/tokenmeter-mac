@@ -3,26 +3,23 @@ import SwiftUI
 // Cursor 用量面板：账户信息 + 本月按模型请求数/配额。
 // 数据来自 cursor.com 官方用量接口（本地 token 鉴权），刷新即重查。
 struct CursorView: View {
+    @EnvironmentObject var state: AppState
     var onSettings: () -> Void
-    @State private var result: CursorUsageResult?
-    @State private var proc = ProcessStatus.Snapshot(running: false, count: 0)
-    @State private var errorText: String?
-    @State private var loading = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 10) {
                 header
-                if let r = result {
+                if let r = state.cursor.result {
                     accountCard(r)
                     if let sub = r.subscription {
                         subscriptionCard(r, sub)
                     }
                     summaryCard(r)
                     modelsCard(r)
-                } else if loading {
+                } else if state.cursor.loading {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
-                } else if let errorText {
+                } else if let errorText = state.cursor.error {
                     Text(errorText)
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -33,7 +30,8 @@ struct CursorView: View {
             .padding(14)
         }
         .scrollIndicators(.hidden)
-        .task { await reload() }
+        // 命中缓存则秒回，过期才重查（Cursor 有网络请求，缓存收益最大）
+        .task { await state.loadCursor() }
     }
 
     private var header: some View {
@@ -43,9 +41,9 @@ struct CursorView: View {
                 .foregroundStyle(Theme.cursor)
             Text("Cursor Monitor")
                 .font(.system(size: 15, weight: .bold))
-            RunningBadge(snapshot: proc, showCount: false)
+            RunningBadge(snapshot: state.cursor.proc, showCount: false)
             Spacer()
-            iconButton("arrow.clockwise") { Task { await reload() } }
+            iconButton("arrow.clockwise") { Task { await state.loadCursor(force: true) } }
             iconButton("gearshape") { onSettings() }
         }
     }
@@ -59,19 +57,6 @@ struct CursorView: View {
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
-    }
-
-    func reload() async {
-        loading = true
-        proc = ProcessStatus.cursor()
-        errorText = nil
-        do {
-            result = try await CursorUsage.load()
-        } catch {
-            result = nil
-            errorText = (error as? CursorUsageError)?.errorDescription ?? error.localizedDescription
-        }
-        loading = false
     }
 
     // MARK: - 账户

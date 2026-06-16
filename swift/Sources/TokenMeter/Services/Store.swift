@@ -71,6 +71,8 @@ final class ConfigStore {
         static let claudeDailyTokenLimit = "claudeDailyTokenLimitM"
         static let autoUpdateCheck = "autoUpdateCheckEnabled"
         static let lastUpdateCheck = "lastUpdateCheckAt"
+        static let notifications = "notificationsEnabled"
+        static let deepseekBalanceAlert = "deepseekBalanceAlertThreshold"
     }
 
     // 合法刷新间隔，对应 Rust normalize_refresh_interval_seconds
@@ -156,6 +158,19 @@ final class ConfigStore {
     var lastUpdateCheckAt: TimeInterval {
         get { defaults.double(forKey: DKey.lastUpdateCheck) }
         set { defaults.set(newValue, forKey: DKey.lastUpdateCheck) }
+    }
+
+    // 系统通知预警：默认开。配额/用量从正常翻转到越线时推一条系统通知。
+    var notificationsEnabled: Bool {
+        get { defaults.object(forKey: DKey.notifications) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: DKey.notifications) }
+    }
+
+    // DeepSeek 余额预警阈值（与余额同单位，元）：余额低于此值推通知。
+    // 0 = 关闭。integer(forKey:) 无记录返回 0，恰好默认关闭。
+    var deepseekBalanceAlertThreshold: Int {
+        get { defaults.integer(forKey: DKey.deepseekBalanceAlert) }
+        set { defaults.set(newValue, forKey: DKey.deepseekBalanceAlert) }
     }
 
     // 凭据预览，对应 Rust api_key_preview（脱敏，只露头尾）

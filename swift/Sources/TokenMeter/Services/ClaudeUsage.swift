@@ -21,6 +21,9 @@ struct ClaudeDayUsage: Equatable, Identifiable {
     var outputTokens: Int = 0
     var messageCount: Int = 0         // 去重后的 API 请求数
     var sessionCount: Int = 0
+    // 其中后端是 DeepSeek 的 token（cc 路由到 deepseek-* 模型）。这部分与
+    // DeepSeek 官方源重叠，总览全源合计时要从 Claude 侧扣掉避免双算。
+    var deepseekBackendTokens: Int = 0
 
     var id: String { date }
     var totalTokens: Int { inputTokens + cacheCreationTokens + cacheReadTokens + outputTokens }
@@ -86,6 +89,8 @@ struct ClaudeUsageResult: Equatable {
     var weekTotal: Int { days.reduce(0) { $0 + $1.totalTokens } }
     var weekMessages: Int { days.reduce(0) { $0 + $1.messageCount } }
     var weekSessions: Int { days.reduce(0) { $0 + $1.sessionCount } }
+    // cc 路由到 DeepSeek 后端的 token（与 DeepSeek 官方源重叠）
+    var todayDeepseekBackend: Int { today?.deepseekBackendTokens ?? 0 }
 }
 
 enum ClaudeUsage {
@@ -129,6 +134,7 @@ enum ClaudeUsage {
 
     private struct Tally: Equatable {
         var input = 0, cacheCreate = 0, cacheRead = 0, output = 0, messages = 0
+        var deepseekBackend = 0   // 后端为 deepseek-* 的 token（仅 perDay 用）
     }
 
     private struct FileSummary {
@@ -188,6 +194,7 @@ enum ClaudeUsage {
                 d.cacheReadTokens += t.cacheRead
                 d.outputTokens += t.output
                 d.messageCount += t.messages
+                d.deepseekBackendTokens += t.deepseekBackend
                 d.sessionCount += 1
                 dayMap[date] = d
                 counted = true
@@ -288,6 +295,11 @@ enum ClaudeUsage {
                     guard seen.insert(key).inserted else { continue }
                 }
 
+                let rawModel = row.message?.model ?? ""
+                let isDeepseek = rawModel.hasPrefix("deepseek")
+                let msgTotal = (usage.inputTokens ?? 0) + (usage.cacheCreationInputTokens ?? 0)
+                    + (usage.cacheReadInputTokens ?? 0) + (usage.outputTokens ?? 0)
+
                 let day = DateUtil.key(ts)
                 var t = perDay[day] ?? Tally()
                 t.input += usage.inputTokens ?? 0
@@ -295,6 +307,7 @@ enum ClaudeUsage {
                 t.cacheRead += usage.cacheReadInputTokens ?? 0
                 t.output += usage.outputTokens ?? 0
                 t.messages += 1
+                if isDeepseek { t.deepseekBackend += msgTotal }
                 perDay[day] = t
 
                 let model = Self.displayModel(row.message?.model)

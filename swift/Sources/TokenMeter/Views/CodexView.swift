@@ -4,16 +4,14 @@ import Charts
 // Codex 用量面板：配额双窗口（5 小时 / 周）+ 今日用量 + 7 天柱图。
 // 数据全部来自本地 ~/.codex/sessions，刷新即重扫。
 struct CodexView: View {
+    @EnvironmentObject var state: AppState
     var onSettings: () -> Void
-    @State private var result: CodexUsageResult?
-    @State private var proc = ProcessStatus.Snapshot(running: false, count: 0)
-    @State private var loading = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 10) {
                 header
-                if let r = result {
+                if let r = state.codex.result {
                     if r.allRateLimits.isEmpty {
                         rateLimitCard(nil)
                     } else {
@@ -24,7 +22,7 @@ struct CodexView: View {
                     weekChartCard(r)
                     modelCard(r)
                     projectCard(r)
-                } else if loading {
+                } else if state.codex.loading {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
                 } else {
                     Text("未找到 Codex 本地数据（~/.codex/sessions）")
@@ -36,7 +34,8 @@ struct CodexView: View {
             .padding(14)
         }
         .scrollIndicators(.hidden)
-        .task { await reload() }
+        // 命中缓存则秒回，过期才重扫
+        .task { await state.loadCodex() }
     }
 
     private var header: some View {
@@ -46,9 +45,9 @@ struct CodexView: View {
                 .foregroundStyle(Theme.codex)
             Text("Codex Monitor")
                 .font(.system(size: 15, weight: .bold))
-            RunningBadge(snapshot: proc)
+            RunningBadge(snapshot: state.codex.proc)
             Spacer()
-            iconButton("arrow.clockwise") { Task { await reload() } }
+            iconButton("arrow.clockwise") { Task { await state.loadCodex(force: true) } }
             iconButton("gearshape") { onSettings() }
         }
     }
@@ -62,22 +61,6 @@ struct CodexView: View {
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
-    }
-
-    func reload() async {
-        loading = true
-        proc = ProcessStatus.codex()
-        // 本地扫描与官方实时配额并行；实时拿到就替换配额卡（用量统计仍是本地）
-        async let local = Task.detached(priority: .userInitiated) { CodexUsage.load() }.value
-        async let live = CodexUsage.fetchLiveRateLimits()
-        var r = await local
-        if let liveLimits = await live {
-            r = CodexUsageResult(rateLimits: liveLimits.first, allRateLimits: liveLimits,
-                                 days: r.days, models: r.models,
-                                 projects: r.projects, todayHours: r.todayHours)
-        }
-        result = r
-        loading = false
     }
 
     // MARK: - 配额窗口

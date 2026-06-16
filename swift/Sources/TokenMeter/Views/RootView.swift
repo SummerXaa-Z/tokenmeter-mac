@@ -8,6 +8,7 @@ enum AppView: Equatable {
 
 // 顶部切换的监控源；后续加新工具在这里扩 case
 enum Provider: String, CaseIterable, Identifiable {
+    case overview = "总览"
     case deepseek = "DeepSeek"
     case claude = "Claude"
     case codex = "Codex"
@@ -17,6 +18,7 @@ enum Provider: String, CaseIterable, Identifiable {
     // 没装对应工具就不显示该 tab
     var available: Bool {
         switch self {
+        case .overview: return true
         case .deepseek: return true
         case .claude: return ClaudeUsage.isAvailable
         case .codex: return CodexUsage.isAvailable
@@ -28,13 +30,14 @@ enum Provider: String, CaseIterable, Identifiable {
 struct RootView: View {
     @EnvironmentObject var state: AppState
     @State private var view: AppView = .dashboard
-    @State private var provider: Provider = .deepseek
+    @State private var provider: Provider = .overview
 
     // 已安装且在设置里开启监控的源
     private var tabs: [Provider] {
         Provider.allCases.filter { p in
             guard p.available else { return false }
             switch p {
+            case .overview: return true
             case .deepseek: return state.deepseekEnabled
             case .claude: return state.claudeEnabled
             case .codex: return state.codexEnabled
@@ -56,6 +59,8 @@ struct RootView: View {
                         allDisabledPlaceholder
                     } else {
                         switch provider {
+                        case .overview:
+                            OverviewView(onSettings: { view = .settings })
                         case .deepseek:
                             DashboardView(
                                 onSettings: { view = .settings },
