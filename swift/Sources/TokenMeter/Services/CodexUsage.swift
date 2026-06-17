@@ -428,7 +428,9 @@ enum CodexUsage {
         }
         struct WhamWindow: Decodable {
             let usedPercent: Double?
-            let limitWindowSeconds: Int?
+            // 秒数字段用 Double 解：JSON 数字无类型区分，服务端若返回小数秒
+            // （如 18000.0）用 Int 会解码失败，导致整条配额被丢弃
+            let limitWindowSeconds: Double?
             let resetAt: Double?
             enum CodingKeys: String, CodingKey {
                 case usedPercent = "used_percent"
@@ -439,8 +441,11 @@ enum CodexUsage {
     }
 
     private static func whamWindow(_ w: WhamUsage.WhamWindow?) -> CodexRateWindow? {
-        guard let w, let pct = w.usedPercent, let secs = w.limitWindowSeconds else { return nil }
-        return CodexRateWindow(usedPercent: pct, windowMinutes: secs / 60,
+        // secs > 0 兜底：窗口秒数缺失或为 0 时整条窗口无意义，丢弃；
+        // 换算分钟取 max(_, 1)，避免极小秒数被整除成 0 分钟
+        guard let w, let pct = w.usedPercent, let secs = w.limitWindowSeconds, secs > 0
+        else { return nil }
+        return CodexRateWindow(usedPercent: pct, windowMinutes: max(Int(secs) / 60, 1),
                                resetsAt: Date(timeIntervalSince1970: w.resetAt ?? 0))
     }
 
