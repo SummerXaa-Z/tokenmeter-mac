@@ -33,7 +33,7 @@ targets:
       properties:
         CFBundleDisplayName: TokenMeter
         CFBundleName: TokenMeter
-        CFBundleShortVersionString: "3.6.0"
+        CFBundleShortVersionString: "3.6.1"
         # 菜单栏应用：不进 Dock、不抢主菜单栏
         LSUIElement: true
         LSMinimumSystemVersion: "14.0"
