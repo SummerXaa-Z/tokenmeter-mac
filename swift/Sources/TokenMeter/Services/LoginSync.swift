@@ -21,6 +21,10 @@ final class LoginSyncController: NSObject, ObservableObject, WKScriptMessageHand
     private static let hookJS = """
     (function() {
       if (window.__dsm_hook__) return;
+      // 域名收口：只在 deepseek.com（含子域）注入 token 抓取，避免用户在
+      // WebView 内跳到第三方页时把那些页面的 Bearer 也回传。forMainFrameOnly:false
+      // 会对 iframe 注入，这里同样按 host 拦掉非 deepseek 的 frame。
+      if (!/(^|\\.)deepseek\\.com$/.test(location.host)) return;
       window.__dsm_hook__ = true;
       function deliver(token) {
         if (!token || typeof token !== 'string') return;

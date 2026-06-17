@@ -100,23 +100,25 @@ final class Updater: ObservableObject {
         }
     }
 
-    // 替换运行中的 app 不能在本进程内做：起独立脚本，等退出→挂载→覆盖→重启
+    // 替换运行中的 app 不能在本进程内做：起独立脚本，等退出→挂载→覆盖→重启。
+    // 路径经环境变量传入、脚本内只用 "$VAR" 引用：bundle 路径含空格/中文/
+    // 引号/$ 等特殊字符（iCloud 同步目录、用户改名常见）也不会破坏脚本或注入命令。
     private func launchInstaller(dmg: URL) throws {
         let target = Bundle.main.bundlePath
         let script = """
         #!/bin/bash
         for i in $(seq 1 40); do pgrep -x TokenMeter >/dev/null || break; sleep 0.5; done
-        MOUNT=$(hdiutil attach -nobrowse -readonly "\(dmg.path)" | grep -o '/Volumes/.*' | head -1)
+        MOUNT=$(hdiutil attach -nobrowse -readonly "$DSM_DMG" | grep -o '/Volumes/.*' | head -1)
         [ -z "$MOUNT" ] && exit 1
         APP_SRC=$(find "$MOUNT" -maxdepth 1 -name "*.app" | head -1)
         if [ -n "$APP_SRC" ]; then
-            rm -rf "\(target)"
-            ditto "$APP_SRC" "\(target)"
-            xattr -cr "\(target)"
+            rm -rf "$DSM_TARGET"
+            ditto "$APP_SRC" "$DSM_TARGET"
+            xattr -cr "$DSM_TARGET"
         fi
         hdiutil detach "$MOUNT" -quiet
-        rm -f "\(dmg.path)"
-        open "\(target)"
+        rm -f "$DSM_DMG"
+        open "$DSM_TARGET"
         """
         let scriptURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("dsm-update.sh")
@@ -124,6 +126,10 @@ final class Updater: ObservableObject {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/bin/bash")
         proc.arguments = [scriptURL.path]
+        var env = ProcessInfo.processInfo.environment
+        env["DSM_TARGET"] = target
+        env["DSM_DMG"] = dmg.path
+        proc.environment = env
         try proc.run()
     }
 

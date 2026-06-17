@@ -133,8 +133,12 @@ final class AppState: ObservableObject {
     // MARK: - 本地源加载（Claude / Codex / Cursor）
 
     // 缓存新鲜（loadedAt 在 TTL 内）且非强制时直接返回，不触发重扫。
+    // 跨天额外失效：00:00 后即使在 TTL 内，"今日"数据也已过期（昨天的），
+    // 强制重扫让今日卡归零，避免午夜后看到昨天的今日用量。
     private func isFresh(_ loadedAt: Date?) -> Bool {
         guard let loadedAt else { return false }
+        let cal = Calendar.current
+        guard cal.isDate(loadedAt, inSameDayAs: Date()) else { return false }
         return Date().timeIntervalSince(loadedAt) < Self.sourceTTL
     }
 

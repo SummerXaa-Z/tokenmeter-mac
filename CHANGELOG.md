@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.6.2 — 2026-06-17 — 安全收口与跨天缓存修正
+
+只读评审后的针对性小修，不改任何已有功能与 UI：
+
+- **更新脚本路径转义**（Updater.swift）：安装脚本原先把 `Bundle.main.bundlePath` 和 dmg 路径直接插值进 bash heredoc，路径含空格/中文/引号/`$`（iCloud 同步目录、用户改名常见）时会破坏脚本甚至命令注入。改为经环境变量 `DSM_TARGET`/`DSM_DMG` 传入、脚本内只用 `"$VAR"` 引用。
+- **登录 WebView token 抓取域名收口**（LoginSync.swift）：注入脚本原先对所有页面（含 iframe）hook `fetch`/XHR 抓 Bearer。加 `location.host` 判断，只在 `deepseek.com`（含子域）注入，避免用户在 WebView 内跳第三方页时回传无关 token（非 deepseek token 本就过不了 verifyUsageToken，不会持久化，此为纵深防御）。
+- **跨天缓存失效**（AppState.swift）：源缓存 60s TTL 未考虑跨天，00:00 后 60 秒内打开面板"今日"卡仍显示昨天数据。`isFresh` 增加同一自然日判断，跨天强制重扫，今日卡正确归零。
+
 ## v3.6.1 — 2026-06-17 — Codex 实时配额解析健壮性
 
 - `WhamWindow.limitWindowSeconds` 改用 `Double?` 解析：JSON 数字无类型区分，服务端若把窗口秒数返成小数（如 `18000.0`），用 `Int` 会解码失败，导致整条配额被丢弃、配额卡显示空。
