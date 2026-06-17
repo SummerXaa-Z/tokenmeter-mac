@@ -4,6 +4,18 @@
 # 更新后钥匙串授权不失效）；证书缺失时回退 ad-hoc（每次更新会重新弹钥匙串授权）。
 # 注：证书名沿用旧名不改——Keychain 授权认的是证书指纹 + bundle ID，换证书会
 # 让所有老用户重新授权一遍。
+#
+# TODO（彻底去掉用户下载时的 Gatekeeper 弹窗，需 Apple Developer Program $99/年）：
+#   自签证书 Apple 不认，用户首次打开必弹"无法验证开发者"（README 教 xattr 绕过）。
+#   想零弹窗，拿到 Developer ID 后改造：
+#   1. IDENTITY 换成 "Developer ID Application: <Name> (<TeamID>)"
+#   2. codesign 加 --options runtime（hardened runtime，公证强制；entitlements 已开）
+#   3. dmg 做完后公证：
+#        xcrun notarytool submit "$DMG" --apple-id <id> --team-id <TeamID> \
+#          --password <app-专用密码> --wait
+#   4. 钉票据：xcrun stapler staple "$DMG"
+#   5. 验证：spctl -a -vvv -t install "$DMG"（应显示 accepted / Notarized）
+#   做完后删掉 README「安装」里的 xattr 绕过说明。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

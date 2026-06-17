@@ -8,6 +8,23 @@ TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：DeepSeek A
 
 郑重声明：本项目不是 DeepSeek 官方产品。
 
+## 安装
+
+到 [Releases](../../releases) 下载最新的 `TokenMeter_<版本>_aarch64.dmg`（Apple Silicon），打开 dmg 把 `TokenMeter.app` 拖进「应用程序」。
+
+### 首次打开提示"无法打开""无法验证开发者"
+
+本项目是开源自签名应用，**未做 Apple 付费公证**，所以从网上下载首次打开会被 Gatekeeper 拦。这不是病毒，是 macOS 对未公证应用的统一拦截。二选一即可放行（只需做一次）：
+
+- **方式一（推荐，点几下）**：在「应用程序」里**右键点 TokenMeter → 打开**，弹窗里再点一次「打开」。之后双击就正常了。
+- **方式二（一行命令）**：终端执行，清掉下载隔离标记：
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/TokenMeter.app
+  ```
+
+> 想彻底不弹这个提示，需要 Apple Developer ID 签名 + 公证（$99/年）。本项目作为免费开源工具暂未做，后续视情况而定。代码完全开源，介意可自行 clone 构建（见下方「构建与运行」）。
+
 ## 致谢与许可
 
 本项目源自他人开源成果的 macOS 移植，溯源链如下：
@@ -101,7 +118,7 @@ xcodebuild -project TokenMeter.xcodeproj -scheme TokenMeter -configuration Relea
 
 产物在 `swift/build/Build/Products/Release/TokenMeter.app`（用 `-derivedDataPath build` 时）。也可以 `xcodegen generate` 后直接用 Xcode 打开 `TokenMeter.xcodeproj` 运行。
 
-> 未签名的 `.app` 首次打开会被 Gatekeeper 拦截。右键 → 打开，或 `xattr -dr com.apple.quarantine <App路径>`。如需公证分发，自行配置 Apple Developer 签名。
+> 自己构建的 `.app` 首次打开同样会被 Gatekeeper 拦截，放行方式见上方[「安装」](#安装)章节。
 
 也可直接用打包脚本（构建 + 签名 + 打 dmg）：
 
