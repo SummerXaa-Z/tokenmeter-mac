@@ -1,5 +1,22 @@
 # Changelog
 
+## v3.7.0 — 2026-07-07 — 新增「配置同步」tab（多 Agent 工具）
+
+TokenMeter × AgentSync 产品层合并的第一步：菜单栏新增「配置同步」tab，把多个 Agent 工具（Claude Code / Codex / Cursor / Trae / Qoder / Cline，含 CN·Work·SOLO 变体）的 MCP 定义与指令文件统一同步。
+
+### 新增
+- **配置同步 tab**（`Views/ConfigSyncView.swift`）：列出本机各工具的 MCP / 指令现状，选真源 → 勾选目标 → 拉取/推送。
+- **独立预览窗口**（`Services/ConfigSyncWindow.swift`）：菜单栏面板窄（360），完整 diff 预览与确认写入放独立窗口（复用 LoginSync 的 NSWindow 模式）。结构化展示每个目标的 server 增删改 + 可展开的完整脱敏 diff；确认写入走 NSAlert 二次确认；成功后可一键回滚。
+- **子进程服务**（`Services/AgentSyncService.swift`）：通过 Process + Pipe 调全局 `agentsync --json` CLI，探测 `~/.local/bin` 等路径，阻塞调用放 Task.detached。
+
+### 架构
+- 复用现有 `SourceCache` / `Card` / `Theme` / iconButton 模式，与其他 tab 视觉一致。
+- 依赖独立 `agentsync` CLI（Python），未安装时 tab 自动隐藏（`AgentSyncService.isAvailable`）。
+- bundle id 与既有偏好不变，纯新增功能，不改任何已有 tab。
+
+### 安全
+- 依赖 agentsync CLI 已验证的写前自动备份 / 回滚闭环；env secret 全程脱敏；写盘原子化。
+
 ## v3.6.2 — 2026-06-17 — 安全收口与跨天缓存修正
 
 只读评审后的针对性小修，不改任何已有功能与 UI：

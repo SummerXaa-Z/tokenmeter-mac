@@ -13,6 +13,7 @@ enum Provider: String, CaseIterable, Identifiable {
     case claude = "Claude"
     case codex = "Codex"
     case cursor = "Cursor"
+    case configsync = "配置同步"
     var id: String { rawValue }
 
     // 没装对应工具就不显示该 tab
@@ -23,6 +24,7 @@ enum Provider: String, CaseIterable, Identifiable {
         case .claude: return ClaudeUsage.isAvailable
         case .codex: return CodexUsage.isAvailable
         case .cursor: return CursorUsage.isAvailable
+        case .configsync: return AgentSyncService.isAvailable
         }
     }
 }
@@ -42,6 +44,7 @@ struct RootView: View {
             case .claude: return state.claudeEnabled
             case .codex: return state.codexEnabled
             case .cursor: return state.cursorEnabled
+            case .configsync: return state.configSyncEnabled
             }
         }
     }
@@ -71,6 +74,8 @@ struct RootView: View {
                             CodexView(onSettings: { view = .settings })
                         case .cursor:
                             CursorView(onSettings: { view = .settings })
+                        case .configsync:
+                            ConfigSyncView(onSettings: { view = .settings })
                         }
                     }
                 case .settings:

@@ -30,6 +30,10 @@ final class AppState: ObservableObject {
     @Published var codex: SourceCache<CodexUsageResult> = .init()
     @Published var cursor: SourceCache<CursorUsageResult> = .init()
 
+    // 配置同步：本机各工具的 MCP/指令现状（调 agentsync CLI 子进程）
+    @Published var configSync: SourceCache<ConfigScanResult> = .init()
+    @Published var configSyncEnabled: Bool = true
+
     // 缓存新鲜度：60s 内视为新鲜，View 出现时直接复用
     static let sourceTTL: TimeInterval = 60
 
@@ -201,6 +205,44 @@ final class AppState: ObservableObject {
             cursor.error = (error as? CursorUsageError)?.errorDescription ?? error.localizedDescription
         }
         cursor.loading = false
+    }
+
+    // MARK: - 配置同步（agentsync CLI）
+
+    func loadConfigSync(force: Bool = false) async {
+        guard configSyncEnabled, AgentSyncService.isAvailable else { return }
+        if !force, isFresh(configSync.loadedAt) { return }
+        configSync.loading = true
+        configSync.error = nil
+        do {
+            let r = try await AgentSyncService.scan()
+            configSync.result = r
+            configSync.loadedAt = Date()
+        } catch {
+            configSync.result = nil
+            configSync.error = (error as? AgentSyncError)?.errorDescription ?? error.localizedDescription
+        }
+        configSync.loading = false
+    }
+
+    // 拉取真源到 canonical，成功后刷新现状
+    func configSyncPull(from source: String, layers: [String]) async throws -> PullResult {
+        let r = try await AgentSyncService.pull(from: source, layers: layers)
+        await loadConfigSync(force: true)
+        return r
+    }
+
+    // 落盘写入目标工具，成功后刷新现状
+    func configSyncApply(to targets: [String], layers: [String]) async throws -> PushResult {
+        let r = try await AgentSyncService.pushApply(to: targets, layers: layers)
+        await loadConfigSync(force: true)
+        return r
+    }
+
+    func configSyncRollback(ts: String) async throws -> RollbackResult {
+        let r = try await AgentSyncService.rollback(ts: ts)
+        await loadConfigSync(force: true)
+        return r
     }
 
     // 自动刷新定时器，对应原版 setInterval effect

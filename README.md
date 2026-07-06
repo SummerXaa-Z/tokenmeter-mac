@@ -61,6 +61,13 @@ TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：DeepSeek A
 - 账户与订阅计划、计费周期进度与续订倒计时、本周期按模型 token 与费用、超额消费上限进度（开通 usage-based 的账户）。
 - token 只在本机读取、只发往 cursor.com，不经任何第三方。
 
+### 配置同步（多 Agent 工具）
+- 把 MCP server 定义与指令文件（CLAUDE.md / AGENTS.md / rules）在 Claude Code / Codex / Cursor / Trae / Qoder / Cline（含 CN·Work·SOLO 变体）之间统一。
+- 单一真源 → 单向推送：选一个工具当真源抽取配置，勾选目标工具一键推送，不做双向。
+- 写入前独立窗口预览结构化 diff（哪些 server 新增/修改/移除），二次确认才落盘；写前自动备份，可一键回滚。
+- env 里的 secret 全程脱敏展示（只显示存在，不露明文）。
+- 依赖独立的 `agentsync` CLI（Python），需先安装：`uv tool install --editable ~/Documents/code-xt/agentsync`。未检测到该命令时此 tab 自动隐藏。
+
 ### 通用
 - Claude / Codex / Cursor tab 顶栏显示工具运行状态（绿点运行中 / 灰点未运行，CLI 与桌面版都识别）。
 - 菜单栏图标旁可显示核心指标：今日合计 token（默认，Claude + Codex）/ Claude 单源 / Codex 配额剩余 %，可关闭。
