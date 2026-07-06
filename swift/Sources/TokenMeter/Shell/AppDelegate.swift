@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // SwiftUI 根视图塞进 popover
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 360, height: 600)
+        popover.contentSize = NSSize(width: 420, height: 600)
         popover.behavior = .transient   // 点外部自动收起
         popover.animates = true
         popover.contentViewController = NSHostingController(

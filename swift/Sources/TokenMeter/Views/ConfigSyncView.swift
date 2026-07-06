@@ -2,7 +2,7 @@ import SwiftUI
 
 // 配置同步面板：列出本机各 Agent 工具的 MCP/指令现状，选真源 → 勾选目标 →
 // 预览（开独立窗口看结构化 diff）→ 确认写入。数据来自 agentsync CLI 子进程。
-// 面板固定 360×600，重内容（完整 diff/确认）走 ConfigSyncWindow 独立窗口。
+// 面板宽 420，重内容（完整 diff/确认）走 ConfigSyncWindow 独立窗口。
 struct ConfigSyncView: View {
     @EnvironmentObject var state: AppState
     var onSettings: () -> Void

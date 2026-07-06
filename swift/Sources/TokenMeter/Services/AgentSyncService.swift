@@ -195,10 +195,27 @@ enum AgentSyncService {
         proc.waitUntilExit()
 
         guard proc.terminationStatus == 0 else {
+            // CLI 的业务错误（如 canonical 为空）以 {ok:false,error} + 退出码 1 返回，
+            // stdout 才有可读文案。优先透出它，退回才用 stderr/退出码。
+            if let msg = decodeCLIError(outData) {
+                throw AgentSyncError.cliError(msg)
+            }
             let stderr = String(decoding: errData, as: UTF8.self)
             throw AgentSyncError.nonZeroExit(code: proc.terminationStatus, stderr: stderr)
         }
         return outData
+    }
+
+    private struct CLIErrorEnvelope: Decodable {
+        let ok: Bool?
+        let error: String?
+    }
+
+    private static func decodeCLIError(_ data: Data) -> String? {
+        guard let env = try? JSONDecoder().decode(CLIErrorEnvelope.self, from: data),
+              env.ok == false, let msg = env.error, !msg.isEmpty
+        else { return nil }
+        return msg
     }
 
     private static func run<T: Decodable>(_ args: [String], as type: T.Type) async throws -> T {

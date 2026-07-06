@@ -12,7 +12,7 @@ enum Theme {
     static let claude = Color(hex: 0xD97757)       // Anthropic 橙
     static let cursor = Color(hex: 0x7C8AFF)       // Cursor 紫蓝
 
-    static let panelWidth: CGFloat = 360
+    static let panelWidth: CGFloat = 420
     static let panelHeight: CGFloat = 600
     static let corner: CGFloat = 12
 }
