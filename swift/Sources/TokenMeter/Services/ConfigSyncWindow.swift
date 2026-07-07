@@ -169,9 +169,15 @@ struct DiffReviewView: View {
             Text(t.path).font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             if let s = t.servers {
-                serverDiffLine("新增", s.added, .green)
-                serverDiffLine("修改", s.modified, .orange)
-                serverDiffLine("移除", s.removed, .red)
+                if let added = s.added as? [String], !added.isEmpty {
+                    serverDiffLine("新增", added, .green)
+                }
+                if let overwritten = s.overwritten as? [String], !overwritten.isEmpty {
+                    serverDiffLine("覆盖", overwritten, .orange)
+                }
+                if let preserved = s.preserved as? [String], !preserved.isEmpty {
+                    serverDiffLine("保留（目标独有）", preserved, .gray)
+                }
             }
             if let items = t.itemsAdded, !items.isEmpty {
                 itemDiffLine("新增", items, .green)

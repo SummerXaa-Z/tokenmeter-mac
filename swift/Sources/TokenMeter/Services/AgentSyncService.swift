@@ -67,8 +67,11 @@ struct ConfigScanResult: Decodable {
 
 struct ServersDiff: Decodable {
     let added: [String]
-    let modified: [String]
-    let removed: [String]
+    let overwritten: [String]?
+    let preserved: [String]?
+    // 兼容旧格式
+    let modified: [String]?
+    let removed: [String]?
 }
 
 struct PushTarget: Decodable, Identifiable {
