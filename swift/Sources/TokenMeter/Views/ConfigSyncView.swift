@@ -11,6 +11,7 @@ struct ConfigSyncView: View {
     @State private var selectedTargets: Set<String> = []  // 推送目标
     @State private var layerMCP = true
     @State private var layerRules = false
+    @State private var layerSkills = false
     @State private var busy = false
     @State private var actionError: String?
 
@@ -18,15 +19,16 @@ struct ConfigSyncView: View {
         state.configSync.result?.profiles ?? []
     }
 
-    // 可作为真源/目标的工具：有 MCP 配置或有指令文件
+    // 可作为真源/目标的工具：有 MCP 配置或有指令或有 skills
     private var syncable: [ConfigProfile] {
-        profiles.filter { $0.mcpState == "present" || $0.hasRules }
+        profiles.filter { $0.mcpState == "present" || $0.hasRules || $0.hasSkills }
     }
 
     private var layers: [String] {
         var l: [String] = []
         if layerMCP { l.append("mcp") }
         if layerRules { l.append("rules") }
+        if layerSkills { l.append("skills") }
         return l
     }
 
@@ -120,7 +122,7 @@ struct ConfigSyncView: View {
 
     private func toolRow(_ p: ConfigProfile) -> some View {
         let isSource = p.key == source
-        let selectable = (p.mcpState == "present" || p.hasRules) && !isSource
+        let selectable = (p.mcpState == "present" || p.hasRules || p.hasSkills) && !isSource
         return HStack(spacing: 8) {
             Image(systemName: iconFor(p.key))
                 .font(.system(size: 13))
@@ -128,7 +130,7 @@ struct ConfigSyncView: View {
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(p.label).font(.system(size: 12, weight: .medium))
-                Text("MCP \(p.mcpDisplay) · 指令 \(p.hasRules ? "✓" : "—")")
+                Text("MCP \(p.mcpDisplay) · 指令 \(p.hasRules ? "✓" : "—") · Skills \(p.hasSkills ? p.skills : "—")")
                     .font(.system(size: 10)).foregroundStyle(.secondary)
             }
             Spacer()
@@ -169,6 +171,7 @@ struct ConfigSyncView: View {
                 Spacer()
                 Toggle("MCP", isOn: $layerMCP).font(.system(size: 11))
                 Toggle("指令", isOn: $layerRules).font(.system(size: 11))
+                Toggle("Skills", isOn: $layerSkills).font(.system(size: 11))
             }
             .toggleStyle(.checkbox)
         }

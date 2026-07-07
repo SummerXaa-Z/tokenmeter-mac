@@ -173,6 +173,15 @@ struct DiffReviewView: View {
                 serverDiffLine("修改", s.modified, .orange)
                 serverDiffLine("移除", s.removed, .red)
             }
+            if let items = t.itemsAdded, !items.isEmpty {
+                itemDiffLine("新增", items, .green)
+            }
+            if let present = t.alreadyPresent, !present.isEmpty {
+                itemDiffLine("已存在", present, .secondary)
+            }
+            if let dstOnly = t.dstOnly, !dstOnly.isEmpty {
+                itemDiffLine("目标独有", dstOnly, .gray)
+            }
             if let diff = t.diffText, !diff.isEmpty {
                 DisclosureGroup("完整 diff（已脱敏）") {
                     Text(diff).font(.system(size: 10, design: .monospaced))
@@ -198,11 +207,25 @@ struct DiffReviewView: View {
         }
     }
 
+    @ViewBuilder
+    private func itemDiffLine(_ label: String, _ names: [String], _ color: Color) -> some View {
+        if !names.isEmpty {
+            HStack(alignment: .top, spacing: 4) {
+                Text("\(label) \(names.count)").font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(color)
+                Text(names.joined(separator: ", ")).font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private func changeLabel(_ c: String) -> String {
         switch c {
         case "create": return "新建文件"
         case "modify": return "修改"
         case "skip_no_create": return "跳过（不存在）"
+        case "add": return "补充"
+        case "skip": return "跳过"
         default: return c
         }
     }

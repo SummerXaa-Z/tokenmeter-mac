@@ -55,6 +55,10 @@ struct ConfigProfile: Decodable, Identifiable {
         default: return "—"
         }
     }
+
+    var hasSkills: Bool {
+        skills != "—" && !skills.isEmpty
+    }
 }
 
 struct ConfigScanResult: Decodable {
@@ -74,7 +78,10 @@ struct PushTarget: Decodable, Identifiable {
     let path: String
     let exists: Bool
     let servers: ServersDiff?
-    let change: String            // none / modify / create / skip_no_create
+    let itemsAdded: [String]?
+    let alreadyPresent: [String]?
+    let dstOnly: [String]?
+    let change: String            // none / modify / create / skip_no_create / add / skip
     let written: Bool
     let diffText: String?
 
@@ -82,6 +89,9 @@ struct PushTarget: Decodable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case key, label, layer, path, exists, servers, change, written
+        case itemsAdded = "items_added"
+        case alreadyPresent = "already_present"
+        case dstOnly = "dst_only"
         case diffText = "diff_text"
     }
 }
