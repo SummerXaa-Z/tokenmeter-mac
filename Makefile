@@ -6,7 +6,7 @@ SCHEME := TokenMeter
 CONFIGURATION ?= Debug
 DERIVED_DATA ?= build
 
-.PHONY: project test release-check clean
+.PHONY: project test release-check package clean
 
 project:
 	cd $(SWIFT_DIR) && xcodegen generate
@@ -25,6 +25,9 @@ release-check: test
 		-configuration Release \
 		-derivedDataPath $(DERIVED_DATA) \
 		build
+
+package: release-check
+	cd $(SWIFT_DIR) && ./scripts/package.sh
 
 clean:
 	rm -rf $(SWIFT_DIR)/$(DERIVED_DATA)

@@ -153,6 +153,37 @@ make release-check
 
 `make test` 会先用 XcodeGen 重新生成 `swift/TokenMeter.xcodeproj`，再跑 XCTest。当前测试重点覆盖 AgentSync JSON 解码契约与配置同步目标选择逻辑。
 
+## 维护者发布流程
+
+普通本地打包：
+
+```bash
+make package
+```
+
+默认会使用本机自签证书 `DeepSeekMonitor Dev`，没有该证书时回退 ad-hoc 签名。产物在 `/tmp/TokenMeter_<版本>_aarch64.dmg`。
+
+拿到 Apple Developer ID 后，可启用 Developer ID 签名与公证：
+
+```bash
+xcrun notarytool store-credentials tokenmeter-notary
+
+export DEVELOPER_ID_APPLICATION="Developer ID Application: <Name> (<TeamID>)"
+export NOTARY_KEYCHAIN_PROFILE="tokenmeter-notary"
+export NOTARIZE=required
+make package
+```
+
+`NOTARY_KEYCHAIN_PROFILE` 推荐使用 Keychain profile，不要把 Apple ID、App 专用密码、API key、p12 密码写进仓库。临时调试时也支持 `NOTARY_APPLE_ID` / `NOTARY_TEAM_ID` / `NOTARY_PASSWORD` 环境变量。
+
+发布前检查：
+
+```bash
+hdiutil verify /tmp/TokenMeter_<版本>_aarch64.dmg
+xcrun stapler validate /tmp/TokenMeter_<版本>_aarch64.dmg
+spctl -a -vvv -t install /tmp/TokenMeter_<版本>_aarch64.dmg
+```
+
 ## 使用方式
 
 打开应用后点击菜单栏图标进入面板。装有 Claude CLI / Codex CLI 的机器会自动出现对应 tab，本地统计开箱即用、无需配置。

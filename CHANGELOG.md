@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — 2026-07-09 — 签名公证发布链路预埋
+
+- **Developer ID 发布预埋**：`package.sh` 支持通过 `DEVELOPER_ID_APPLICATION` 启用 Developer ID 签名，通过 `NOTARY_KEYCHAIN_PROFILE` 或 Apple ID 三元组启用 `notarytool submit`、`stapler staple` 与 `spctl` 验证；未配置证书时仍保留自签名 / ad-hoc fallback。影响范围：`swift/scripts/package.sh`。
+- **统一打包入口**：新增 `make package`，先跑 `make release-check`，再调用 Swift 打包脚本。影响范围：`Makefile`。
+- **维护者发布文档**：README 增加 Developer ID、公证环境变量、Keychain profile 与发布前验证命令说明。影响范围：`README.md`。
+
 ## v3.7.1 — 2026-07-09 — 配置同步稳定版与开源验证
 
 本版把 v3.7.0 的「配置同步」能力收口成可发布版本，并补齐开源贡献者的本地/CI 验证入口。
