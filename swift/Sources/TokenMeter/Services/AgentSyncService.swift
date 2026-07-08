@@ -89,6 +89,13 @@ struct ConfigScanResult: Decodable {
     let profiles: [ConfigProfile]
 }
 
+enum ConfigSelection {
+    static func validTargets(_ selected: Set<String>, profiles: [ConfigProfile], source: String) -> Set<String> {
+        let allowed = Set(profiles.filter { $0.hasSyncableLayer && $0.key != source }.map(\.key))
+        return selected.intersection(allowed)
+    }
+}
+
 struct ServersDiff: Decodable {
     let added: [String]
     let overwritten: [String]?

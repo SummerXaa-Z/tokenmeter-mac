@@ -43,9 +43,13 @@ struct ConfigSyncView: View {
         profiles.filter { $0.hasSyncableLayer && $0.key != source }
     }
 
+    private var validSelectedTargets: Set<String> {
+        ConfigSelection.validTargets(selectedTargets, profiles: profiles, source: source)
+    }
+
     // 是否全选了
     private var allTargetsSelected: Bool {
-        !targetableProfiles.isEmpty && targetableProfiles.allSatisfy { selectedTargets.contains($0.key) }
+        !targetableProfiles.isEmpty && targetableProfiles.allSatisfy { validSelectedTargets.contains($0.key) }
     }
 
     // 切换全选
@@ -252,7 +256,7 @@ struct ConfigSyncView: View {
                     .font(.system(size: 12, weight: .semibold))
             }
             .buttonStyle(.borderedProminent)
-            .disabled(selectedTargets.isEmpty || layers.isEmpty || busy)
+            .disabled(validSelectedTargets.isEmpty || layers.isEmpty || busy)
         }
     }
 
@@ -270,7 +274,7 @@ struct ConfigSyncView: View {
     private func openPreview() {
         actionError = nil
         ConfigSyncWindow.shared.present(
-            targets: Array(selectedTargets),
+            targets: Array(validSelectedTargets).sorted(),
             layers: layers,
             state: state
         )
