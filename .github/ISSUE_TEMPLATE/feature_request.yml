@@ -1,0 +1,64 @@
+name: Feature request
+description: 提议 TokenMeter 的新能力或体验改进
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请描述具体使用场景。涉及外部服务时，优先附官方文档链接，不要粘贴个人凭据。
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响范围
+      options:
+        - DeepSeek
+        - Claude
+        - Codex
+        - Cursor
+        - 配置同步
+        - 总览 / 趋势
+        - 通知 / 预警
+        - 自动更新
+        - 安装 / 发布
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 使用场景
+      description: 说明现在遇到的具体问题或缺口。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望方案
+      description: 描述希望 TokenMeter 如何表现。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 已尝试的替代方案
+      description: 如果有临时绕过方式，可以写在这里。
+    validations:
+      required: false
+  - type: textarea
+    id: references
+    attributes:
+      label: 参考链接
+      description: 官方 API、文档、截图或相关项目链接。
+    validations:
+      required: false
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 已确认没有提交 API key、token、cookie 或个人信息。
+          required: true
+        - label: 已搜索现有 issues，没有找到相同请求。
+          required: true

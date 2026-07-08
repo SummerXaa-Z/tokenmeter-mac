@@ -1,0 +1,94 @@
+name: Bug report
+description: 报告 TokenMeter 的异常行为
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请不要粘贴 API key、token、cookie、完整会话日志或个人信息。
+  - type: input
+    id: version
+    attributes:
+      label: TokenMeter 版本
+      description: 可在 GitHub Release、应用版本信息或 DMG 文件名中查看。
+      placeholder: "v3.7.1"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS 版本
+      placeholder: "macOS 15.5 / 26 beta"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: 安装方式
+      options:
+        - GitHub Release DMG
+        - 自行构建
+        - 从旧版本自动更新
+        - 其他
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: 影响的数据源或功能
+      options:
+        - DeepSeek
+        - Claude
+        - Codex
+        - Cursor
+        - 配置同步
+        - 自动更新
+        - 安装 / 签名 / Gatekeeper
+        - 菜单栏 / UI
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+      description: 描述正常情况下应该发生什么。
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 描述看到的错误、空状态、卡住位置或崩溃现象。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 TokenMeter
+        2. 进入 ...
+        3. 点击 ...
+        4. 看到 ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志或截图
+      description: 粘贴前请手动脱敏。不要包含 token、cookie、Authorization header 或个人信息。
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 已确认没有提交 API key、token、cookie 或个人信息。
+          required: true
+        - label: 已搜索现有 issues，没有找到相同问题。
+          required: true

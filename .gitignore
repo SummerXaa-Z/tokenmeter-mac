@@ -10,11 +10,16 @@ src-tauri/target/
 *.MD
 !README.md
 !CHANGELOG.md
+!CONTRIBUTING.md
+!SECURITY.md
+!.github/PULL_REQUEST_TEMPLATE.md
 
 # ---------- Internal docs ----------
 PRD.md
 IMPLEMENTATION_NOTES.md
 docs/
+!docs/
+!docs/release.md
 
 # ---------- Local environment and secrets ----------
 .npmrc

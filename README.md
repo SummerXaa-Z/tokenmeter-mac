@@ -153,6 +153,8 @@ make release-check
 
 `make test` 会先用 XcodeGen 重新生成 `swift/TokenMeter.xcodeproj`，再跑 XCTest。当前测试重点覆盖 AgentSync JSON 解码契约与配置同步目标选择逻辑。
 
+贡献代码前请先看 [CONTRIBUTING.md](CONTRIBUTING.md)。提交安全问题前请先看 [SECURITY.md](SECURITY.md)，不要在公开 issue 里粘贴 API key、token、cookie 或完整个人日志。
+
 ## 维护者发布流程
 
 普通本地打包：
@@ -183,6 +185,8 @@ hdiutil verify /tmp/TokenMeter_<版本>_aarch64.dmg
 xcrun stapler validate /tmp/TokenMeter_<版本>_aarch64.dmg
 spctl -a -vvv -t install /tmp/TokenMeter_<版本>_aarch64.dmg
 ```
+
+完整发布 checklist 见 [docs/release.md](docs/release.md)。
 
 ## 使用方式
 
