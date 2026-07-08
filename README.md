@@ -102,6 +102,7 @@ swift/
 ├── project.yml                      # XcodeGen 工程定义
 ├── scripts/package.sh               # 构建 + 签名 + 打 dmg
 ├── Resources/Assets.xcassets        # 图标资源
+├── Tests/TokenMeterTests            # XCTest：AgentSync 契约与配置同步选择逻辑
 └── Sources/TokenMeter/
     ├── Shell/        # main + AppDelegate（状态栏 + popover 外壳 + 菜单栏预警）
     ├── Models/       # AppState（数据流）、Models（接口模型）、Format
@@ -134,6 +135,23 @@ cd tokenmeter-mac/swift && ./scripts/package.sh
 ```
 
 > 脚本默认查找名为 `DeepSeekMonitor Dev` 的本机代码签名证书（自签即可）；找不到时回退 ad-hoc 签名。用稳定证书签名的好处：更新版本后 Keychain 授权不会重复弹窗（ad-hoc 签名每个版本视为不同 app）。
+
+## 开发与验证
+
+本地和 GitHub Actions 使用同一入口：
+
+```bash
+brew install xcodegen
+make test
+```
+
+发布前建议跑：
+
+```bash
+make release-check
+```
+
+`make test` 会先用 XcodeGen 重新生成 `swift/TokenMeter.xcodeproj`，再跑 XCTest。当前测试重点覆盖 AgentSync JSON 解码契约与配置同步目标选择逻辑。
 
 ## 使用方式
 
