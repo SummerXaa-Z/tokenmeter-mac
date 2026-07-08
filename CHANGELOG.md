@@ -1,5 +1,21 @@
 # Changelog
 
+## v3.7.1 — 2026-07-09 — 配置同步稳定版与开源验证
+
+本版把 v3.7.0 的「配置同步」能力收口成可发布版本，并补齐开源贡献者的本地/CI 验证入口。
+
+### 新增
+- **配置同步扩展层**：Commands / Agents / Hooks 纳入扫描结果、状态展示、同步层选择与目标筛选，支持 agentsync 新增目录类配置。
+- **XCTest 覆盖**：新增 `TokenMeterTests`，覆盖 AgentSync JSON 解码契约、可同步层判断、目标集合过滤。
+- **开源验证入口**：新增根目录 `Makefile`，`make test` 统一执行 XcodeGen + XCTest，`make release-check` 增加 Release 构建检查；新增 GitHub Actions 在 push / PR 时运行同一入口。
+
+### 修复
+- **全选漏选**：真源列表、单行勾选、全选候选共用 `ConfigProfile.hasSyncableLayer`，避免只有 Commands / Agents / Hooks 的工具被「全选」漏掉。
+- **目标残留**：预览/推送前过滤当前真源、不可同步 profile 与已不存在 key，避免切换真源后旧勾选残留。
+
+### 文档
+- README 补充 `make test` / `make release-check` 与测试范围说明。
+
 ## v3.7.0 — 2026-07-07 — 新增「配置同步」tab（多 Agent 工具）
 
 TokenMeter × AgentSync 产品层合并的第一步：菜单栏新增「配置同步」tab，把多个 Agent 工具（Claude Code / Codex / Cursor / Trae / Qoder / Cline，含 CN·Work·SOLO 变体）的 MCP 定义、指令文件、Skills 统一同步。
