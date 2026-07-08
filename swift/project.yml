@@ -44,3 +44,14 @@ targets:
         # 非沙盒：需要访问 ~/Library/LaunchAgents 写自启 plist、读 WKWebView 缓存
         com.apple.security.app-sandbox: false
         com.apple.security.network.client: true
+
+  TokenMeterTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: TokenMeter
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.deepseek.monitor.mac.tests

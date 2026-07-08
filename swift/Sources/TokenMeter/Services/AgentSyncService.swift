@@ -38,11 +38,14 @@ struct ConfigProfile: Decodable, Identifiable {
     let hasRules: Bool
     let memory: String
     let skills: String
+    let commands: String?
+    let agents: String?
+    let hooks: String?
 
     var id: String { key }
 
     enum CodingKeys: String, CodingKey {
-        case key, label, variant, memory, skills
+        case key, label, variant, memory, skills, commands, agents, hooks
         case mcpState = "mcp_state"
         case mcpCount = "mcp_count"
         case hasRules = "has_rules"
@@ -58,6 +61,27 @@ struct ConfigProfile: Decodable, Identifiable {
 
     var hasSkills: Bool {
         skills != "—" && !skills.isEmpty
+    }
+
+    var hasCommands: Bool {
+        Self.hasLayerValue(commands)
+    }
+
+    var hasAgents: Bool {
+        Self.hasLayerValue(agents)
+    }
+
+    var hasHooks: Bool {
+        Self.hasLayerValue(hooks)
+    }
+
+    var hasSyncableLayer: Bool {
+        mcpState == "present" || hasRules || hasSkills || hasCommands || hasAgents || hasHooks
+    }
+
+    private static func hasLayerValue(_ value: String?) -> Bool {
+        guard let value else { return false }
+        return value != "—" && !value.isEmpty
     }
 }
 

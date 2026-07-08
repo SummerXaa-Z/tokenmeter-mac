@@ -4,6 +4,9 @@
 
 TokenMeter × AgentSync 产品层合并的第一步：菜单栏新增「配置同步」tab，把多个 Agent 工具（Claude Code / Codex / Cursor / Trae / Qoder / Cline，含 CN·Work·SOLO 变体）的 MCP 定义、指令文件、Skills 统一同步。
 
+### 2026-07-09 修复
+- **配置同步新层全选漏选**：Commands / Agents / Hooks 已纳入 `ConfigProfile.hasSyncableLayer` 统一判断，真源列表、单行勾选、全选候选共用同一规则，避免只有新层可同步的工具被「全选」漏掉。影响范围：`AgentSyncService.swift`、`ConfigSyncView.swift`；新增 `TokenMeterTests` 覆盖 Commands-only 与空配置两类判断。
+
 ### 新增
 - **配置同步 tab**（`Views/ConfigSyncView.swift`）：列出本机各工具的 MCP / 指令 / Skills 现状，选真源 → 勾选目标 → 拉取/推送。
 - **独立预览窗口**（`Services/ConfigSyncWindow.swift`）：菜单栏面板窄（420），完整 diff 预览与确认写入放独立窗口（复用 LoginSync 的 NSWindow 模式）。结构化展示每个目标的 server 增删改 + Skills 目录新增项 + 可展开的完整脱敏 diff；确认写入走 NSAlert 二次确认；成功后可一键回滚。

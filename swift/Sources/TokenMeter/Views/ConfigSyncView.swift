@@ -12,6 +12,9 @@ struct ConfigSyncView: View {
     @State private var layerMCP = true
     @State private var layerRules = false
     @State private var layerSkills = false
+    @State private var layerCommands = false
+    @State private var layerAgents = false
+    @State private var layerHooks = false
     @State private var busy = false
     @State private var actionError: String?
 
@@ -19,9 +22,9 @@ struct ConfigSyncView: View {
         state.configSync.result?.profiles ?? []
     }
 
-    // 可作为真源/目标的工具：有 MCP 配置或有指令或有 skills
+    // 可作为真源/目标的工具：有任何可同步的层
     private var syncable: [ConfigProfile] {
-        profiles.filter { $0.mcpState == "present" || $0.hasRules || $0.hasSkills }
+        profiles.filter(\.hasSyncableLayer)
     }
 
     private var layers: [String] {
@@ -29,7 +32,29 @@ struct ConfigSyncView: View {
         if layerMCP { l.append("mcp") }
         if layerRules { l.append("rules") }
         if layerSkills { l.append("skills") }
+        if layerCommands { l.append("commands") }
+        if layerAgents { l.append("agents") }
+        if layerHooks { l.append("hooks") }
         return l
+    }
+
+    // 可选为目标的工具（排除真源自己）
+    private var targetableProfiles: [ConfigProfile] {
+        profiles.filter { $0.hasSyncableLayer && $0.key != source }
+    }
+
+    // 是否全选了
+    private var allTargetsSelected: Bool {
+        !targetableProfiles.isEmpty && targetableProfiles.allSatisfy { selectedTargets.contains($0.key) }
+    }
+
+    // 切换全选
+    private func toggleSelectAll() {
+        if allTargetsSelected {
+            selectedTargets.removeAll()
+        } else {
+            selectedTargets = Set(targetableProfiles.map { $0.key })
+        }
     }
 
     var body: some View {
@@ -110,8 +135,15 @@ struct ConfigSyncView: View {
     private var toolsCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 6) {
-                Label("推送目标（勾选）", systemImage: "square.and.arrow.down")
-                    .font(.system(size: 12, weight: .semibold))
+                HStack {
+                    Label("推送目标（勾选）", systemImage: "square.and.arrow.down")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Button(allTargetsSelected ? "全不选" : "全选") {
+                        toggleSelectAll()
+                    }
+                    .font(.system(size: 11))
+                }
                 ForEach(profiles) { p in
                     toolRow(p)
                     if p.id != profiles.last?.id { Divider().opacity(0.3) }
@@ -122,7 +154,7 @@ struct ConfigSyncView: View {
 
     private func toolRow(_ p: ConfigProfile) -> some View {
         let isSource = p.key == source
-        let selectable = (p.mcpState == "present" || p.hasRules || p.hasSkills) && !isSource
+        let selectable = p.hasSyncableLayer && !isSource
         return HStack(spacing: 8) {
             Image(systemName: iconFor(p.key))
                 .font(.system(size: 13))
@@ -130,8 +162,7 @@ struct ConfigSyncView: View {
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(p.label).font(.system(size: 12, weight: .medium))
-                Text("MCP \(p.mcpDisplay) · 指令 \(p.hasRules ? "✓" : "—") · Skills \(p.hasSkills ? p.skills : "—")")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                layerStatusText(p)
             }
             Spacer()
             if isSource {
@@ -152,6 +183,24 @@ struct ConfigSyncView: View {
         .opacity(selectable || isSource ? 1 : 0.45)
     }
 
+    private func layerStatusText(_ p: ConfigProfile) -> some View {
+        var parts: [String] = []
+        parts.append("MCP \(p.mcpDisplay)")
+        parts.append("指令 \(p.hasRules ? "✓" : "—")")
+        parts.append("Skills \(p.hasSkills ? p.skills : "—")")
+        if let cmd = p.commands, p.hasCommands {
+            parts.append("Cmd \(cmd)")
+        }
+        if let agt = p.agents, p.hasAgents {
+            parts.append("Agents \(agt)")
+        }
+        if let hooks = p.hooks, p.hasHooks {
+            parts.append("Hooks \(hooks)")
+        }
+        return Text(parts.joined(separator: " · "))
+            .font(.system(size: 10)).foregroundStyle(.secondary)
+    }
+
     private func iconFor(_ key: String) -> String {
         if key.hasPrefix("claude") { return "sparkles" }
         if key.hasPrefix("codex") { return "chevron.left.forwardslash.chevron.right" }
@@ -165,13 +214,19 @@ struct ConfigSyncView: View {
     // MARK: - 层选择
     private var layerCard: some View {
         Card {
-            HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
                 Label("同步层", systemImage: "square.stack.3d.up")
                     .font(.system(size: 12, weight: .semibold))
-                Spacer()
-                Toggle("MCP", isOn: $layerMCP).font(.system(size: 11))
-                Toggle("指令", isOn: $layerRules).font(.system(size: 11))
-                Toggle("Skills", isOn: $layerSkills).font(.system(size: 11))
+                HStack(spacing: 16) {
+                    Toggle("MCP", isOn: $layerMCP).font(.system(size: 11))
+                    Toggle("指令", isOn: $layerRules).font(.system(size: 11))
+                    Toggle("Skills", isOn: $layerSkills).font(.system(size: 11))
+                }
+                HStack(spacing: 16) {
+                    Toggle("Commands", isOn: $layerCommands).font(.system(size: 11))
+                    Toggle("Agents", isOn: $layerAgents).font(.system(size: 11))
+                    Toggle("Hooks", isOn: $layerHooks).font(.system(size: 11))
+                }
             }
             .toggleStyle(.checkbox)
         }
