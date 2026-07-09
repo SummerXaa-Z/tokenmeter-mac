@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject var state: AppState
@@ -16,6 +18,7 @@ struct SettingsView: View {
     @State private var autoUpdateOn = true
     @State private var notificationsOn = true
     @State private var balanceAlert = 0
+    @State private var diagnosticStatus = ""
 
     @StateObject private var sync = LoginSyncController()
     @ObservedObject private var updater = Updater.shared
@@ -31,6 +34,7 @@ struct SettingsView: View {
                 refreshSection
                 autostartSection
                 updateSection
+                diagnosticsSection
                 footer
             }
             .padding(14)
@@ -313,6 +317,44 @@ struct SettingsView: View {
             Task { await updater.downloadAndInstall() }
         } else {
             Task { await updater.check() }
+        }
+    }
+
+    // MARK: - 诊断信息
+    private var diagnosticsSection: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("诊断信息", systemImage: "stethoscope")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("导出版本、系统、签名、数据源路径与工具检测状态；不包含 API key、token、cookie 或会话内容。")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                HStack {
+                    Button("导出诊断信息") { exportDiagnostics() }
+                    Spacer()
+                }
+                if !diagnosticStatus.isEmpty {
+                    Text(diagnosticStatus)
+                        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+        }
+    }
+
+    private func exportDiagnostics() {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSSavePanel()
+        panel.title = "导出诊断信息"
+        panel.nameFieldStringValue = DiagnosticReport.currentFilename()
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowedContentTypes = [.plainText]
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try DiagnosticReport.currentText().write(to: url, atomically: true, encoding: .utf8)
+            diagnosticStatus = "已导出：\(url.lastPathComponent)"
+        } catch {
+            diagnosticStatus = "导出失败：\(error.localizedDescription)"
         }
     }
 

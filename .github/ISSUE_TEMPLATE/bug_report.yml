@@ -76,10 +76,10 @@ body:
     validations:
       required: true
   - type: textarea
-    id: logs
+    id: diagnostics
     attributes:
-      label: 日志或截图
-      description: 粘贴前请手动脱敏。不要包含 token、cookie、Authorization header 或个人信息。
+      label: 诊断信息、日志或截图
+      description: 可在「设置 → 诊断信息」导出脱敏报告。粘贴前请再检查一遍，不要包含 token、cookie、Authorization header 或个人信息。
       render: text
     validations:
       required: false
