@@ -52,6 +52,10 @@ struct ConfigSyncView: View {
         !targetableProfiles.isEmpty && targetableProfiles.allSatisfy { validSelectedTargets.contains($0.key) }
     }
 
+    private var allLayersSelected: Bool {
+        layerMCP && layerRules && layerSkills && layerCommands && layerAgents && layerHooks
+    }
+
     // 切换全选
     private func toggleSelectAll() {
         if allTargetsSelected {
@@ -59,6 +63,15 @@ struct ConfigSyncView: View {
         } else {
             selectedTargets = Set(targetableProfiles.map { $0.key })
         }
+    }
+
+    private func setAllLayers(_ selected: Bool) {
+        layerMCP = selected
+        layerRules = selected
+        layerSkills = selected
+        layerCommands = selected
+        layerAgents = selected
+        layerHooks = selected
     }
 
     var body: some View {
@@ -223,8 +236,15 @@ struct ConfigSyncView: View {
     private var layerCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("同步层", systemImage: "square.stack.3d.up")
-                    .font(.system(size: 12, weight: .semibold))
+                HStack {
+                    Label("同步层", systemImage: "square.stack.3d.up")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Button(allLayersSelected ? "全不选" : "全选") {
+                        setAllLayers(!allLayersSelected)
+                    }
+                    .font(.system(size: 11))
+                }
                 HStack(spacing: 16) {
                     Toggle("MCP", isOn: $layerMCP).font(.system(size: 11))
                     Toggle("指令", isOn: $layerRules).font(.system(size: 11))

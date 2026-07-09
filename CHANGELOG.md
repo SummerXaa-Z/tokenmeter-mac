@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **配置同步层选择**：同步层卡片新增“全选 / 全不选”快捷按钮，可一次切换 MCP、指令、Skills、Commands、Agents 与 Hooks。影响范围：`ConfigSyncView.swift`。
+
 ## v3.7.2 — 2026-07-10 — 配置同步显示、发布链路与开源维护
 
 - **配置同步显示收口**：推送目标列表只展示检测到 MCP、指令、Skills、Commands、Agents 或 Hooks 的工具，空 profile 不再占位；新增 XCTest 覆盖过滤规则。影响范围：`ConfigSyncView.swift`、`AgentSyncService.swift`、`ConfigSelectionTests.swift`。
