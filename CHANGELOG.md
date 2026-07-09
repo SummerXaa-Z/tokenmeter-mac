@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased — 2026-07-10 — 发布链路、开源协作、诊断导出、CI 与配置同步显示
+## Unreleased
+
+## v3.7.2 — 2026-07-10 — 配置同步显示、发布链路与开源维护
 
 - **配置同步显示收口**：推送目标列表只展示检测到 MCP、指令、Skills、Commands、Agents 或 Hooks 的工具，空 profile 不再占位；新增 XCTest 覆盖过滤规则。影响范围：`ConfigSyncView.swift`、`AgentSyncService.swift`、`ConfigSelectionTests.swift`。
 - **CI 发布前检查**：GitHub Actions 从 `make test` 升级为 `make release-check`，push / PR 同时覆盖 XCTest 与 Release build。影响范围：`.github/workflows/ci.yml`、`README.md`、`CONTRIBUTING.md`。
