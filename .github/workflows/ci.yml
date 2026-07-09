@@ -16,5 +16,5 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Run tests
-        run: make test
+      - name: Run release check
+        run: make release-check

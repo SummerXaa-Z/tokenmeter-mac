@@ -11,12 +11,14 @@
 
 ## 本地验证
 
-根目录提供统一入口：
+根目录提供验证入口：
 
 ```bash
 make test
 make release-check
 ```
+
+GitHub Actions 会在 push / PR 时运行 `make release-check`，本地提交前建议按改动风险选择同一命令复验。
 
 发布打包验证：
 

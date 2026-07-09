@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased — 2026-07-09 — 发布链路、开源协作与诊断导出
+## Unreleased — 2026-07-09 — 发布链路、开源协作、诊断导出与 CI
 
+- **CI 发布前检查**：GitHub Actions 从 `make test` 升级为 `make release-check`，push / PR 同时覆盖 XCTest 与 Release build。影响范围：`.github/workflows/ci.yml`、`README.md`、`CONTRIBUTING.md`。
 - **Developer ID 发布预埋**：`package.sh` 支持通过 `DEVELOPER_ID_APPLICATION` 启用 Developer ID 签名，通过 `NOTARY_KEYCHAIN_PROFILE` 或 Apple ID 三元组启用 `notarytool submit`、`stapler staple` 与 `spctl` 验证；未配置证书时仍保留自签名 / ad-hoc fallback。影响范围：`swift/scripts/package.sh`。
 - **统一打包入口**：新增 `make package`，先跑 `make release-check`，再调用 Swift 打包脚本。影响范围：`Makefile`。
 - **维护者发布文档**：README 增加 Developer ID、公证环境变量、Keychain profile 与发布前验证命令说明。影响范围：`README.md`。

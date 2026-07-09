@@ -138,20 +138,20 @@ cd tokenmeter-mac/swift && ./scripts/package.sh
 
 ## 开发与验证
 
-本地和 GitHub Actions 使用同一入口：
+日常本地测试：
 
 ```bash
 brew install xcodegen
 make test
 ```
 
-发布前建议跑：
+GitHub Actions 与发布前验证使用更完整入口：
 
 ```bash
 make release-check
 ```
 
-`make test` 会先用 XcodeGen 重新生成 `swift/TokenMeter.xcodeproj`，再跑 XCTest。当前测试重点覆盖 AgentSync JSON 解码契约与配置同步目标选择逻辑。
+`make test` 会先用 XcodeGen 重新生成 `swift/TokenMeter.xcodeproj`，再跑 XCTest。`make release-check` 会追加 Release build 检查，并在 push / PR 时由 GitHub Actions 执行。当前测试重点覆盖 AgentSync JSON 解码契约与配置同步目标选择逻辑。
 
 贡献代码前请先看 [CONTRIBUTING.md](CONTRIBUTING.md)。提交安全问题前请先看 [SECURITY.md](SECURITY.md)，不要在公开 issue 里粘贴 API key、token、cookie 或完整个人日志。
 
