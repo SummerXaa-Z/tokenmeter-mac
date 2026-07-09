@@ -90,8 +90,12 @@ struct ConfigScanResult: Decodable {
 }
 
 enum ConfigSelection {
+    static func syncableProfiles(_ profiles: [ConfigProfile]) -> [ConfigProfile] {
+        profiles.filter(\.hasSyncableLayer)
+    }
+
     static func validTargets(_ selected: Set<String>, profiles: [ConfigProfile], source: String) -> Set<String> {
-        let allowed = Set(profiles.filter { $0.hasSyncableLayer && $0.key != source }.map(\.key))
+        let allowed = Set(syncableProfiles(profiles).filter { $0.key != source }.map(\.key))
         return selected.intersection(allowed)
     }
 }

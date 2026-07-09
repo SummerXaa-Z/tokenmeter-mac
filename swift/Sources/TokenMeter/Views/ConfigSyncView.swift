@@ -24,7 +24,7 @@ struct ConfigSyncView: View {
 
     // 可作为真源/目标的工具：有任何可同步的层
     private var syncable: [ConfigProfile] {
-        profiles.filter(\.hasSyncableLayer)
+        ConfigSelection.syncableProfiles(profiles)
     }
 
     private var layers: [String] {
@@ -40,7 +40,7 @@ struct ConfigSyncView: View {
 
     // 可选为目标的工具（排除真源自己）
     private var targetableProfiles: [ConfigProfile] {
-        profiles.filter { $0.hasSyncableLayer && $0.key != source }
+        syncable.filter { $0.key != source }
     }
 
     private var validSelectedTargets: Set<String> {
@@ -65,7 +65,7 @@ struct ConfigSyncView: View {
         ScrollView {
             VStack(spacing: 10) {
                 header
-                if !profiles.isEmpty {
+                if !syncable.isEmpty {
                     sourceCard
                     toolsCard
                     layerCard
@@ -77,6 +77,10 @@ struct ConfigSyncView: View {
                     }
                 } else if state.configSync.loading {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
+                } else if !profiles.isEmpty {
+                    Text("未检测到可同步配置")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center).padding(.top, 60)
                 } else if let err = state.configSync.error {
                     Text(err).font(.system(size: 12)).foregroundStyle(.secondary)
                         .multilineTextAlignment(.center).padding(.top, 60)
@@ -148,9 +152,9 @@ struct ConfigSyncView: View {
                     }
                     .font(.system(size: 11))
                 }
-                ForEach(profiles) { p in
+                ForEach(syncable) { p in
                     toolRow(p)
-                    if p.id != profiles.last?.id { Divider().opacity(0.3) }
+                    if p.id != syncable.last?.id { Divider().opacity(0.3) }
                 }
             }
         }

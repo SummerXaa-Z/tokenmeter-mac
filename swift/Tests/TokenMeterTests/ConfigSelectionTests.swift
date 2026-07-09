@@ -2,6 +2,18 @@ import XCTest
 @testable import TokenMeter
 
 final class ConfigSelectionTests: XCTestCase {
+    func testSyncableProfilesHideEmptyProfiles() {
+        let profiles = [
+            makeProfile(key: "claude", hasRules: true),
+            makeProfile(key: "zed"),
+            makeProfile(key: "qoder", commands: "1"),
+        ]
+
+        let visible = ConfigSelection.syncableProfiles(profiles).map(\.key)
+
+        XCTAssertEqual(visible, ["claude", "qoder"])
+    }
+
     func testValidTargetsExcludeSourceAndUnsyncableProfiles() {
         let profiles = [
             makeProfile(key: "claude", hasRules: true),

@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased — 2026-07-09 — 发布链路、开源协作、诊断导出与 CI
+## Unreleased — 2026-07-10 — 发布链路、开源协作、诊断导出、CI 与配置同步显示
 
+- **配置同步显示收口**：推送目标列表只展示检测到 MCP、指令、Skills、Commands、Agents 或 Hooks 的工具，空 profile 不再占位；新增 XCTest 覆盖过滤规则。影响范围：`ConfigSyncView.swift`、`AgentSyncService.swift`、`ConfigSelectionTests.swift`。
 - **CI 发布前检查**：GitHub Actions 从 `make test` 升级为 `make release-check`，push / PR 同时覆盖 XCTest 与 Release build。影响范围：`.github/workflows/ci.yml`、`README.md`、`CONTRIBUTING.md`。
 - **Developer ID 发布预埋**：`package.sh` 支持通过 `DEVELOPER_ID_APPLICATION` 启用 Developer ID 签名，通过 `NOTARY_KEYCHAIN_PROFILE` 或 Apple ID 三元组启用 `notarytool submit`、`stapler staple` 与 `spctl` 验证；未配置证书时仍保留自签名 / ad-hoc fallback。影响范围：`swift/scripts/package.sh`。
 - **统一打包入口**：新增 `make package`，先跑 `make release-check`，再调用 Swift 打包脚本。影响范围：`Makefile`。
