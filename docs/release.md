@@ -10,6 +10,8 @@ make test
 make release-check
 ```
 
+`make release-check` 会在 Release 编译后核对 App 内版本、Bundle ID 与主程序；打包脚本还会验证产物包含 arm64，防止发布文件名与实际内容不一致。
+
 确认 `CHANGELOG.md` 已追加本次版本记录，`README.md` 与实际功能一致。
 
 ## 2. 普通本地打包

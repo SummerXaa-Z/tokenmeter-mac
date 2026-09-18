@@ -100,6 +100,8 @@ xcodegen generate
 xcodebuild -project TokenMeter.xcodeproj -scheme TokenMeter \
     -configuration Release -derivedDataPath build build | tail -1
 
+./scripts/verify-release-metadata.sh "$APP" arm64
+
 VERSION=$(defaults read "$PWD/$APP/Contents/Info.plist" CFBundleShortVersionString)
 
 # iCloud 同步目录会给 build 产物挂 com.apple.fileprovider 等顽固扩展属性，
