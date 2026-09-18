@@ -2,16 +2,21 @@ import SwiftUI
 
 enum AppView: Equatable {
     case dashboard
+    case source(Provider)
     case settings
     case detail(String)   // model key: "flash" | "pro"
 }
 
-// 顶部切换的监控源；后续加新工具在这里扩 case
+// 可从首页内容区进入的工具详情；它不再承担导航栏职责。
 enum Provider: String, CaseIterable, Identifiable {
-    case overview = "总览"
     case deepseek = "DeepSeek"
     case claude = "Claude"
     case codex = "Codex"
+    case kimi = "Kimi Code"
+    case opencode = "OpenCode"
+    case gemini = "Gemini"
+    case copilot = "Copilot"
+    case qwen = "Qwen Code"
     case cursor = "Cursor"
     case configsync = "配置同步"
     var id: String { rawValue }
@@ -19,10 +24,14 @@ enum Provider: String, CaseIterable, Identifiable {
     // 没装对应工具就不显示该 tab
     var available: Bool {
         switch self {
-        case .overview: return true
         case .deepseek: return true
         case .claude: return ClaudeUsage.isAvailable
         case .codex: return CodexUsage.isAvailable
+        case .kimi: return KimiUsage.isAvailable
+        case .opencode: return OpenCodeUsage.isAvailable
+        case .gemini: return GeminiUsage.isAvailable
+        case .copilot: return CopilotUsage.isAvailable
+        case .qwen: return QwenCodeUsage.isAvailable
         case .cursor: return CursorUsage.isAvailable
         case .configsync: return AgentSyncService.isAvailable
         }
@@ -32,93 +41,113 @@ enum Provider: String, CaseIterable, Identifiable {
 struct RootView: View {
     @EnvironmentObject var state: AppState
     @State private var view: AppView = .dashboard
-    @State private var provider: Provider = .overview
+    @State private var historyRange = UsageHistoryRange(
+        rawValue: ConfigStore.shared.overviewHistoryRangeDays
+    ) ?? .month
 
-    // 已安装且在设置里开启监控的源
-    private var tabs: [Provider] {
+    // Coding 来源是否进入聚合只由用户开关决定；当前数据路径消失时仍保留
+    // 已积累的历史。首页明细再按所选范围 Token > 0 过滤零用量来源。
+    private var sources: [Provider] {
         Provider.allCases.filter { p in
-            guard p.available else { return false }
             switch p {
-            case .overview: return true
             case .deepseek: return state.deepseekEnabled
             case .claude: return state.claudeEnabled
             case .codex: return state.codexEnabled
+            case .kimi: return state.kimiEnabled
+            case .opencode: return state.opencodeEnabled
+            case .gemini: return state.geminiEnabled
+            case .copilot: return state.copilotEnabled
+            case .qwen: return state.qwenEnabled
             case .cursor: return state.cursorEnabled
-            case .configsync: return state.configSyncEnabled
+            case .configsync: return state.configSyncEnabled && p.available
             }
         }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // 设置/详情页占满面板，切换栏只在监控主页显示
-            if view == .dashboard, tabs.count > 1 {
-                providerBar
+            // 首页只有一层时间目录，工具在正文中平铺。
+            if view == .dashboard {
+                rangeBar
             }
             Group {
                 switch view {
                 case .dashboard:
-                    if tabs.isEmpty {
-                        allDisabledPlaceholder
-                    } else {
-                        switch provider {
-                        case .overview:
-                            OverviewView(onSettings: { view = .settings })
+                    OverviewView(
+                        range: historyRange,
+                        sources: sources,
+                        onOpenSource: { view = .source($0) },
+                        onSettings: { view = .settings }
+                    )
+                case .source(let provider):
+                    let back = { view = AppView.dashboard }
+                    switch provider {
                         case .deepseek:
                             DashboardView(
+                                onBack: back,
                                 onSettings: { view = .settings },
                                 onDetail: { key in view = .detail(key) })
                         case .claude:
-                            ClaudeView(onSettings: { view = .settings })
+                            ClaudeView(onBack: back, onSettings: { view = .settings })
                         case .codex:
-                            CodexView(onSettings: { view = .settings })
+                            CodexView(onBack: back, onSettings: { view = .settings })
+                        case .kimi:
+                            KimiView(onBack: back, onSettings: { view = .settings })
+                        case .opencode:
+                            OpenCodeView(onBack: back, onSettings: { view = .settings })
+                        case .gemini:
+                            GeminiView(onBack: back, onSettings: { view = .settings })
+                        case .copilot:
+                            CopilotView(onBack: back, onSettings: { view = .settings })
+                        case .qwen:
+                            QwenCodeView(onBack: back, onSettings: { view = .settings })
                         case .cursor:
-                            CursorView(onSettings: { view = .settings })
+                            CursorView(onBack: back, onSettings: { view = .settings })
                         case .configsync:
-                            ConfigSyncView(onSettings: { view = .settings })
-                        }
+                            ConfigSyncView(onBack: back, onSettings: { view = .settings })
                     }
                 case .settings:
-                    SettingsView(onBack: { view = .dashboard })
+                    SettingsView(
+                        onBack: { view = .dashboard },
+                        onOpenConfigSync: { view = .source(.configsync) }
+                    )
                 case .detail(let key):
-                    ModelDetailView(modelKey: key, onBack: { view = .dashboard })
+                    ModelDetailView(modelKey: key, onBack: { view = .source(.deepseek) })
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(width: Theme.panelWidth, height: Theme.panelHeight, alignment: .top)
         .background(.regularMaterial)
-        // 当前 tab 被关闭时跳到第一个可用 tab
-        .onChange(of: tabs) { _, newTabs in
-            if !newTabs.contains(provider), let first = newTabs.first {
-                provider = first
-            }
-        }
-        .onAppear {
-            if !tabs.contains(provider), let first = tabs.first {
-                provider = first
+        // 详情对应来源被关闭时直接回首页；本地数据路径暂时消失不抹掉历史入口。
+        .onChange(of: sources) { _, newSources in
+            if case .source(let provider) = view, !newSources.contains(provider) {
+                view = .dashboard
             }
         }
     }
 
-    private var allDisabledPlaceholder: some View {
-        VStack(spacing: 12) {
-            Text("所有监控源已关闭")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
-            Button("打开设置") { view = .settings }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 80)
-    }
-
-    private var providerBar: some View {
-        Picker("", selection: $provider) {
-            ForEach(tabs) { p in
-                Text(p.rawValue).tag(p)
+    private var rangeBar: some View {
+        HStack(spacing: 6) {
+            ForEach(UsageHistoryRange.allCases) { range in
+                Button {
+                    historyRange = range
+                    ConfigStore.shared.overviewHistoryRangeDays = range.rawValue
+                } label: {
+                    Text(range.tabTitle)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(historyRange == range ? Color.white : Color.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .background(
+                            historyRange == range ? Theme.brand : Color.clear,
+                            in: Capsule()
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("TokenMeter.Range.\(range.tabTitle)")
             }
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
         .padding(.horizontal, 14)
         .padding(.top, 12)
     }

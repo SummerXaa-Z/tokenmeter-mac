@@ -56,11 +56,61 @@ enum ProcessStatus {
         return Snapshot(running: count > 0, count: count)
     }
 
+    // Kimi Code 可能由 standalone CLI 或 Kimi.app 内嵌 runtime 驱动；两者
+    // 都写入同一种 wire.jsonl，因此任一运行都视为来源运行中。
+    static func kimi() -> Snapshot {
+        let cli = processPaths().filter { path in
+            guard !path.contains("Kimi.app") else { return false }
+            let name = (path as NSString).lastPathComponent.lowercased()
+            return name == "kimi" || name == "kimi-code"
+        }.count
+        let gui = NSWorkspace.shared.runningApplications.contains {
+            $0.localizedName?.localizedCaseInsensitiveContains("Kimi") == true
+                || $0.bundleIdentifier?.lowercased().contains("kimi") == true
+        }
+        let count = cli + (gui ? 1 : 0)
+        return Snapshot(running: count > 0, count: count)
+    }
+
     static func cursor() -> Snapshot {
         let apps = NSWorkspace.shared.runningApplications.filter {
             $0.localizedName == "Cursor" || $0.bundleIdentifier?.contains("todesktop") == true
         }
         return Snapshot(running: !apps.isEmpty, count: apps.isEmpty ? 0 : 1)
+    }
+
+    static func opencode() -> Snapshot {
+        let cli = processPaths().filter {
+            ($0 as NSString).lastPathComponent == "opencode"
+        }.count
+        let gui = NSWorkspace.shared.runningApplications.contains {
+            $0.localizedName?.localizedCaseInsensitiveContains("OpenCode") == true
+                || $0.bundleIdentifier?.lowercased().contains("opencode") == true
+        }
+        let count = cli + (gui ? 1 : 0)
+        return Snapshot(running: count > 0, count: count)
+    }
+
+    static func gemini() -> Snapshot {
+        let count = processPaths().filter {
+            ($0 as NSString).lastPathComponent == "gemini"
+        }.count
+        return Snapshot(running: count > 0, count: count)
+    }
+
+    static func copilot() -> Snapshot {
+        let count = processPaths().filter {
+            ($0 as NSString).lastPathComponent == "copilot"
+        }.count
+        return Snapshot(running: count > 0, count: count)
+    }
+
+    static func qwen() -> Snapshot {
+        let count = processPaths().filter { path in
+            let name = (path as NSString).lastPathComponent.lowercased()
+            return name == "qwen" || name == "qwen-code"
+        }.count
+        return Snapshot(running: count > 0, count: count)
     }
 }
 

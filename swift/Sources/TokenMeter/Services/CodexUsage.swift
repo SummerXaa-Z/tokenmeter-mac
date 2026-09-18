@@ -48,6 +48,10 @@ struct CodexDayUsage: Equatable, Identifiable {
 struct CodexModelUsage: Equatable, Identifiable {
     let model: String            // 含 effort 后缀，如 "gpt-5.5 (xhigh)"
     var totalTokens: Int = 0
+    var inputTokens: Int = 0
+    var cachedInputTokens: Int = 0
+    var outputTokens: Int = 0
+    var reasoningTokens: Int = 0
     var id: String { model }
 }
 
@@ -58,6 +62,12 @@ struct CodexProjectUsage: Equatable, Identifiable {
     var id: String { project }
 }
 
+struct CodexSkillUsage: Equatable, Identifiable {
+    let name: String
+    var invocationCount: Int
+    var id: String { name }
+}
+
 struct CodexUsageResult: Equatable {
     let rateLimits: CodexRateLimits?       // 主通道（订阅配额）
     let allRateLimits: [CodexRateLimits]   // 全部通道，主通道在前
@@ -65,6 +75,7 @@ struct CodexUsageResult: Equatable {
     let models: [CodexModelUsage]     // 7 天窗口按模型聚合，按量降序
     let projects: [CodexProjectUsage] // 7 天窗口按项目聚合，按量降序
     let todayHours: [CodexHourUsage]  // 今日 24 小时分布
+    let skills: [CodexSkillUsage]     // 近 7 天实际读取 SKILL.md 的工具调用
     var today: CodexDayUsage? { days.last }
     var weekTotal: Int { days.reduce(0) { $0 + $1.totalTokens } }
     var weekSessions: Int { days.reduce(0) { $0 + $1.sessionCount } }
@@ -89,6 +100,7 @@ enum CodexUsage {
     // MARK: - JSONL 事件解码（只取需要的字段）
 
     private struct Event: Decodable {
+        let type: String?
         let timestamp: String?
         let payload: Payload?
         struct Payload: Decodable {
@@ -98,9 +110,23 @@ enum CodexUsage {
             let model: String?       // turn_context
             let effort: String?      // turn_context
             let cwd: String?         // session_meta / turn_context
+            let name: String?        // response_item 工具名
+            let callId: String?
+            let arguments: LossyString?
+            let input: LossyString?
             enum CodingKeys: String, CodingKey {
-                case type, info, model, effort, cwd
+                case type, info, model, effort, cwd, name, arguments, input
+                case callId = "call_id"
                 case rateLimits = "rate_limits"
+            }
+        }
+        // 工具参数有时是字符串、有时是对象。Skills 识别只接受字符串路径；
+        // 其他形态静默忽略，避免一处 schema 演进让整行解码失败。
+        struct LossyString: Decodable {
+            let value: String?
+            init(from decoder: Decoder) throws {
+                let container = try decoder.singleValueContainer()
+                value = try? container.decode(String.self)
             }
         }
         struct Info: Decodable {
@@ -160,10 +186,11 @@ enum CodexUsage {
         let size: UInt64
         let mtime: Date
         let perDay: [String: Tally]
-        let perDayModel: [String: [String: Int]] // day → 模型 → totalTokens
+        let perDayModel: [String: [String: Tally]] // day → 模型 → token 明细
         let perDayHour: [String: [Int: Int]] // day → hour → totalTokens
         let project: String?                 // session cwd 末段（每文件一个）
         let rateLimitsByChannel: [String: CodexRateLimits]  // 通道 → 该文件内最新快照
+        let perDaySkill: [String: [String: Int]] // day → Skill 名 → 调用次数
     }
 
     // 内存级缓存：app 存续期内，未变的文件不重扫
@@ -185,6 +212,7 @@ enum CodexUsage {
         var limitsByChannel: [String: CodexRateLimits] = [:]
         var modelMap: [String: CodexModelUsage] = [:]
         var projectMap: [String: CodexProjectUsage] = [:]
+        var skillMap: [String: Int] = [:]
         var hourMap: [Int: Int] = [:]
         let todayKey = DateUtil.key(now)
 
@@ -192,7 +220,7 @@ enum CodexUsage {
         guard let walker = fm.enumerator(at: sessionsDirectory, includingPropertiesForKeys: keys) else {
             return CodexUsageResult(rateLimits: nil, allRateLimits: [],
                                     days: dayMap.values.sorted { $0.date < $1.date },
-                                    models: [], projects: [], todayHours: [])
+                                    models: [], projects: [], todayHours: [], skills: [])
         }
 
         for case let file as URL in walker where file.pathExtension == "jsonl" {
@@ -219,11 +247,18 @@ enum CodexUsage {
                 if let prev = limitsByChannel[channel], prev.asOf >= rl.asOf { continue }
                 limitsByChannel[channel] = rl
             }
+            for (date, skills) in summary.perDaySkill where window.contains(date) {
+                for (name, count) in skills { skillMap[name, default: 0] += count }
+            }
             guard counted else { continue }
             for (date, models) in summary.perDayModel where window.contains(date) {
                 for (model, tokens) in models {
                     var m = modelMap[model] ?? CodexModelUsage(model: model)
-                    m.totalTokens += tokens
+                    m.totalTokens += tokens.total
+                    m.inputTokens += tokens.input
+                    m.cachedInputTokens += tokens.cached
+                    m.outputTokens += tokens.output
+                    m.reasoningTokens += tokens.reasoning
                     modelMap[model] = m
                 }
             }
@@ -241,13 +276,21 @@ enum CodexUsage {
         let models = modelMap.values.sorted { $0.totalTokens > $1.totalTokens }
         let projects = projectMap.values.sorted { $0.totalTokens > $1.totalTokens }
         let todayHours = (0..<24).map { CodexHourUsage(hour: $0, totalTokens: hourMap[$0] ?? 0) }
+        let skills = skillMap.map { CodexSkillUsage(name: $0.key, invocationCount: $0.value) }
+            .sorted {
+                if $0.invocationCount != $1.invocationCount {
+                    return $0.invocationCount > $1.invocationCount
+                }
+                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
         // 主通道在前，其余按数据新鲜度降序
         let channels = limitsByChannel.values.sorted {
             if $0.isMain != $1.isMain { return $0.isMain }
             return $0.asOf > $1.asOf
         }
         return CodexUsageResult(rateLimits: channels.first, allRateLimits: channels, days: days,
-                                models: models, projects: projects, todayHours: todayHours)
+                                models: models, projects: projects, todayHours: todayHours,
+                                skills: skills)
     }
 
     // MARK: - 单文件流式扫描（带缓存）
@@ -271,23 +314,27 @@ enum CodexUsage {
 
     private static func scan(_ file: URL, size: UInt64, mtime: Date) -> FileSummary {
         let empty = FileSummary(size: size, mtime: mtime, perDay: [:], perDayModel: [:],
-                                perDayHour: [:], project: nil, rateLimitsByChannel: [:])
+                                perDayHour: [:], project: nil, rateLimitsByChannel: [:],
+                                perDaySkill: [:])
         guard let handle = try? FileHandle(forReadingFrom: file) else { return empty }
         defer { try? handle.close() }
 
         let marker = Data("\"token_count\"".utf8)
         let ctxMarker = Data("\"turn_context\"".utf8)
         let metaMarker = Data("\"session_meta\"".utf8)
+        let skillMarker = Data("SKILL.md".utf8)
         let newline = UInt8(ascii: "\n")
         let chunkSize = 8 * 1024 * 1024
         let decoder = JSONDecoder()
 
         var perDay: [String: Tally] = [:]
-        var perDayModel: [String: [String: Int]] = [:]
+        var perDayModel: [String: [String: Tally]] = [:]
         var perDayHour: [String: [Int: Int]] = [:]
         var project: String?
         var currentModel = "unknown"     // turn_context 声明后续 turn 的模型
         var rlByChannel: [String: CodexRateLimits] = [:]
+        var perDaySkill: [String: [String: Int]] = [:]
+        var seenSkillCalls = Set<String>()
         var prevTotal: Event.TokenUsage?
         var carry = Data()   // chunk 边界上的半行
 
@@ -319,6 +366,25 @@ enum CodexUsage {
                 let line = data[lineStart..<nl]
                 lineStart = data.index(after: nl)
 
+                // 只在 response_item 的真实工具调用里识别标准 Skill 路径。
+                // 参数字符串仅在这一小段内做路径匹配，结果不会保留命令、路径或正文。
+                if line.range(of: skillMarker) != nil,
+                   let event = try? decoder.decode(Event.self, from: line),
+                   event.type == "response_item",
+                   let payload = event.payload,
+                   payload.type == "function_call" || payload.type == "custom_tool_call",
+                   isReadLikeSkillCall(name: payload.name, payload: payload),
+                   let ts = event.timestamp.flatMap({ ISO8601DateFormatter.codex.date(from: $0) }) {
+                    let texts = [payload.arguments?.value, payload.input?.value].compactMap { $0 }
+                    let names = Set(texts.flatMap(skillNames(in:)))
+                    let day = DateUtil.key(ts)
+                    for name in names {
+                        let key = "\(payload.callId ?? event.timestamp ?? "")|\(name.lowercased())"
+                        guard seenSkillCalls.insert(key).inserted else { continue }
+                        perDaySkill[day, default: [:]][name, default: 0] += 1
+                    }
+                }
+
                 // 轻量行:turn_context 行更新当前模型,session_meta 行取项目
                 if line.range(of: ctxMarker) != nil || (project == nil && line.range(of: metaMarker) != nil) {
                     if let event = try? decoder.decode(Event.self, from: line) {
@@ -349,7 +415,13 @@ enum CodexUsage {
                     perDay[day] = t
                     prevTotal = cur
                     var models = perDayModel[day] ?? [:]
-                    models[currentModel, default: 0] += d.total
+                    var model = models[currentModel] ?? Tally()
+                    model.input += d.input
+                    model.cached += d.cached
+                    model.output += d.output
+                    model.reasoning += d.reasoning
+                    model.total += d.total
+                    models[currentModel] = model
                     perDayModel[day] = models
                     let hour = Calendar.current.component(.hour, from: ts)
                     perDayHour[day, default: [:]][hour, default: 0] += d.total
@@ -373,8 +445,44 @@ enum CodexUsage {
         }
         return FileSummary(size: size, mtime: mtime, perDay: perDay, perDayModel: perDayModel,
                            perDayHour: perDayHour, project: project,
-                           rateLimitsByChannel: rlByChannel)
+                           rateLimitsByChannel: rlByChannel, perDaySkill: perDaySkill)
     }
+
+    private static func isReadLikeSkillCall(name: String?, payload: Event.Payload) -> Bool {
+        let tool = name?.lowercased() ?? ""
+        if ["read", "read_file", "readfile", "view_file"].contains(tool) { return true }
+        guard ["exec", "exec_command", "shell", "bash", "run_command"].contains(tool) else {
+            return false
+        }
+        let command = [payload.arguments?.value, payload.input?.value]
+            .compactMap { $0 }.joined(separator: " ").lowercased()
+        let readCommands = [
+            "cat ", "sed ", "head ", "tail ", "less ", "more ", "bat ",
+            "rg ", "grep ", "awk ", "perl ", "wc ", "get-content",
+        ]
+        return readCommands.contains { command.contains($0) }
+    }
+
+    private static func skillNames(in text: String) -> [String] {
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return skillPathPattern.matches(in: text, range: range).compactMap { match in
+            guard let nameRange = Range(match.range(at: 1), in: text) else { return nil }
+            return normalizedSkillName(String(text[nameRange]))
+        }
+    }
+
+    private static func normalizedSkillName(_ value: String) -> String? {
+        let name = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name.count <= 128,
+              name.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) })
+        else { return nil }
+        return name
+    }
+
+    private static let skillPathPattern = try! NSRegularExpression(
+        pattern: #"(?:^|[/\\])skills?[/\\]([^/\\\s\"']+)[/\\]SKILL\.md\b"#,
+        options: [.caseInsensitive]
+    )
 
     private static func delta(_ cur: Event.TokenUsage, _ prev: Event.TokenUsage?,
                               fallback: Event.TokenUsage?) -> Tally {

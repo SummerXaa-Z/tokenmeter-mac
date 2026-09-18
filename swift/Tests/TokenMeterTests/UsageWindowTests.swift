@@ -22,7 +22,11 @@ final class UsageWindowTests: XCTestCase {
         XCTAssertEqual(result.weekTotal, 10)
         XCTAssertEqual(
             result.models,
-            [ClaudeModelUsage(model: "current-model", totalTokens: 10, outputTokens: 2, messageCount: 1)]
+            [ClaudeModelUsage(
+                model: "current-model", totalTokens: 10, inputTokens: 8,
+                cacheCreationTokens: 0, cacheReadTokens: 0,
+                outputTokens: 2, messageCount: 1
+            )]
         )
         XCTAssertEqual(
             result.projects,
@@ -51,7 +55,11 @@ final class UsageWindowTests: XCTestCase {
         XCTAssertEqual(result.weekTotal, 10)
         XCTAssertEqual(
             result.models,
-            [CodexModelUsage(model: "current-model (high)", totalTokens: 10)]
+            [CodexModelUsage(
+                model: "current-model (high)", totalTokens: 10,
+                inputTokens: 10, cachedInputTokens: 0,
+                outputTokens: 0, reasoningTokens: 0
+            )]
         )
         XCTAssertEqual(result.models.reduce(0) { $0 + $1.totalTokens }, result.weekTotal)
     }
@@ -95,8 +103,94 @@ final class UsageWindowTests: XCTestCase {
         let result = CodexUsage.load(sessionsDirectory: directory, now: now)
 
         XCTAssertEqual(result.weekTotal, 7)
-        XCTAssertEqual(result.models, [CodexModelUsage(model: "current-model", totalTokens: 7)])
+        XCTAssertEqual(result.models, [CodexModelUsage(
+            model: "current-model", totalTokens: 7,
+            inputTokens: 7, cachedInputTokens: 0,
+            outputTokens: 0, reasoningTokens: 0
+        )])
         XCTAssertEqual(result.projects, [CodexProjectUsage(project: "current-project", totalTokens: 7, sessionCount: 1)])
+    }
+
+    func testClaudeDeepSeekModelTokensRemainInClaudeTotalsAndHistory() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let now = try fixedDate("2026-08-06T12:00:00.000Z")
+        let file = directory.appendingPathComponent("hours.jsonl")
+        try write(
+            """
+            {"type":"assistant","timestamp":"2026-08-06T02:00:00.000Z","requestId":"r1","message":{"id":"m1","model":"deepseek-chat","usage":{"input_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":10}}}
+            {"type":"assistant","timestamp":"2026-08-06T08:00:00.000Z","requestId":"r2","message":{"id":"m2","model":"claude-sonnet","usage":{"input_tokens":70,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":20}}}
+            """,
+            to: file,
+            modificationDate: now
+        )
+
+        let result = ClaudeUsage.load(projectsDirectory: directory, now: now)
+        let deepSeekHour = Calendar.current.component(
+            .hour, from: try fixedDate("2026-08-06T02:00:00.000Z")
+        )
+        let claudeHour = Calendar.current.component(
+            .hour, from: try fixedDate("2026-08-06T08:00:00.000Z")
+        )
+
+        XCTAssertEqual(result.todayHours[deepSeekHour].totalTokens, 60)
+        XCTAssertEqual(result.todayHours[deepSeekHour].deepseekBackendTokens, 60)
+        XCTAssertEqual(result.todayHours[(deepSeekHour + 1) % 24].totalTokens, 0)
+        XCTAssertEqual(result.todayHours[claudeHour].totalTokens, 90)
+        XCTAssertEqual(result.todayHours.reduce(0) { $0 + $1.totalTokens }, 150)
+        XCTAssertEqual(result.today?.totalTokens, 150)
+
+        let historyDays = AppState.claudeHistoryDays(from: result)
+        let today = try XCTUnwrap(historyDays.first { $0.date == "2026-08-06" })
+        XCTAssertEqual(today.totalTokens, 150)
+        XCTAssertNil(today.cost)
+    }
+
+    func testClaudeCountsOnlyStructuredSkillToolUseAndDeduplicatesStreamingRows() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let now = try fixedDate("2026-08-06T12:00:00.000Z")
+        let file = directory.appendingPathComponent("skill.jsonl")
+        try write(
+            """
+            {"type":"assistant","timestamp":"2026-08-06T10:00:00.000Z","message":{"id":"m1","content":[{"type":"tool_use","id":"tool-1","name":"Skill","input":{"skill":"chapter-writing"}}]}}
+            {"type":"assistant","timestamp":"2026-08-06T10:00:01.000Z","message":{"id":"m1","content":[{"type":"tool_use","id":"tool-1","name":"Skill","input":{"skill":"chapter-writing"}}]}}
+            {"type":"assistant","timestamp":"2026-08-06T10:00:02.000Z","message":{"id":"m2","content":[{"type":"text","text":"Use Skill revision-continuity"}]}}
+            """,
+            to: file,
+            modificationDate: now,
+            trailingNewline: false
+        )
+
+        let result = ClaudeUsage.load(projectsDirectory: directory, now: now)
+
+        XCTAssertEqual(result.skills, [
+            ClaudeSkillUsage(name: "chapter-writing", invocationCount: 1),
+        ])
+    }
+
+    func testCodexCountsReadEvidenceButNotMessagesOrWriteLikeCommands() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let now = try fixedDate("2026-08-06T12:00:00.000Z")
+        let file = directory.appendingPathComponent("rollout-skill.jsonl")
+        try write(
+            """
+            {"timestamp":"2026-08-06T10:00:00.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"call-1","input":"sed -n '1,80p' /tmp/.codex/skills/story-long-write/SKILL.md"}}
+            {"timestamp":"2026-08-06T10:00:01.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"call-1","input":"cat /tmp/.codex/skills/story-long-write/SKILL.md"}}
+            {"timestamp":"2026-08-06T10:00:02.000Z","type":"response_item","payload":{"type":"message","content":"$CODEX_HOME and /tmp/.codex/skills/not-invoked/SKILL.md"}}
+            {"timestamp":"2026-08-06T10:00:03.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"call-2","input":"echo /tmp/.codex/skills/not-read/SKILL.md"}}
+            """,
+            to: file,
+            modificationDate: now,
+            trailingNewline: false
+        )
+
+        let result = CodexUsage.load(sessionsDirectory: directory, now: now)
+
+        XCTAssertEqual(result.skills, [
+            CodexSkillUsage(name: "story-long-write", invocationCount: 1),
+        ])
     }
 
     private func makeTemporaryDirectory() throws -> URL {

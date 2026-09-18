@@ -37,7 +37,9 @@ struct CursorUsageResult: Equatable {
     let subscription: CursorSubscription?
     let models: [CursorModelUsage]
     let totalCostCents: Double
-    var todayTokens: Int = 0     // 今日(本地0点→now)用量，与 totalTokens 同口径
+    // nil 表示“今日独立查询失败”，与确认查到 0 严格区分。这样失败时不会
+    // 用假 0 覆盖本机上一份可信日记录。
+    var todayTokens: Int? = nil  // 今日(本地0点→now)用量，与 totalTokens 同口径
     var totalTokens: Int { models.reduce(0) { $0 + $1.totalTokens } }
     var totalInputTokens: Int { models.reduce(0) { $0 + $1.inputTokens } }
     var totalOutputTokens: Int { models.reduce(0) { $0 + $1.outputTokens } }
@@ -238,8 +240,9 @@ enum CursorUsage {
         models.sort { $0.costCents > $1.costCents }
 
         // 今日用量：周期接口只给整段聚合，单独按本地 0 点→now 再拉一次切出"今天"，
-        // 供总览今日合计与历史趋势按日累积。失败置 0，不影响主数据。
-        var todayTokens = 0
+        // 供总览今日合计与历史趋势按日累积。失败保留 nil，不影响主数据，
+        // 也不会用一个无法确认的 0 覆盖上次可信历史。
+        var todayTokens: Int?
         let dayStart = cal.startOfDay(for: now)
         if let td = try? await dashboardPost("get-aggregated-usage-events", body: [
             "teamId": 0,
@@ -247,10 +250,15 @@ enum CursorUsage {
             "endDate": String(Int(now.timeIntervalSince1970 * 1000)),
         ], cred: cred),
            let tparsed = try? JSONDecoder().decode(AggregatedResponse.self, from: td) {
-            todayTokens = (tparsed.aggregations ?? []).reduce(0) {
-                $0 + (Int($1.inputTokens ?? "") ?? 0) + (Int($1.outputTokens ?? "") ?? 0)
-                   + (Int($1.cacheReadTokens ?? "") ?? 0)
+            let todayAggregations = tparsed.aggregations ?? []
+            var confirmedTodayTokens = 0
+            for aggregation in todayAggregations {
+                let input = Int(aggregation.inputTokens ?? "") ?? 0
+                let output = Int(aggregation.outputTokens ?? "") ?? 0
+                let cacheRead = Int(aggregation.cacheReadTokens ?? "") ?? 0
+                confirmedTodayTokens += input + output + cacheRead
             }
+            todayTokens = confirmedTodayTokens
         }
 
         return CursorUsageResult(email: cred.email, membership: cred.membership,

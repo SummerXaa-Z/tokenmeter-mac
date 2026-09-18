@@ -10,6 +10,7 @@ final class LoginSyncController: NSObject, ObservableObject, WKScriptMessageHand
     // captured: 抓到并验证通过的 token；ended: 窗口关闭但未捕获
     @Published var captured: String?
     @Published var ended = false
+    @Published var persistenceError: String?
 
     private var window: NSWindow?
     private var webView: WKWebView?
@@ -72,6 +73,7 @@ final class LoginSyncController: NSObject, ObservableObject, WKScriptMessageHand
         done = false
         ended = false
         captured = nil
+        persistenceError = nil
         if window != nil {
             webView?.reload()
             return false
@@ -118,8 +120,18 @@ final class LoginSyncController: NSObject, ObservableObject, WKScriptMessageHand
             guard await DeepSeekAPI.verifyUsageToken(token, month: month, year: year) else { return }
             await MainActor.run {
                 guard !self.done else { return }
+                do {
+                    try ConfigStore.shared.saveDeepSeekUsageToken(token)
+                } catch {
+                    // 捕获成功但 Keychain 写入失败时不能伪装成已同步。关闭登录窗并
+                    // 把脱敏错误回传设置页，让用户可明确重试或改用手动输入。
+                    self.done = true
+                    self.persistenceError = (error as? CredentialStoreError)?.errorDescription
+                        ?? "用量 Token 无法写入本机 Keychain"
+                    self.closeWindow()
+                    return
+                }
                 self.done = true
-                ConfigStore.shared.credUsageToken = token
                 self.captured = token
                 self.closeWindow()
             }

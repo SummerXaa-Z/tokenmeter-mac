@@ -21,8 +21,8 @@ struct ClaudeDayUsage: Equatable, Identifiable {
     var outputTokens: Int = 0
     var messageCount: Int = 0         // 去重后的 API 请求数
     var sessionCount: Int = 0
-    // 其中后端是 DeepSeek 的 token（cc 路由到 deepseek-* 模型）。这部分与
-    // DeepSeek 官方源重叠，总览全源合计时要从 Claude 侧扣掉避免双算。
+    // 其中模型名为 deepseek-* 的 token，仅作 Claude 内部模型诊断。
+    // 这些 token 仍完整归属 Claude 工具，不与 DeepSeek 平台账户口径去重。
     var deepseekBackendTokens: Int = 0
 
     var id: String { date }
@@ -38,6 +38,9 @@ struct ClaudeDayUsage: Equatable, Identifiable {
 struct ClaudeModelUsage: Equatable, Identifiable {
     let model: String                 // 展示名（去掉 claude- 前缀与日期后缀）
     var totalTokens: Int = 0
+    var inputTokens: Int = 0
+    var cacheCreationTokens: Int = 0
+    var cacheReadTokens: Int = 0
     var outputTokens: Int = 0
     var messageCount: Int = 0
     var id: String { model }
@@ -53,7 +56,16 @@ struct ClaudeProjectUsage: Equatable, Identifiable {
 struct ClaudeHourUsage: Equatable, Identifiable {
     let hour: Int                     // 0-23（本地时区）
     let totalTokens: Int
+    // 诊断子集：表示本小时 Claude session 里 deepseek-* 模型的 token。
+    // 总量与历史入库应使用 totalTokens，不应扣减该字段。
+    let deepseekBackendTokens: Int
     var id: Int { hour }
+}
+
+struct ClaudeSkillUsage: Equatable, Identifiable {
+    let name: String
+    var invocationCount: Int
+    var id: String { name }
 }
 
 // 本周（最近 7 天）vs 上周（8-14 天前）合计；上周为 0 时环比无基期，返回 nil
@@ -85,12 +97,11 @@ struct ClaudeUsageResult: Equatable {
     let projects: [ClaudeProjectUsage] // 7 天窗口内按项目聚合，按量降序
     let todayHours: [ClaudeHourUsage] // 今日 24 小时分布，缺失补零
     let weekCompare: ClaudeWeekCompare // 本周 vs 上周环比
+    let skills: [ClaudeSkillUsage]    // 近 7 天，来自原生 Skill tool_use
     var today: ClaudeDayUsage? { days.last }
     var weekTotal: Int { days.reduce(0) { $0 + $1.totalTokens } }
     var weekMessages: Int { days.reduce(0) { $0 + $1.messageCount } }
     var weekSessions: Int { days.reduce(0) { $0 + $1.sessionCount } }
-    // cc 路由到 DeepSeek 后端的 token（与 DeepSeek 官方源重叠）
-    var todayDeepseekBackend: Int { today?.deepseekBackendTokens ?? 0 }
 }
 
 enum ClaudeUsage {
@@ -115,6 +126,17 @@ enum ClaudeUsage {
             let id: String?
             let model: String?
             let usage: Usage?
+            let content: [ContentItem]?
+        }
+        struct ContentItem: Decodable {
+            let type: String?
+            let id: String?
+            let name: String?
+            let input: SkillInput?
+        }
+        struct SkillInput: Decodable {
+            let skill: String?
+            let name: String?
         }
         struct Usage: Decodable {
             let inputTokens: Int?
@@ -134,7 +156,12 @@ enum ClaudeUsage {
 
     private struct Tally: Equatable {
         var input = 0, cacheCreate = 0, cacheRead = 0, output = 0, messages = 0
-        var deepseekBackend = 0   // 后端为 deepseek-* 的 token（仅 perDay 用）
+        var deepseekBackend = 0   // 模型为 deepseek-* 的诊断 token 子集
+    }
+
+    private struct HourTally {
+        var total = 0
+        var deepseekBackend = 0
     }
 
     private struct FileSummary {
@@ -143,7 +170,8 @@ enum ClaudeUsage {
         let perDay: [String: Tally]
         let perDayModel: [String: [String: Tally]]
         let perDayProject: [String: [String: Tally]]
-        let perDayHour: [String: [Int: Int]]   // day → hour → totalTokens
+        let perDayHour: [String: [Int: HourTally]] // day → hour → total + 去重值
+        let perDaySkill: [String: [String: Int]] // day → Skill 名 → 调用次数
     }
 
     private static var cache: [String: FileSummary] = [:]
@@ -162,7 +190,8 @@ enum ClaudeUsage {
 
         var modelMap: [String: ClaudeModelUsage] = [:]
         var projectMap: [String: ClaudeProjectUsage] = [:]
-        var hourMap: [Int: Int] = [:]
+        var skillMap: [String: Int] = [:]
+        var hourMap: [Int: HourTally] = [:]
         var lastTotal = 0, lastOutput = 0, lastMessages = 0
         let todayKey = DateUtil.key(now)
 
@@ -170,7 +199,7 @@ enum ClaudeUsage {
         guard let walker = fm.enumerator(at: projectsDirectory, includingPropertiesForKeys: keys) else {
             return ClaudeUsageResult(days: dayMap.values.sorted { $0.date < $1.date },
                                      models: [], projects: [], todayHours: [],
-                                     weekCompare: .empty)
+                                     weekCompare: .empty, skills: [])
         }
 
         for case let file as URL in walker where file.pathExtension == "jsonl" {
@@ -198,11 +227,17 @@ enum ClaudeUsage {
                 dayMap[date] = d
                 counted = true
             }
+            for (date, skills) in summary.perDaySkill where window.contains(date) {
+                for (name, count) in skills { skillMap[name, default: 0] += count }
+            }
             guard counted else { continue }
             for (date, models) in summary.perDayModel where window.contains(date) {
                 for (model, t) in models {
                     var m = modelMap[model] ?? ClaudeModelUsage(model: model)
                     m.totalTokens += t.input + t.cacheCreate + t.cacheRead + t.output
+                    m.inputTokens += t.input
+                    m.cacheCreationTokens += t.cacheCreate
+                    m.cacheReadTokens += t.cacheRead
                     m.outputTokens += t.output
                     m.messageCount += t.messages
                     modelMap[model] = m
@@ -217,14 +252,26 @@ enum ClaudeUsage {
                 }
             }
             if let hours = summary.perDayHour[todayKey] {
-                for (h, tokens) in hours { hourMap[h, default: 0] += tokens }
+                for (hour, tally) in hours {
+                    var aggregate = hourMap[hour] ?? HourTally()
+                    aggregate.total += tally.total
+                    aggregate.deepseekBackend += tally.deepseekBackend
+                    hourMap[hour] = aggregate
+                }
             }
         }
 
         let days = dayMap.values.sorted { $0.date < $1.date }
         let models = modelMap.values.sorted { $0.totalTokens > $1.totalTokens }
         let projects = projectMap.values.sorted { $0.totalTokens > $1.totalTokens }
-        let todayHours = (0..<24).map { ClaudeHourUsage(hour: $0, totalTokens: hourMap[$0] ?? 0) }
+        let todayHours = (0..<24).map { hour in
+            let tally = hourMap[hour] ?? HourTally()
+            return ClaudeHourUsage(
+                hour: hour,
+                totalTokens: tally.total,
+                deepseekBackendTokens: tally.deepseekBackend
+            )
+        }
         let compare = ClaudeWeekCompare(
             thisTotalTokens: days.reduce(0) { $0 + $1.totalTokens },
             lastTotalTokens: lastTotal,
@@ -232,8 +279,15 @@ enum ClaudeUsage {
             lastOutputTokens: lastOutput,
             thisMessageCount: days.reduce(0) { $0 + $1.messageCount },
             lastMessageCount: lastMessages)
+        let skills = skillMap.map { ClaudeSkillUsage(name: $0.key, invocationCount: $0.value) }
+            .sorted {
+                if $0.invocationCount != $1.invocationCount {
+                    return $0.invocationCount > $1.invocationCount
+                }
+                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
         return ClaudeUsageResult(days: days, models: models, projects: projects,
-                                 todayHours: todayHours, weekCompare: compare)
+                                 todayHours: todayHours, weekCompare: compare, skills: skills)
     }
 
     // MARK: - 单文件流式扫描（带缓存）
@@ -257,11 +311,12 @@ enum ClaudeUsage {
 
     private static func scan(_ file: URL, size: UInt64, mtime: Date) -> FileSummary {
         let empty = FileSummary(size: size, mtime: mtime, perDay: [:], perDayModel: [:],
-                                perDayProject: [:], perDayHour: [:])
+                                perDayProject: [:], perDayHour: [:], perDaySkill: [:])
         guard let handle = try? FileHandle(forReadingFrom: file) else { return empty }
         defer { try? handle.close() }
 
-        let marker = Data("\"usage\"".utf8)
+        let usageMarker = Data("\"usage\"".utf8)
+        let skillMarker = Data("\"Skill\"".utf8)
         let newline = UInt8(ascii: "\n")
         let chunkSize = 8 * 1024 * 1024
         let decoder = JSONDecoder()
@@ -269,8 +324,10 @@ enum ClaudeUsage {
         var perDay: [String: Tally] = [:]
         var perDayModel: [String: [String: Tally]] = [:]
         var perDayProject: [String: [String: Tally]] = [:]
-        var perDayHour: [String: [Int: Int]] = [:]
+        var perDayHour: [String: [Int: HourTally]] = [:]
+        var perDaySkill: [String: [String: Int]] = [:]
         var seen = Set<String>()      // (message.id|requestId) 去重，文件内
+        var seenSkillCalls = Set<String>() // tool_use.id 去重，避免流式重复行
         var carry = Data()
 
         var reachedEnd = false
@@ -300,12 +357,26 @@ enum ClaudeUsage {
                 }
                 let line = data[lineStart..<nl]
                 lineStart = data.index(after: nl)
-                guard line.range(of: marker) != nil,
+                guard line.range(of: usageMarker) != nil || line.range(of: skillMarker) != nil,
                       let row = try? decoder.decode(Line.self, from: line),
                       row.type == "assistant",
-                      let usage = row.message?.usage,
                       let ts = row.timestamp.flatMap({ ISO8601DateFormatter.claude.date(from: $0) })
                 else { continue }
+
+                // Claude 原生 Skill 工具提供结构化名称。只保留名称与次数；同一
+                // tool_use 在流式 transcript 中重复出现时按 id 去重。
+                let day = DateUtil.key(ts)
+                for item in row.message?.content ?? []
+                where item.type == "tool_use" && item.name == "Skill" {
+                    guard let name = normalizedSkillName(item.input?.skill ?? item.input?.name)
+                    else { continue }
+                    if let id = item.id, !id.isEmpty {
+                        guard seenSkillCalls.insert(id).inserted else { continue }
+                    }
+                    perDaySkill[day, default: [:]][name, default: 0] += 1
+                }
+
+                guard let usage = row.message?.usage else { continue }
 
                 // 流式输出会把同一条消息写多行，按 (message.id, requestId) 只记一次
                 let key = "\(row.message?.id ?? "")|\(row.requestId ?? "")"
@@ -318,7 +389,6 @@ enum ClaudeUsage {
                 let msgTotal = (usage.inputTokens ?? 0) + (usage.cacheCreationInputTokens ?? 0)
                     + (usage.cacheReadInputTokens ?? 0) + (usage.outputTokens ?? 0)
 
-                let day = DateUtil.key(ts)
                 var t = perDay[day] ?? Tally()
                 t.input += usage.inputTokens ?? 0
                 t.cacheCreate += usage.cacheCreationInputTokens ?? 0
@@ -353,11 +423,25 @@ enum ClaudeUsage {
                 let lineTotal = (usage.inputTokens ?? 0) + (usage.cacheCreationInputTokens ?? 0)
                     + (usage.cacheReadInputTokens ?? 0) + (usage.outputTokens ?? 0)
                 let hour = Calendar.current.component(.hour, from: ts)
-                perDayHour[day, default: [:]][hour, default: 0] += lineTotal
+                var hourly = perDayHour[day] ?? [:]
+                var tally = hourly[hour] ?? HourTally()
+                tally.total += lineTotal
+                if isDeepseek { tally.deepseekBackend += lineTotal }
+                hourly[hour] = tally
+                perDayHour[day] = hourly
             }
         }
         return FileSummary(size: size, mtime: mtime, perDay: perDay, perDayModel: perDayModel,
-                           perDayProject: perDayProject, perDayHour: perDayHour)
+                           perDayProject: perDayProject, perDayHour: perDayHour,
+                           perDaySkill: perDaySkill)
+    }
+
+    private static func normalizedSkillName(_ value: String?) -> String? {
+        let name = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !name.isEmpty, name.count <= 128,
+              name.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) })
+        else { return nil }
+        return name
     }
 
     // cwd 最后一段作为项目名；空值归入 "(其他)"

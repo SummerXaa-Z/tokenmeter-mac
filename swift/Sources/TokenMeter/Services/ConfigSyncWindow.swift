@@ -283,6 +283,7 @@ struct DiffReviewView: View {
                         Label("确认写入", systemImage: "square.and.arrow.down.fill")
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(!state.configSyncEnabled)
                 }
             }
         }
@@ -294,7 +295,7 @@ struct DiffReviewView: View {
     private func loadPreview() async {
         phase = .loading
         do {
-            let r = try await AgentSyncService.pushPreview(to: targets, layers: layers)
+            let r = try await state.configSyncPreview(to: targets, layers: layers)
             preview = r
             phase = .preview
         } catch {

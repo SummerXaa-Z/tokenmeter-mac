@@ -16,19 +16,43 @@ enum Notifier {
             .requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
+    static func requestAuthorizationIfEnabled(_ enabled: Bool) {
+        requestAuthorizationIfEnabled(enabled, request: requestAuthorization)
+    }
+
+    // 注入 request 让开关门禁可在 XCTest 中验证，而不触碰真实系统通知中心。
+    static func requestAuthorizationIfEnabled(_ enabled: Bool, request: () -> Void) {
+        guard enabled else { return }
+        request()
+    }
+
     // 推一条通知。identifier 相同会替换上一条（同类告警不堆叠）。
     static func send(id: String, title: String, body: String) {
         guard available else { return }
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
-            guard settings.authorizationStatus == .authorized
-                    || settings.authorizationStatus == .provisional else { return }
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = body
-            content.sound = .default
-            let req = UNNotificationRequest(identifier: id, content: content, trigger: nil)
-            center.add(req)
+            // 用户可能在授权查询期间关闭应用内通知；回主线程做最终门禁，
+            // 保证检查与入队之间不会插入一次设置切换。
+            DispatchQueue.main.async {
+                guard shouldEnqueue(
+                    authorizationStatus: settings.authorizationStatus,
+                    notificationsEnabled: ConfigStore.shared.notificationsEnabled
+                ) else { return }
+                let content = UNMutableNotificationContent()
+                content.title = title
+                content.body = body
+                content.sound = .default
+                let req = UNNotificationRequest(identifier: id, content: content, trigger: nil)
+                center.add(req)
+            }
         }
+    }
+
+    static func shouldEnqueue(
+        authorizationStatus: UNAuthorizationStatus,
+        notificationsEnabled: Bool
+    ) -> Bool {
+        notificationsEnabled
+            && (authorizationStatus == .authorized || authorizationStatus == .provisional)
     }
 }

@@ -28,6 +28,56 @@ final class AgentSyncContractTests: XCTestCase {
             AgentSyncError.decodeFailed.errorDescription,
             "agentsync 返回了无法识别的数据。请更新 agentsync 后重试。"
         )
+        XCTAssertEqual(
+            AgentSyncError.timedOut.errorDescription,
+            "agentsync 执行超时，未继续等待。"
+        )
+    }
+
+    func testAgentSyncProcessRunnerTimesOutWithoutWaitingForever() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "while :; do :; done"]
+
+        XCTAssertThrowsError(try AgentSyncProcessRunner.run(
+            process: process,
+            timeout: 0.05,
+            maximumStdoutBytes: 1024,
+            maximumStderrBytes: 1024
+        )) { error in
+            guard let agentError = error as? AgentSyncError,
+                  case .timedOut = agentError else {
+                return XCTFail("expected timedOut")
+            }
+        }
+    }
+
+    func testAgentSyncProcessRunnerRejectsOversizedOutput() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "/usr/bin/head -c 4096 /dev/zero"]
+
+        XCTAssertThrowsError(try AgentSyncProcessRunner.run(
+            process: process,
+            timeout: 2,
+            maximumStdoutBytes: 32,
+            maximumStderrBytes: 32
+        )) { error in
+            guard let agentError = error as? AgentSyncError,
+                  case .outputTooLarge = agentError else {
+                return XCTFail("expected outputTooLarge")
+            }
+        }
+    }
+
+    func testDisabledConfigSyncBlocksMutatingEntryPoints() throws {
+        XCTAssertNoThrow(try ConfigSyncAccess.requireEnabled(true))
+        XCTAssertThrowsError(try ConfigSyncAccess.requireEnabled(false)) { error in
+            XCTAssertEqual(
+                (error as? AgentSyncError)?.errorDescription,
+                "配置同步面板已关闭。请先在设置中重新开启。"
+            )
+        }
     }
 
     func testScanJSONDecodesCurrentProfileShape() throws {
@@ -42,6 +92,10 @@ final class AgentSyncContractTests: XCTestCase {
               "mcp_count": 2,
               "has_rules": true,
               "writable_layers": ["mcp", "rules", "skills", "commands", "agents", "hooks"],
+              "supported_layers": ["mcp", "rules", "skills", "commands", "agents", "hooks"],
+              "syncable_layers": ["mcp", "rules", "skills", "commands", "agents", "hooks"],
+              "adapter_coverage": {"mcp":"read_write","rules":"read_write"},
+              "unsupported": {},
               "memory": "CLAUDE.md",
               "skills": "5",
               "commands": "2",
@@ -75,6 +129,10 @@ final class AgentSyncContractTests: XCTestCase {
         XCTAssertTrue(claude.hasHooks)
         XCTAssertTrue(claude.hasSyncableLayer)
         XCTAssertEqual(claude.writableLayers, ["mcp", "rules", "skills", "commands", "agents", "hooks"])
+        XCTAssertEqual(claude.supportedLayers, ["mcp", "rules", "skills", "commands", "agents", "hooks"])
+        XCTAssertEqual(claude.declaredSyncableLayers, ["mcp", "rules", "skills", "commands", "agents", "hooks"])
+        XCTAssertEqual(claude.adapterCoverage?["mcp"], "read_write")
+        XCTAssertEqual(claude.unsupportedLayers, [:])
 
         let codex = result.profiles[1]
         XCTAssertEqual(codex.mcpDisplay, "absent")
@@ -173,5 +231,45 @@ final class AgentSyncContractTests: XCTestCase {
                 result: result
             )
         )
+    }
+
+    func testReconcileJSONDecodesLayerGroupsAndRulesConflict() throws {
+        let json = """
+        {
+          "ok": true,
+          "apply": true,
+          "applied": true,
+          "source": "codex",
+          "label": "Codex",
+          "layers": [
+            {"layer":"mcp","target_count":2,"targets":["claude","cursor"]},
+            {"layer":"rules","target_count":1,"targets":["claude"]}
+          ],
+          "target_count": 2,
+          "any_change": true,
+          "backup_ts": "20300101T000000-abc123",
+          "targets": [
+            {
+              "key":"cursor","label":"Cursor","layer":"mcp",
+              "path":"/tmp/mcp.json","exists":false,"change":"create","written":true
+            },
+            {
+              "key":"claude","label":"Claude Code","layer":"rules",
+              "path":"/tmp/CLAUDE.md","exists":true,"change":"skip","written":false,
+              "conflict":true,"skip_reason":"目标规则已存在且不同"
+            }
+          ],
+          "error": null
+        }
+        """
+
+        let result = try JSONDecoder().decode(AgentAssetSyncResult.self, from: Data(json.utf8))
+
+        XCTAssertTrue(result.applied)
+        XCTAssertEqual(result.source, "codex")
+        XCTAssertEqual(result.targetCount, 2)
+        XCTAssertEqual(result.layers.map(\.layer), ["mcp", "rules"])
+        XCTAssertEqual(result.layers[0].targets, ["claude", "cursor"])
+        XCTAssertEqual(result.conflicts.map(\.key), ["claude"])
     }
 }

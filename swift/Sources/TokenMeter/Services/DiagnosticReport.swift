@@ -117,6 +117,46 @@ enum DiagnosticReport {
                     detail: nil
                 ),
                 SourceStatus(
+                    name: "Kimi Code",
+                    enabled: store.kimiMonitorEnabled,
+                    available: KimiUsage.isAvailable,
+                    running: runningText(ProcessStatus.kimi()),
+                    path: KimiUsage.defaultHomes.map(\.path).joined(separator: ","),
+                    detail: "usageRecordOnly=yes quotaKeyConfigured=\(yesNo(store.kimiCodeKeyConfigured))"
+                ),
+                SourceStatus(
+                    name: "OpenCode",
+                    enabled: store.opencodeMonitorEnabled,
+                    available: OpenCodeUsage.isAvailable,
+                    running: runningText(ProcessStatus.opencode()),
+                    path: OpenCodeUsage.databaseURL.path,
+                    detail: "structuredUsageOnly=yes"
+                ),
+                SourceStatus(
+                    name: "Gemini CLI",
+                    enabled: store.geminiMonitorEnabled,
+                    available: GeminiUsage.isAvailable,
+                    running: runningText(ProcessStatus.gemini()),
+                    path: GeminiUsage.sessionsRoot.path,
+                    detail: "structuredUsageOnly=yes"
+                ),
+                SourceStatus(
+                    name: "GitHub Copilot CLI",
+                    enabled: store.copilotMonitorEnabled,
+                    available: CopilotUsage.isAvailable,
+                    running: runningText(ProcessStatus.copilot()),
+                    path: CopilotUsage.sessionsRoot.path,
+                    detail: "shutdownAggregateOnly=yes structuredUsageOnly=yes"
+                ),
+                SourceStatus(
+                    name: "Qwen Code",
+                    enabled: store.qwenMonitorEnabled,
+                    available: QwenCodeUsage.isAvailable,
+                    running: runningText(ProcessStatus.qwen()),
+                    path: QwenCodeUsage.usageRecordURL.path,
+                    detail: "sessionAggregateOnly=yes structuredUsageOnly=yes"
+                ),
+                SourceStatus(
                     name: "Cursor",
                     enabled: store.cursorMonitorEnabled,
                     available: CursorUsage.isAvailable,

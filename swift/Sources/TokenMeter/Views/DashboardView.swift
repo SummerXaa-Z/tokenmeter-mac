@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DashboardView: View {
     @EnvironmentObject var state: AppState
+    var onBack: () -> Void
     var onSettings: () -> Void
     var onDetail: (String) -> Void
 
@@ -32,6 +33,7 @@ struct DashboardView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
+            iconButton("chevron.left", action: onBack)
             Image(systemName: "gauge.with.dots.needle.50percent")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(Theme.brand)
@@ -40,7 +42,7 @@ struct DashboardView: View {
             Spacer()
             iconButton("globe") { PlatformPortal.shared.open() }
                 .help("打开 DeepSeek 开放平台")
-            iconButton("arrow.clockwise") { state.refreshAll() }
+            iconButton("arrow.clockwise") { state.refreshAll(force: true) }
             iconButton("gearshape") { onSettings() }
         }
     }

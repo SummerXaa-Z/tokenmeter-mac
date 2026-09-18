@@ -8,24 +8,35 @@ import Security
 enum SecretSlot: String {
     case balanceKey = "deepseek.slot.balance"
     case usageGrant = "deepseek.slot.usage"
+    case kimiCodeKey = "kimi-code.slot.quota"
 }
 
 struct Keychain {
     static let service = "com.deepseek.monitor.mac"
 
-    static func set(_ value: String, for slot: SecretSlot) {
+    @discardableResult
+    static func set(_ value: String, for slot: SecretSlot) -> OSStatus {
         let account = slot.rawValue
-        // 先删旧值再写，避免 duplicate
-        delete(slot)
-        guard !value.isEmpty, let data = value.data(using: .utf8) else { return }
+        guard !value.isEmpty, let data = value.data(using: .utf8) else {
+            return errSecParam
+        }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+        ]
+        let updateStatus = SecItemUpdate(query as CFDictionary, [
+            kSecValueData as String: data,
+        ] as CFDictionary)
+        if updateStatus == errSecSuccess { return updateStatus }
+        guard updateStatus == errSecItemNotFound else { return updateStatus }
+
+        var addQuery = query
+        addQuery.merge([
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
-        ]
-        SecItemAdd(query as CFDictionary, nil)
+        ]) { _, new in new }
+        return SecItemAdd(addQuery as CFDictionary, nil)
     }
 
     static func get(_ slot: SecretSlot) -> String? {
@@ -44,20 +55,53 @@ struct Keychain {
         return str
     }
 
-    static func delete(_ slot: SecretSlot) {
+    @discardableResult
+    static func delete(_ slot: SecretSlot) -> OSStatus {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: slot.rawValue,
         ]
-        SecItemDelete(query as CFDictionary)
+        return SecItemDelete(query as CFDictionary)
+    }
+}
+
+enum CredentialStoreError: LocalizedError, Equatable {
+    case emptyCredential
+    case keychainWriteFailed
+    case keychainDeleteFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyCredential:
+            return "凭据不能为空，原凭据已保留"
+        case .keychainWriteFailed:
+            return "无法安全写入本机 Keychain，原凭据已保留"
+        case .keychainDeleteFailed:
+            return "无法从本机 Keychain 清除凭据，原凭据仍保留"
+        }
     }
 }
 
 // 应用配置：凭据走 Keychain，偏好走 UserDefaults。
 final class ConfigStore {
     static let shared = ConfigStore()
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
+    private let keychainGet: (SecretSlot) -> String?
+    private let keychainSet: (String, SecretSlot) -> OSStatus
+    private let keychainDelete: (SecretSlot) -> OSStatus
+
+    init(
+        defaults: UserDefaults = .standard,
+        keychainGet: @escaping (SecretSlot) -> String? = Keychain.get,
+        keychainSet: @escaping (String, SecretSlot) -> OSStatus = Keychain.set,
+        keychainDelete: @escaping (SecretSlot) -> OSStatus = Keychain.delete
+    ) {
+        self.defaults = defaults
+        self.keychainGet = keychainGet
+        self.keychainSet = keychainSet
+        self.keychainDelete = keychainDelete
+    }
 
     private enum DKey {
         static let refreshInterval = "refreshIntervalSeconds"
@@ -66,31 +110,89 @@ final class ConfigStore {
         static let deepseekMonitor = "deepseekMonitorEnabled"
         static let claudeMonitor = "claudeMonitorEnabled"
         static let codexMonitor = "codexMonitorEnabled"
+        static let kimiMonitor = "kimiMonitorEnabled"
+        static let opencodeMonitor = "opencodeMonitorEnabled"
+        static let geminiMonitor = "geminiMonitorEnabled"
+        static let copilotMonitor = "copilotMonitorEnabled"
+        static let qwenMonitor = "qwenMonitorEnabled"
         static let cursorMonitor = "cursorMonitorEnabled"
+        static let configSync = "configSyncEnabled"
+        static let assetSyncEnabled = "agentAssetSyncEnabled"
+        static let assetSyncSourceKey = "agentAssetSyncSourceKey"
+        static let assetSyncLastSuccessAt = "agentAssetSyncLastSuccessAt"
         static let menubarInfo = "menubarInfoMode"
         static let claudeDailyTokenLimit = "claudeDailyTokenLimitM"
         static let autoUpdateCheck = "autoUpdateCheckEnabled"
         static let lastUpdateCheck = "lastUpdateCheckAt"
         static let notifications = "notificationsEnabled"
         static let deepseekBalanceAlert = "deepseekBalanceAlertThreshold"
+        static let overviewHistoryRange = "overviewHistoryRangeDays"
+    }
+
+    var overviewHistoryRangeDays: Int {
+        get {
+            let value = defaults.integer(forKey: DKey.overviewHistoryRange)
+            // UserDefaults 未写入和“全部”都为 0，因此用 object 判断是否存在。
+            guard defaults.object(forKey: DKey.overviewHistoryRange) != nil else {
+                return UsageHistoryRange.month.rawValue
+            }
+            return UsageHistoryRange(rawValue: value)?.rawValue
+                ?? UsageHistoryRange.month.rawValue
+        }
+        set {
+            let normalized = UsageHistoryRange(rawValue: newValue) ?? .month
+            defaults.set(normalized.rawValue, forKey: DKey.overviewHistoryRange)
+        }
     }
 
     // 合法刷新间隔，对应 Rust normalize_refresh_interval_seconds
     static let allowedIntervals = [60, 300, 1800, 3600]
 
-    var credApiKey: String? {
-        get { Keychain.get(.balanceKey) }
-        set {
-            if let v = newValue, !v.isEmpty { Keychain.set(v, for: .balanceKey) }
-            else { Keychain.delete(.balanceKey) }
+    var credApiKey: String? { keychainGet(.balanceKey) }
+
+    var credUsageToken: String? { keychainGet(.usageGrant) }
+
+    func saveDeepSeekAPIKey(_ value: String) throws {
+        try saveCredential(value, slot: .balanceKey)
+    }
+
+    func clearDeepSeekAPIKey() throws {
+        try clearCredential(slot: .balanceKey)
+    }
+
+    func saveDeepSeekUsageToken(_ value: String) throws {
+        try saveCredential(value, slot: .usageGrant)
+    }
+
+    func clearDeepSeekUsageToken() throws {
+        try clearCredential(slot: .usageGrant)
+    }
+
+    // Kimi For Coding 凭据只用于读取官方订阅额度，不参与本地 session 扫描。
+    var credKimiCodeKey: String? { keychainGet(.kimiCodeKey) }
+
+    func saveKimiCodeKey(_ value: String) throws {
+        try saveCredential(value, slot: .kimiCodeKey)
+    }
+
+    func clearKimiCodeKey() throws {
+        try clearCredential(slot: .kimiCodeKey)
+    }
+
+    private func saveCredential(_ value: String, slot: SecretSlot) throws {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            throw CredentialStoreError.emptyCredential
+        }
+        guard keychainSet(normalized, slot) == errSecSuccess else {
+            throw CredentialStoreError.keychainWriteFailed
         }
     }
 
-    var credUsageToken: String? {
-        get { Keychain.get(.usageGrant) }
-        set {
-            if let v = newValue, !v.isEmpty { Keychain.set(v, for: .usageGrant) }
-            else { Keychain.delete(.usageGrant) }
+    private func clearCredential(slot: SecretSlot) throws {
+        let status = keychainDelete(slot)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw CredentialStoreError.keychainDeleteFailed
         }
     }
 
@@ -131,9 +233,82 @@ final class ConfigStore {
         set { defaults.set(newValue, forKey: DKey.codexMonitor) }
     }
 
+    var kimiMonitorEnabled: Bool {
+        get { defaults.object(forKey: DKey.kimiMonitor) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: DKey.kimiMonitor) }
+    }
+
+    var opencodeMonitorEnabled: Bool {
+        get { defaults.object(forKey: DKey.opencodeMonitor) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: DKey.opencodeMonitor) }
+    }
+
+    var geminiMonitorEnabled: Bool {
+        get { defaults.object(forKey: DKey.geminiMonitor) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: DKey.geminiMonitor) }
+    }
+
+    var copilotMonitorEnabled: Bool {
+        get { defaults.object(forKey: DKey.copilotMonitor) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: DKey.copilotMonitor) }
+    }
+
+    var qwenMonitorEnabled: Bool {
+        get { defaults.object(forKey: DKey.qwenMonitor) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: DKey.qwenMonitor) }
+    }
+
     var cursorMonitorEnabled: Bool {
         get { defaults.object(forKey: DKey.cursorMonitor) as? Bool ?? true }
         set { defaults.set(newValue, forKey: DKey.cursorMonitor) }
+    }
+
+    // 配置同步面板默认开启；关闭只隐藏入口并阻止扫描，不删除已加载缓存。
+    var configSyncEnabled: Bool {
+        get { defaults.object(forKey: DKey.configSync) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: DKey.configSync) }
+    }
+
+    // 自动资产同步与配置同步面板是两个独立开关。默认关闭，避免升级后静默写入 Agent 配置。
+    var assetSyncEnabled: Bool {
+        get { defaults.object(forKey: DKey.assetSyncEnabled) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: DKey.assetSyncEnabled) }
+    }
+
+    var assetSyncSourceKey: String? {
+        get {
+            guard let value = defaults.string(forKey: DKey.assetSyncSourceKey)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty else {
+                return nil
+            }
+            return value
+        }
+        set {
+            guard let value = newValue?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty else {
+                defaults.removeObject(forKey: DKey.assetSyncSourceKey)
+                return
+            }
+            defaults.set(value, forKey: DKey.assetSyncSourceKey)
+        }
+    }
+
+    var assetSyncLastSuccessAt: TimeInterval? {
+        get {
+            guard defaults.object(forKey: DKey.assetSyncLastSuccessAt) != nil else {
+                return nil
+            }
+            return defaults.double(forKey: DKey.assetSyncLastSuccessAt)
+        }
+        set {
+            if let newValue {
+                defaults.set(newValue, forKey: DKey.assetSyncLastSuccessAt)
+            } else {
+                defaults.removeObject(forKey: DKey.assetSyncLastSuccessAt)
+            }
+        }
     }
 
     // 菜单栏图标旁文字："off" / "total" 今日合计 / "claude" 今日 / "codex" 配额剩余
@@ -176,6 +351,15 @@ final class ConfigStore {
     // 凭据预览，对应 Rust api_key_preview（脱敏，只露头尾）
     func apiKeyPreview() -> String? {
         guard let key = credApiKey, !key.isEmpty else { return nil }
+        return Self.credentialPreview(key)
+    }
+
+    func kimiCodeKeyPreview() -> String? {
+        guard let key = credKimiCodeKey, !key.isEmpty else { return nil }
+        return Self.credentialPreview(key)
+    }
+
+    private static func credentialPreview(_ key: String) -> String {
         let chars = Array(key)
         if chars.count <= 12 { return "已保存" }
         let start = String(chars.prefix(7))
@@ -185,4 +369,5 @@ final class ConfigStore {
 
     var apiKeyConfigured: Bool { credApiKey?.isEmpty == false }
     var usageTokenConfigured: Bool { credUsageToken?.isEmpty == false }
+    var kimiCodeKeyConfigured: Bool { credKimiCodeKey?.isEmpty == false }
 }

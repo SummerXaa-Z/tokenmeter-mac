@@ -8,6 +8,11 @@ import Foundation
 
 enum AgentSyncError: LocalizedError {
     case cliNotFound
+    case disabled
+    case launchFailed
+    case timedOut
+    case outputTooLarge
+    case pipeReadFailed
     case nonZeroExit(code: Int32)
     case decodeFailed
     case cliError(String)   // CLI 返回 ok:false 的业务错误
@@ -16,6 +21,16 @@ enum AgentSyncError: LocalizedError {
         switch self {
         case .cliNotFound:
             return "未找到 agentsync 命令。请先执行：uv tool install --editable ~/Documents/code-xt/agentsync"
+        case .disabled:
+            return "配置同步面板已关闭。请先在设置中重新开启。"
+        case .launchFailed:
+            return "无法启动 agentsync。请检查安装状态后重试。"
+        case .timedOut:
+            return "agentsync 执行超时，未继续等待。"
+        case .outputTooLarge:
+            return "agentsync 返回数据过大，已安全中止。"
+        case .pipeReadFailed:
+            return "无法读取 agentsync 返回结果，请重试。"
         // 子进程原始输出可能意外包含配置片段，不能回显到 UI。
         // 结构化 {ok:false,error} 的业务提示仍由 cliError 单独展示。
         case .nonZeroExit(let code):
@@ -25,6 +40,12 @@ enum AgentSyncError: LocalizedError {
         case .cliError(let msg):
             return msg
         }
+    }
+}
+
+enum ConfigSyncAccess {
+    static func requireEnabled(_ enabled: Bool) throws {
+        guard enabled else { throw AgentSyncError.disabled }
     }
 }
 
@@ -44,6 +65,12 @@ struct ConfigProfile: Decodable, Identifiable, Equatable {
     let hooks: String?
     // 新版 agentsync 的目标写入能力；nil 代表旧 CLI，需回退到旧有内容判断。
     let declaredWritableLayers: [String]?
+    // 产品能力、当前可作为源的非空层和适配器覆盖是三套口径。
+    // 全部可选以兼容旧版 CLI。
+    var supportedLayers: [String]? = nil
+    var declaredSyncableLayers: [String]? = nil
+    var adapterCoverage: [String: String]? = nil
+    var unsupportedLayers: [String: String]? = nil
 
     var id: String { key }
 
@@ -53,6 +80,10 @@ struct ConfigProfile: Decodable, Identifiable, Equatable {
         case mcpCount = "mcp_count"
         case hasRules = "has_rules"
         case declaredWritableLayers = "writable_layers"
+        case supportedLayers = "supported_layers"
+        case declaredSyncableLayers = "syncable_layers"
+        case adapterCoverage = "adapter_coverage"
+        case unsupportedLayers = "unsupported"
     }
 
     var mcpDisplay: String {
@@ -82,6 +113,7 @@ struct ConfigProfile: Decodable, Identifiable, Equatable {
     /// 按 agentsync CLI 的层名返回此 profile 实际可作为真源的内容。
     /// 顺序需要稳定，直接用于 UI 与 `--layer` 参数。
     var syncableLayers: [String] {
+        if let declaredSyncableLayers { return declaredSyncableLayers }
         var layers: [String] = []
         if mcpState == "present" { layers.append("mcp") }
         if hasRules { layers.append("rules") }
@@ -103,6 +135,11 @@ struct ConfigProfile: Decodable, Identifiable, Equatable {
 
     var hasWritableLayer: Bool {
         !writableLayers.isEmpty
+    }
+
+    var pendingAdapterLayers: [String] {
+        let writable = Set(writableLayers)
+        return (supportedLayers ?? []).filter { !writable.contains($0) }
     }
 
     private static func hasLayerValue(_ value: String?) -> Bool {
@@ -185,16 +222,59 @@ struct PushTarget: Decodable, Identifiable {
     let written: Bool
     let diffText: String?
     let skipReason: String?
+    // reconcile 对可能覆盖用户已有整文件内容的层（目前是 rules）会返回冲突，
+    // 自动模式必须暂停而不是把 skip 误当成“已经一致”。旧 push 响应没有该字段。
+    let conflict: Bool?
 
     var id: String { "\(key)-\(layer)" }
 
     enum CodingKeys: String, CodingKey {
-        case key, label, layer, path, exists, servers, change, written
+        case key, label, layer, path, exists, servers, change, written, conflict
         case itemsAdded = "items_added"
         case alreadyPresent = "already_present"
         case dstOnly = "dst_only"
         case diffText = "diff_text"
         case skipReason = "skip_reason"
+    }
+}
+
+struct AgentAssetSyncLayerResult: Decodable, Equatable, Identifiable {
+    let layer: String
+    let targetCount: Int
+    let targets: [String]
+
+    var id: String { layer }
+
+    enum CodingKeys: String, CodingKey {
+        case layer, targets
+        case targetCount = "target_count"
+    }
+}
+
+/// `agentsync reconcile` 的一次完整事务结果。自动同步只调用这个高层命令，
+/// 不在 Swift 侧串联多次 pull/push，避免中途失败留下部分写入。
+struct AgentAssetSyncResult: Decodable {
+    let ok: Bool
+    let apply: Bool
+    let applied: Bool
+    let source: String
+    let label: String?
+    let layers: [AgentAssetSyncLayerResult]
+    let targetCount: Int
+    let anyChange: Bool
+    let backupTs: String?
+    let targets: [PushTarget]
+    let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case ok, apply, applied, source, label, layers, targets, error
+        case targetCount = "target_count"
+        case anyChange = "any_change"
+        case backupTs = "backup_ts"
+    }
+
+    var conflicts: [PushTarget] {
+        targets.filter { $0.conflict == true }
     }
 }
 
@@ -284,9 +364,145 @@ struct RollbackResult: Decodable {
     let error: String?
 }
 
+enum AgentSyncProcessRunner {
+    struct Output {
+        let stdout: Data
+        let stderr: Data
+        let terminationStatus: Int32
+    }
+
+    static func run(
+        process: Process,
+        timeout: TimeInterval,
+        maximumStdoutBytes: Int,
+        maximumStderrBytes: Int
+    ) throws -> Output {
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        let stdoutCapture = AgentSyncPipeCapture(limit: maximumStdoutBytes)
+        let stderrCapture = AgentSyncPipeCapture(limit: maximumStderrBytes)
+        let finished = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in finished.signal() }
+
+        do {
+            try process.run()
+        } catch {
+            throw AgentSyncError.launchFailed
+        }
+
+        let readers = DispatchGroup()
+        readers.enter()
+        DispatchQueue.global(qos: .utility).async {
+            stdoutCapture.drain(stdout.fileHandleForReading)
+            readers.leave()
+        }
+        readers.enter()
+        DispatchQueue.global(qos: .utility).async {
+            stderrCapture.drain(stderr.fileHandleForReading)
+            readers.leave()
+        }
+
+        if finished.wait(timeout: .now() + max(timeout, 0)) == .timedOut {
+            if process.isRunning { process.terminate() }
+            if finished.wait(timeout: .now() + 1) == .timedOut, process.isRunning {
+                Darwin.kill(process.processIdentifier, SIGKILL)
+                _ = finished.wait(timeout: .now() + 1)
+            }
+            _ = finishReaders(readers, stdout: stdout, stderr: stderr)
+            throw AgentSyncError.timedOut
+        }
+
+        guard finishReaders(readers, stdout: stdout, stderr: stderr) else {
+            throw AgentSyncError.pipeReadFailed
+        }
+        guard !stdoutCapture.exceededLimit, !stderrCapture.exceededLimit else {
+            throw AgentSyncError.outputTooLarge
+        }
+        guard !stdoutCapture.readFailed, !stderrCapture.readFailed else {
+            throw AgentSyncError.pipeReadFailed
+        }
+        return Output(
+            stdout: stdoutCapture.data,
+            stderr: stderrCapture.data,
+            terminationStatus: process.terminationStatus
+        )
+    }
+
+    private static func finishReaders(
+        _ readers: DispatchGroup,
+        stdout: Pipe,
+        stderr: Pipe
+    ) -> Bool {
+        if readers.wait(timeout: .now() + 2) == .success { return true }
+        try? stdout.fileHandleForReading.close()
+        try? stderr.fileHandleForReading.close()
+        return readers.wait(timeout: .now() + 1) == .success
+    }
+}
+
+private final class AgentSyncPipeCapture: @unchecked Sendable {
+    private let limit: Int
+    private let lock = NSLock()
+    private var storage = Data()
+    private var didExceedLimit = false
+    private var didFailRead = false
+
+    init(limit: Int) {
+        self.limit = max(limit, 0)
+    }
+
+    func drain(_ handle: FileHandle) {
+        while true {
+            do {
+                guard let chunk = try handle.read(upToCount: 65_536), !chunk.isEmpty else {
+                    return
+                }
+                append(chunk)
+            } catch {
+                lock.lock()
+                didFailRead = true
+                lock.unlock()
+                return
+            }
+        }
+    }
+
+    private func append(_ chunk: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+        let remaining = max(limit - storage.count, 0)
+        if chunk.count > remaining { didExceedLimit = true }
+        if remaining > 0 { storage.append(contentsOf: chunk.prefix(remaining)) }
+    }
+
+    var data: Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    var exceededLimit: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return didExceedLimit
+    }
+
+    var readFailed: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return didFailRead
+    }
+}
+
 // MARK: - 服务
 
 enum AgentSyncService {
+    static let commandTimeout: TimeInterval = 30
+    static let maximumStdoutBytes = 1_048_576
+    static let maximumStderrBytes = 262_144
 
     /// 探测全局 agentsync 命令路径。顺序：~/.local/bin → /opt/homebrew/bin → which。
     static var cliPath: URL? {
@@ -339,17 +555,16 @@ enum AgentSyncService {
         env["PATH"] = extraPaths + ":" + (env["PATH"] ?? "/usr/bin:/bin")
         proc.environment = env
 
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        proc.standardOutput = outPipe
-        proc.standardError = errPipe
-
-        try proc.run()
-        let output = ProcessPipeReader.read(stdout: outPipe, stderr: errPipe, process: proc)
+        let output = try AgentSyncProcessRunner.run(
+            process: proc,
+            timeout: commandTimeout,
+            maximumStdoutBytes: maximumStdoutBytes,
+            maximumStderrBytes: maximumStderrBytes
+        )
         let outData = output.stdout
         let errData = output.stderr
 
-        guard proc.terminationStatus == 0 else {
+        guard output.terminationStatus == 0 else {
             // CLI 的业务错误（如 canonical 为空）以 {ok:false,error} + 退出码 1 返回，
             // stdout 才有可读文案。优先透出它，退回才用 stderr/退出码。
             if let msg = decodeCLIError(outData) {
@@ -357,7 +572,7 @@ enum AgentSyncService {
             }
             // stderr 仍须读完，避免子进程因 pipe 缓冲区阻塞；但绝不显示其原文。
             _ = errData
-            throw AgentSyncError.nonZeroExit(code: proc.terminationStatus)
+            throw AgentSyncError.nonZeroExit(code: output.terminationStatus)
         }
         return outData
     }
@@ -420,6 +635,16 @@ enum AgentSyncService {
             as: PushResult.self
         )
         if !r.ok { throw AgentSyncError.cliError(r.error ?? "写入失败") }
+        return r
+    }
+
+    /// 一键资产同步：CLI 内完成逐层兼容分组、完整预演、单事务备份、
+    /// 目标指纹校验与失败自动恢复。默认调用方明确传 apply=true 才会写盘。
+    static func reconcile(from source: String, apply: Bool) async throws -> AgentAssetSyncResult {
+        var arguments = ["reconcile", "--from", source]
+        if apply { arguments.append("--apply") }
+        let r = try await run(arguments, as: AgentAssetSyncResult.self)
+        if !r.ok { throw AgentSyncError.cliError(r.error ?? "资产同步失败") }
         return r
     }
 

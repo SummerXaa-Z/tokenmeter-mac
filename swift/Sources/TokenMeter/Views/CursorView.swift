@@ -4,6 +4,7 @@ import SwiftUI
 // 数据来自 cursor.com 官方用量接口（本地 token 鉴权），刷新即重查。
 struct CursorView: View {
     @EnvironmentObject var state: AppState
+    var onBack: () -> Void
     var onSettings: () -> Void
 
     var body: some View {
@@ -35,28 +36,16 @@ struct CursorView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "cursorarrow.rays")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Theme.cursor)
-            Text("Cursor Monitor")
-                .font(.system(size: 15, weight: .bold))
-            RunningBadge(snapshot: state.cursor.proc, showCount: false)
-            Spacer()
-            iconButton("arrow.clockwise") { Task { await state.loadCursor(force: true) } }
-            iconButton("gearshape") { onSettings() }
-        }
-    }
-
-    private func iconButton(_ name: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: name)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 26, height: 26)
-        }
-        .buttonStyle(.plain)
-        .contentShape(Rectangle())
+        SourceDashboardHeader(
+            icon: "cursorarrow.rays",
+            title: "Cursor Monitor",
+            color: Theme.cursor,
+            process: state.cursor.proc,
+            showProcessCount: false,
+            onBack: onBack,
+            onRefresh: { Task { await state.loadCursor(force: true) } },
+            onSettings: onSettings
+        )
     }
 
     // MARK: - 账户
@@ -140,8 +129,10 @@ struct CursorView: View {
                     stat("Token", Fmt.tokensShort(r.totalTokens))
                     stat("输出", Fmt.tokensShort(r.totalOutputTokens))
                     stat("缓存命中", r.cacheHitRate.map { String(format: "%.0f%%", $0) } ?? "—")
-                    stat("费用", String(format: "$%.2f", r.totalCostCents / 100))
+                    stat("平台费用", String(format: "$%.2f", r.totalCostCents / 100))
                 }
+                Text("平台返回的用量费用，不等同于固定订阅费。")
+                    .font(.system(size: 9)).foregroundStyle(.tertiary)
             }
         }
     }

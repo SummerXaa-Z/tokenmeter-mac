@@ -2,7 +2,7 @@
 
 > 原名 DeepSeek Monitor for macOS，v3.0 起更名。
 
-TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：DeepSeek API 余额与消费、Claude（Claude CLI 本地数据）与 Codex（Codex CLI 本地数据）的 Token 用量、Cursor 账户用量、订阅配额与趋势，多源一个面板切换查看，并显示各工具的运行状态。点击菜单栏图标，面板以原生 NSPopover 形式贴着图标下拉。
+TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：统一查看 Claude、Codex、Kimi Code、OpenCode、Gemini CLI、GitHub Copilot CLI、Qwen Code 与 Cursor 的 AI Coding Token、费用、配额、趋势和本地个人画像，并把 DeepSeek 平台 API 消费与余额作为独立账户口径展示。点击菜单栏图标，面板以原生 NSPopover 形式贴着图标下拉。
 
 当前主版本为**原生 Swift 实现**（SwiftUI + AppKit），早期的 Tauri 2 + React + Rust 版本（v1.1.0）保留在 `tauri-version` 分支。
 
@@ -44,6 +44,7 @@ TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：DeepSeek A
 
 ### Claude（Claude CLI 用户）
 - 数据源纯本地 `~/.claude/projects/**/*.jsonl`（会话 transcript），零网络、零凭据。
+- 从结构化 `Skill` tool_use 提取 Skill 名与调用次数；按 tool_use ID 去重，不把文本里提到的 Skill 算作调用。
 - 今日用量（Token / 请求数 / 缓存命中率 / 输出）+ 今日 24 小时分时柱图。
 - 近 7 天堆叠柱图（缓存读取 / 缓存写入 / 新输入 / 输出）+ 周趋势（本周 vs 上周环比）。
 - 模型分布与项目分布 Top 榜，看 token 用在哪个模型、哪个项目上。
@@ -51,10 +52,39 @@ TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：DeepSeek A
 
 ### Codex（Codex CLI / Codex Desktop 用户）
 - 数据源纯本地 `~/.codex/sessions/**/rollout-*.jsonl`，零网络、零凭据，CLI 与 Desktop 共用。
+- 从真实读取标准 `skills/<name>/SKILL.md` 的工具调用提取 Skill 名与次数；普通消息、变量名和仅输出路径的命令不计入。
 - 订阅配额双窗口（小时窗 / 周窗自适应）剩余百分比进度条 + 重置倒计时 + plan 标识。
 - 今日用量 + 今日 24 小时分时柱图 + 近 7 天堆叠柱图；跨天 session 按事件时间戳正确归因到天。
 - 模型分布（含 reasoning effort，如 gpt-5.5 (xhigh)）与项目分布 Top 榜。
 - 低配额菜单栏预警：剩余 ≤30% 图标变橙、≤10% 变红，后台定时刷新，不点开面板也能看见。
+
+### Kimi Code（standalone / Kimi.app）
+- 纯本地只读官方 `wire.jsonl` 中的结构化 `usage.record`，同时覆盖 standalone 与 Kimi.app 内嵌 runtime；不读取提示词、回复、代码、工具参数或凭据。
+- 统计新输入、缓存读取、缓存创建、输出、请求、会话、模型，并提供今日 24 小时与连续 7 天趋势；同一请求的 `step.end` 镜像不会重复计数。
+- standalone 与 Kimi.app 迁移副本按完整 session 去重；主 Agent 与子 Agent 用量都计入，但会话数仍按顶层 session 计算。
+- Kimi Code 订阅剩余量支持用户主动配置 Kimi For Coding Key 查询官方 `/coding/v1/usages`，Key 只存在本机 Keychain；未配置时才尝试 standalone `kimi web` 的 loopback 服务。5 小时/周额度与 Extra Usage 平铺展示，会员月总额度明确提示去订阅页查看。
+
+### OpenCode
+- 纯本地只读 `~/.local/share/opencode/opencode.db`，兼容 SQLite WAL，不连接 OpenCode 服务端。
+- 从 assistant 的结构化字段聚合五类 Token、模型、消息、会话和 OpenCode 原生费用估算。
+- 查询只白名单提取 role、模型、时间、Token 与费用，不读取或上报提示词、回复、代码和凭据。
+
+### Gemini CLI
+- 纯本地扫描 `~/.gemini/tmp/<project_hash>/chats/`，兼容当前 JSONL 与旧版 JSON session。
+- 按消息统计非缓存输入、缓存输入、输出、thoughts 推理、模型和会话；同 message ID 的追加更新只算最终一版。
+- 旧 JSON 迁移后若与 JSONL 共存，按 session ID 去重，避免同一历史重复统计。
+
+### GitHub Copilot CLI
+- 纯本地扫描 `~/.copilot/session-state/<session_id>/events.jsonl`，不登录 GitHub、不调用远端 API。
+- 读取官方持久化的 `session.shutdown` 汇总，按模型拆分非缓存输入、缓存读取、缓存写入、普通输出和 reasoning，并统计请求、消息、会话与代码增删行。
+- 识别结构化 `skill.invoked` 事件生成个人 Skills 榜；按最新事件 parent 链回溯，排除 rewind 后的旧分支。
+- Copilot 的逐请求用量事件不会持久化，因此运行中或异常中断且未写出 shutdown 的会话暂不计入；完整会话统一归到结束日。
+- 代码行是 session 内工具变更累计，只表示 AI 动手强度，不等于最终 Git 提交或合入产出。
+
+### Qwen Code
+- 纯本地只读官方 `~/.qwen/usage_record.jsonl` 聚合文件，不打开 chats 对话记录。
+- 按 Session ID 以后记录覆盖旧记录，统计模型、请求、会话、新输入、缓存读取、输出与 reasoning；官方未持久化 cache creation，保持为 0 而不猜测。
+- 提供今日 24 小时与连续 7 天趋势；小时按 Session 结束时间归属。
 
 ### Cursor
 - 从本地登录态读取 token，查询 cursor.com Dashboard 同源接口。
@@ -67,22 +97,29 @@ TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：DeepSeek A
 - 写入前独立窗口预览结构化 diff（哪些 server 新增/修改/移除），二次确认才落盘；写前自动备份，可一键回滚。
 - env 里的 secret 全程脱敏展示（只显示存在，不露明文）。
 - 依赖独立的 `agentsync` CLI（Python），需先安装：`uv tool install --editable ~/Documents/code-xt/agentsync`。未检测到该命令时此 tab 自动隐藏。
+- 可在设置中关闭配置同步面板；关闭后不再扫描、拉取、预览或写入，已有缓存与 AgentSync 配置不会被删除，必要时仍可从已完成窗口回滚。
+- 设置中的“自动同步 Agent 资产”默认关闭；首次打开时确认一个真源，之后每 30 分钟按资产层自动补齐所有兼容目标。每次同步都先完整规划、做单一备份事务并写后复验，异常自动回滚；Memory 不自动同步，已有不同 Rules 只报告冲突而不覆盖。
 
 ### 通用
-- Claude / Codex / Cursor tab 顶栏显示工具运行状态（绿点运行中 / 灰点未运行，CLI 与桌面版都识别）。
-- 菜单栏图标旁可显示核心指标：今日合计 token（默认，Claude + Codex）/ Claude 单源 / Codex 配额剩余 %，可关闭。
+- 总览提供本地“个人 AI 画像”：可选范围内的活跃与连续使用、主力工具占比，以及近 7 天会话数和输入缓存复用率，并生成个人使用标签；工具用量直接并入首页明细，模型榜与 Skills 榜独立展示，Skills 榜合并 Claude、Codex、Copilot 的明确调用证据并保留来源。所有画像只保留聚合数字，不上传会话内容。
+- 主页只保留 1D / 7D / 30D / 全部一级时间导航并记住选择，不设置第二层工具导航；范围总量与各工具用量合并为一张纵向明细卡，只显示所选范围内 Token 大于 0 的 Agent，设置开关与历史不会被删除，切换范围后可重新出现。活跃天数、主力工具、Token 趋势和 DeepSeek 平台费用共用同一范围。“全部”明确标注本机记录起点，并按历史跨度自动以日、周或月聚合；模型榜、会话与 API 等价参考仍保持近 7 天，避免把短窗口数据伪装成长周期。
+- 费用明确区分“平台返回费用”“API 等价估算”和“固定订阅费”；近 7 天 API 等价参考优先使用随 App 固化的 [OpenRouter 公共模型目录](https://openrouter.ai/api/v1/models) 价格快照，OpenRouter 缺价时只采用模型官方公开价，支持普通输入、缓存读取、缓存创建、输出和 reasoning 五类 Token。人民币公开价保留原金额，并按固定参考汇率 `$1 = ¥6.90` 汇总为美元；该汇率不联网更新。仍找不到可靠来源的模型会明确标为缺价，不会静默按 0 元或套用相近模型。
+- Claude / Codex / Kimi Code / OpenCode / Gemini CLI / GitHub Copilot CLI / Qwen Code / Cursor 详情页顶栏显示工具运行状态（绿点运行中 / 灰点未运行）。
+- 菜单栏图标旁可显示核心指标：Claude + Codex 今日合计 token（默认）/ Claude 单源 / Codex 配额剩余 %，可关闭；该合计不代表首页全部 Coding 来源。
 - 配额/用量预警时菜单栏图标变色（橙=警告 / 红=严重），Codex 配额与 Claude 日用量两路取最高。
-- 多源顶部切换栏；未安装对应工具的 tab 自动隐藏，设置里也可手动关闭任意监控源。
+- 首页按已启用且在所选范围内有 Token 的产品级来源平铺工具明细；当前数据路径暂时消失不会抹掉已积累历史。
 - 常驻菜单栏（状态栏）图标，点击下拉面板；应用不占用 Dock（`LSUIElement`）。
 - 自动更新：每日自动检查 GitHub Releases（可关），发现新版确认后自动下载、替换、重启；设置页也可手动检查。
 - API Key 保存、清除和余额验证；凭据存于 **macOS Keychain**，不落明文文件。
 - 用量 Token 自动同步（登录窗口注入 JS 抓 Authorization 头）和手动粘贴兜底。
 - macOS 开机自启（SMAppService，系统设置「登录项」可见可控）。
-- 自动刷新（1 分钟 / 5 分钟 / 30 分钟 / 1 小时档位）。
+- 全部已启用用量源自动刷新（1 分钟 / 5 分钟 / 30 分钟 / 1 小时档位）；打开菜单栏面板也会刷新启用来源，并在 60 秒内复用本地缓存，避免重复扫描。
 
 ### 隐私说明
 
-Claude / Codex 用量统计只读取本机已有的 CLI 会话文件，**不上传任何数据**。网络请求仅有四类：DeepSeek 官方接口（余额/用量）、ChatGPT 官方接口（Codex 实时配额，凭据为本机 Codex 登录态）、cursor.com 官方用量接口（仅启用 Cursor 监控时，凭据为本机已有登录态）、GitHub Releases（检查更新，可关闭）。
+Claude / Codex / Kimi Code / OpenCode / Gemini CLI / GitHub Copilot CLI / Qwen Code 用量统计只读取本机已有的 session 或官方聚合记录，**不上传任何数据**。Skill 识别只保留明确结构化名称，或从 Codex 工具参数中短暂匹配标准 `SKILL.md` 路径；命令、路径、提示词、回复和 Skill 内容均不进入聚合结果。网络请求只用于用户所见功能：DeepSeek 官方余额/用量、ChatGPT 官方 Codex 配额、用户明确配置 Key 后的 Kimi 官方配额（或无 Key 时的本机 loopback）、经本机 arkcli 查询火山方舟套餐、cursor.com 用量，以及可关闭的 GitHub Releases 更新检查。价格目录固化在 App 内，运行时不查询 OpenRouter。Copilot 与 Qwen Code 采集器都不会连接各自服务端。
+
+支持范围、暂缓原因与新来源验收标准见 [本地用量来源覆盖](docs/local-source-coverage.md)。
 
 ## 技术架构
 
@@ -93,7 +130,7 @@ Claude / Codex 用量统计只读取本机已有的 CLI 会话文件，**不上�
 | 凭据存储 | macOS Keychain（API Key / 用量 Token） |
 | 开机自启 | SMAppService（macOS 13+ 官方登录项 API） |
 | token 抓取 | WKWebView 注入 JS hook fetch/XHR 的 Authorization 头，WKScriptMessageHandler 回原生 |
-| 本地用量解析 | JSONL 流式扫描（8MB chunk）+ (size, mtime) 内存缓存，单文件数百 MB 不卡 |
+| 本地用量解析 | JSONL 流式扫描 / SQLite 只读查询 + (size, mtime) 内存缓存 |
 | 自动更新 | GitHub Releases 检查 + dmg 下载替换 |
 | 工程生成 | XcodeGen（`swift/project.yml`） |
 
@@ -106,8 +143,8 @@ swift/
 └── Sources/TokenMeter/
     ├── Shell/        # main + AppDelegate（状态栏 + popover 外壳 + 菜单栏预警）
     ├── Models/       # AppState（数据流）、Models（接口模型）、Format
-    ├── Views/        # Dashboard / Claude / Codex / Settings / ModelDetail / 主题与组件
-    └── Services/     # DeepSeekAPI / ClaudeUsage / CodexUsage / Updater / LoginSync / PlatformPortal / Store(Keychain) / Autostart
+    ├── Views/        # Dashboard / 各 Agent 用量面板 / Settings / 主题与组件
+    └── Services/     # 各用量 Collector / Updater / LoginSync / Store(Keychain) / Autostart
 ```
 
 ## 系统要求
@@ -151,7 +188,9 @@ GitHub Actions 与发布前验证使用更完整入口：
 make release-check
 ```
 
-`make test` 会先用 XcodeGen 重新生成 `swift/TokenMeter.xcodeproj`，再跑 XCTest。`make release-check` 会追加 Release build 检查，并在 push / PR 时由 GitHub Actions 执行。当前测试重点覆盖 AgentSync JSON 解码契约与配置同步目标选择逻辑。
+`make test` 会先用 XcodeGen 重新生成 `swift/TokenMeter.xcodeproj`，再跑 XCTest。`make release-check` 会追加 Release build，并核对 App 版本、Bundle ID 与主程序元数据；push / PR 时由 GitHub Actions 执行。当前测试重点覆盖 AgentSync JSON 解码契约、配置同步目标选择与用量窗口边界。
+
+需要目视检查菜单栏首页、时间范围和详情返回时，可运行 `make ui-smoke`。它只在 Debug 构建打开 420×600 的普通测试窗口，并跳过通知申请、更新检查与后台计时器；正常启动和 Release 包仍是纯菜单栏应用。
 
 贡献代码前请先看 [CONTRIBUTING.md](CONTRIBUTING.md)。提交安全问题前请先看 [SECURITY.md](SECURITY.md)，不要在公开 issue 里粘贴 API key、token、cookie 或完整个人日志。
 
@@ -190,7 +229,7 @@ spctl -a -vvv -t install /tmp/TokenMeter_<版本>_aarch64.dmg
 
 ## 使用方式
 
-打开应用后点击菜单栏图标进入面板。装有 Claude CLI / Codex CLI 的机器会自动出现对应 tab，本地统计开箱即用、无需配置。
+打开应用后点击菜单栏图标进入面板。检测到 Claude、Codex、Kimi Code、OpenCode、Gemini CLI、GitHub Copilot CLI 或 Qwen Code 本地数据时会自动采集，对应 Agent 在当前范围有 Token 后出现在首页，本地统计开箱即用、无需配置。
 
 DeepSeek 监控需在设置页配置 DeepSeek API Key（来自 DeepSeek 开放平台的 API Keys 页面），用于查询账户余额。
 
@@ -210,7 +249,7 @@ DeepSeek 官方未提供用量接口，用量统计需要网页登录 Token（�
 
 - **API Key 与用量 Token**：macOS Keychain，不落明文文件。
 - **刷新间隔、监控源开关、预警阈值等偏好**：`UserDefaults`。
-- **Claude / Codex 用量**：只读本机 CLI 自己写的会话文件，本应用不额外存储、不上传。
+- **Claude / Codex / Kimi Code / OpenCode / Gemini CLI / GitHub Copilot CLI / Qwen Code 用量**：只读各工具自己写的本地结构化或聚合记录，本应用只留按日聚合历史，不上传。
 
 v1.x Tauri 版的 `~/Library/Application Support/DeepSeekMonitorMac/config.json` 不再使用；如存在旧文件，建议手动删除。
 
@@ -224,4 +263,4 @@ MIT License，与上游保持一致。详见 [LICENSE](LICENSE)。
 
 ## 免责声明
 
-本项目仅用于学习和研究目的。请遵守 DeepSeek 的使用条款，合理使用相关接口。DeepSeek 平台页面结构、登录状态和内部用量接口都可能变化；Claude CLI / Codex CLI 的本地会话文件格式、Cursor 的本地登录态与用量接口亦可能随版本调整，本项目不保证长期可用。**API Key 和用量 Token 属于敏感凭据，使用者自行承担本机存储、账号安全、网络请求和数据展示带来的风险。**
+本项目仅用于学习和研究目的。请遵守 DeepSeek 的使用条款，合理使用相关接口。DeepSeek 平台页面结构、登录状态和内部用量接口都可能变化；Claude CLI / Codex CLI / OpenCode / Gemini CLI / GitHub Copilot CLI 的本地数据格式、Cursor 的本地登录态与用量接口亦可能随版本调整，本项目不保证长期可用。**API Key 和用量 Token 属于敏感凭据，使用者自行承担本机存储、账号安全、网络请求和数据展示带来的风险。**

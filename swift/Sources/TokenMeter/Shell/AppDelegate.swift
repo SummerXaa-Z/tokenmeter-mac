@@ -8,8 +8,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private let appState = AppState()
+#if DEBUG
+    private var smokeWindow: NSWindow?
+#endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+#if DEBUG
+        // 菜单栏 popover 很难被 UI 自动化稳定定位。这个显式启动参数只在
+        // Debug 构建提供同尺寸普通窗口，跳过通知、更新器和后台计时器；
+        // 正常启动与 Release 构建完全不受影响。
+        if ProcessInfo.processInfo.arguments.contains("--ui-smoke-window") {
+            showUISmokeWindow()
+            return
+        }
+#endif
         // 菜单栏应用：不占 Dock、不抢主菜单栏
         NSApp.setActivationPolicy(.accessory)
 
@@ -32,8 +44,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         appState.rearmTimer()
 
-        // 通知授权（首次会弹系统授权框；拒绝则静默退回图标着色）
-        Notifier.requestAuthorization()
+        // 一键资产同步只在用户之前明确开启时于启动执行一次；不挂到高频
+        // Token 刷新定时器，避免反复写配置。之后可在设置中手动“立即同步”。
+        if appState.assetSyncEnabled {
+            appState.runAssetSyncNow()
+        }
+        assetSyncTimer = Timer.scheduledTimer(withTimeInterval: 1_800, repeats: true) {
+            [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.appState.assetSyncEnabled else { return }
+                self.appState.runAssetSyncNow()
+            }
+        }
+
+        // 仅在用户开启通知时申请权限；关闭状态重启不能再次打扰用户。
+        Notifier.requestAuthorizationIfEnabled(ConfigStore.shared.notificationsEnabled)
 
         // 启动 5s 后做每日一次的更新检查（静默，仅有新版时弹窗）
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
@@ -41,32 +66,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // 配额/用量预警 + 菜单栏信息文字，统一 15 分钟刷新
-        refreshQuotaBadge()
+        requestQuotaBadgeRefresh()
         quotaTimer = Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refreshQuotaBadge() }
+            Task { @MainActor in self?.requestQuotaBadgeRefresh() }
         }
-        // 设置页切换显示模式后立刻生效
-        NotificationCenter.default.addObserver(forName: .menubarInfoModeChanged, object: nil,
+        // 设置或余额状态变化后立刻生效，不等 15 分钟定时周期
+        NotificationCenter.default.addObserver(forName: .statusRefreshRequested, object: nil,
                                                queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.refreshQuotaBadge() }
+            Task { @MainActor in self?.requestQuotaBadgeRefresh() }
         }
     }
 
     private var quotaTimer: Timer?
+    private var assetSyncTimer: Timer?
 
-    // 已推送的告警键集合：状态机做"翻转才推"——越线时若键不在集合就推一次
-    // 并记入，恢复正常后移除键，下次越线才会再推。避免每 15 分钟重复刷屏。
-    private var firedAlerts: Set<String> = []
+#if DEBUG
+    private func showUISmokeWindow() {
+        NSApp.setActivationPolicy(.regular)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: Theme.panelWidth, height: Theme.panelHeight),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "TokenMeter UI Smoke"
+        window.contentViewController = NSHostingController(
+            rootView: RootView().environmentObject(appState)
+        )
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        smokeWindow = window
+        NSApp.activate(ignoringOtherApps: true)
+    }
+#endif
+
+    private var alertLatch = AlertLatch()
+    private var statusRefreshCoalescer = StatusRefreshCoalescer()
 
     // 根据"当前是否越线"决定推/撤。crossed=true 且未推过 → 推；crossed=false → 清除记录
     private func evaluateAlert(key: String, crossed: Bool, title: String, body: String) {
-        guard ConfigStore.shared.notificationsEnabled else { return }
-        if crossed {
-            guard !firedAlerts.contains(key) else { return }
-            firedAlerts.insert(key)
+        if alertLatch.shouldFire(
+            key: key,
+            crossed: crossed,
+            enabled: ConfigStore.shared.notificationsEnabled
+        ) {
             Notifier.send(id: key, title: title, body: body)
-        } else {
-            firedAlerts.remove(key)
         }
     }
 
@@ -86,21 +131,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func requestQuotaBadgeRefresh() {
+        guard statusRefreshCoalescer.request() else { return }
+        performQuotaBadgeRefresh()
+    }
+
+    private func finishQuotaBadgeRefresh() {
+        if statusRefreshCoalescer.finish() {
+            performQuotaBadgeRefresh()
+        }
+    }
+
     // 后台扫一次 Codex 配额 + Claude 今日用量：告警等级给图标着色，
-    // 同时按设置把核心指标（Claude 今日 token / Codex 配额剩余）写到图标旁
-    private func refreshQuotaBadge() {
+    // 同时按设置把核心指标（Claude 今日 token / Codex 配额剩余）写到图标旁。
+    private func performQuotaBadgeRefresh() {
         // 开关与阈值在主线程一次性快照，detached 任务里不再碰共享状态
-        let codexOn = ConfigStore.shared.codexMonitorEnabled && CodexUsage.isAvailable
-        let claudeLimitM = ConfigStore.shared.claudeDailyTokenLimitM
-        let claudeAlertOn = ConfigStore.shared.claudeMonitorEnabled
+        let settings = currentStatusRefreshSettings()
+        let codexOn = settings.codexEnabled && CodexUsage.isAvailable
+        let claudeLimitM = settings.claudeDailyLimitM
+        let claudeAlertOn = settings.claudeEnabled
             && ClaudeUsage.isAvailable && claudeLimitM > 0
-        let infoMode = ConfigStore.shared.menubarInfoMode
-        let balanceThreshold = ConfigStore.shared.deepseekMonitorEnabled
-            ? ConfigStore.shared.deepseekBalanceAlertThreshold : 0
-        let claudeUsable = ConfigStore.shared.claudeMonitorEnabled && ClaudeUsage.isAvailable
+        let infoMode = settings.menubarInfoMode
+        let balanceThreshold = settings.deepseekEnabled
+            ? settings.deepseekBalanceAlertThreshold : 0
+        let claudeUsable = settings.claudeEnabled && ClaudeUsage.isAvailable
         let claudeInfoOn = (infoMode == "claude" || infoMode == "total") && claudeUsable
         let codexQuotaInfoOn = infoMode == "codex" && codexOn
         let codexTotalInfoOn = infoMode == "total" && codexOn
+
+        // 用户明确关闭来源/阈值等同于重新布防；以后重新开启时应允许立即提醒。
+        if balanceThreshold <= 0 { alertLatch.reset(key: "deepseek.balance.low") }
+        if !codexOn { alertLatch.reset(key: "codex.quota.low") }
+        if !claudeAlertOn { alertLatch.reset(key: "claude.daily.over") }
 
         // 余额预警独立于 detached 扫描：balance 已在 appState（主线程，无 I/O）。
         // 放在 guard 前，避免"只开余额预警"时被提前 return 跳过。
@@ -116,9 +178,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard codexOn || claudeAlertOn || claudeInfoOn else {
             setStatusIcon(tint: nil, text: nil)
+            finishQuotaBadgeRefresh()
             return
         }
-        Task.detached(priority: .utility) {
+        Task { [weak self] in
+            guard let self else { return }
+            await withTaskGroup(of: Void.self) { group in
+                if codexOn {
+                    group.addTask { await self.appState.loadCodex() }
+                }
+                if claudeAlertOn || claudeInfoOn {
+                    group.addTask { await self.appState.loadClaude() }
+                }
+            }
+
             var level = AlertLevel.normal
             var infoTokens = 0          // total/claude 模式累加今日 token
             var infoText: String?
@@ -128,10 +201,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var claudeCrossed: Bool?
             var claudeToday = 0
 
-            if codexOn || codexQuotaInfoOn || codexTotalInfoOn {
-                let codexResult = CodexUsage.load()
-                // 预警优先用官方实时配额（本地快照在灰度通道期间会停更）
-                let limits = await CodexUsage.fetchLiveRateLimits()?.first ?? codexResult.rateLimits
+            if codexOn, let codexResult = self.appState.codex.result {
+                // AppState 已把官方实时配额合并进本地用量结果，状态栏复用同一口径。
+                let limits = codexResult.rateLimits
                 let worstUsed = max(limits?.primary?.usedPercent ?? 0,
                                     limits?.secondary?.usedPercent ?? 0)
                 let remaining = 100 - worstUsed
@@ -153,7 +225,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             if claudeAlertOn || claudeInfoOn {
-                let todayTokens = ClaudeUsage.load().today?.totalTokens ?? 0
+                let todayTokens = self.appState.claude.result?.today?.totalTokens ?? 0
                 if claudeAlertOn {
                     let limit = claudeLimitM * 1_000_000
                     // 超阈值即提醒，1.5 倍才升红——日用量越线不等于不可用，留缓冲
@@ -170,27 +242,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 infoText = Fmt.tokensShort(infoTokens)
             }
 
-            let tint = level.tint
-            let text = infoText
-            let cxCrossed = codexCrossed, cxRemain = codexRemaining
-            let clCrossed = claudeCrossed, clToday = claudeToday
-            let clLimitM = claudeLimitM
-            await MainActor.run { [weak self] in
-                self?.setStatusIcon(tint: tint, text: text)
-                if let c = cxCrossed {
-                    self?.evaluateAlert(
+            // 设置变更会另外请求一次合并刷新。旧任务只负责结束并触发补跑，
+            // 不能再用旧来源/阈值更新图标或发通知。
+            guard settings.isCurrent(self.currentStatusRefreshSettings()) else {
+                self.finishQuotaBadgeRefresh()
+                return
+            }
+
+            self.setStatusIcon(tint: level.tint, text: infoText)
+            if let c = codexCrossed {
+                self.evaluateAlert(
                         key: "codex.quota.low", crossed: c,
                         title: "Codex 配额告急",
-                        body: "订阅配额仅剩 \(cxRemain)%，留意用量")
-                }
-                if let c = clCrossed {
-                    self?.evaluateAlert(
+                        body: "订阅配额仅剩 \(codexRemaining)%，留意用量")
+            }
+            if let c = claudeCrossed {
+                self.evaluateAlert(
                         key: "claude.daily.over", crossed: c,
                         title: "Claude 日用量越线",
-                        body: "今日已用 \(Fmt.tokensShort(clToday))，超过 \(clLimitM)M 阈值")
-                }
+                        body: "今日已用 \(Fmt.tokensShort(claudeToday))，超过 \(claudeLimitM)M 阈值")
             }
+            self.finishQuotaBadgeRefresh()
         }
+    }
+
+    private func currentStatusRefreshSettings() -> StatusRefreshSettings {
+        let store = ConfigStore.shared
+        return StatusRefreshSettings(
+            deepseekEnabled: store.deepseekMonitorEnabled,
+            deepseekBalanceAlertThreshold: store.deepseekBalanceAlertThreshold,
+            claudeEnabled: store.claudeMonitorEnabled,
+            claudeDailyLimitM: store.claudeDailyTokenLimitM,
+            codexEnabled: store.codexMonitorEnabled,
+            menubarInfoMode: store.menubarInfoMode,
+            notificationsEnabled: store.notificationsEnabled
+        )
     }
 
     private func setStatusIcon(tint: NSColor?, text: String?) {
@@ -245,7 +331,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.activate(ignoringOtherApps: true)
             popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
-            appState.refreshAll()
+            appState.refreshEnabledSources(trigger: .panelOpen)
         }
     }
 
@@ -265,7 +351,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let button = statusItem.button, !popover.isShown else { return }
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        appState.refreshAll()
+        appState.refreshEnabledSources(trigger: .panelOpen)
     }
 
     @objc private func openPlatform() { PlatformPortal.shared.open() }

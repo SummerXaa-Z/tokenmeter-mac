@@ -5,6 +5,7 @@ import SwiftUI
 // 面板宽 420，重内容（完整 diff/确认）走 ConfigSyncWindow 独立窗口。
 struct ConfigSyncView: View {
     @EnvironmentObject var state: AppState
+    var onBack: () -> Void
     var onSettings: () -> Void
 
     @State private var source: String = ""              // 真源工具 key
@@ -171,6 +172,7 @@ struct ConfigSyncView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
+            iconButton("chevron.left", action: onBack)
             Image(systemName: "arrow.triangle.2.circlepath")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(Theme.brand)
@@ -269,6 +271,19 @@ struct ConfigSyncView: View {
     }
 
     private func layerStatusText(_ p: ConfigProfile) -> some View {
+        if p.supportedLayers != nil {
+            let labels: [String: String] = [
+                "mcp": "MCP", "rules": "规则", "skills": "Skills",
+                "commands": "Commands", "agents": "Agents", "hooks": "Hooks",
+            ]
+            let current = p.writableLayers.map { labels[$0] ?? $0 }
+            let pending = p.pendingAdapterLayers.map { labels[$0] ?? $0 }
+            var coverage: [String] = []
+            if !current.isEmpty { coverage.append("当前可同步 " + current.joined(separator: "/")) }
+            if !pending.isEmpty { coverage.append("待适配 " + pending.joined(separator: "/")) }
+            return Text(coverage.isEmpty ? "当前无可安全写入层" : coverage.joined(separator: " · "))
+                .font(.system(size: 10)).foregroundStyle(.secondary)
+        }
         var parts: [String] = []
         parts.append("MCP \(p.mcpDisplay)")
         parts.append("指令 \(p.hasRules ? "✓" : "—")")

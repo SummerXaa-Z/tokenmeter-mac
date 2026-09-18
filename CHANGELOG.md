@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+- **Qwen Code 用量接入**：新增纯本地只读 `~/.qwen/usage_record.jsonl` 采集器，按官方 session 聚合语义以后记录覆盖旧记录，拆分输入、缓存读取、输出与 reasoning，并接入来源开关、自动刷新、历史、1D 小时趋势、连续 7 天、模型榜、画像、API 等价参考和独立详情页；不读取 chats 对话、代码、工具参数或凭据。
+- **零用量 Agent 隐藏**：首页工具明细仅展示所选 1D / 7D / 30D / 全部范围内 Token 大于 0 的 Coding Agent；设置开关和历史保留，切换范围后按该范围重新出现。
+- **一键 Agent 资产同步**：设置新增默认关闭的自动同步开关，首次确认真源后每 30 分钟按层覆盖全部兼容目标；后端使用单一备份事务、目标指纹检查、写后复验和异常回滚，跳过 Memory 与已有不同 Rules，并保留高级预览/回滚入口。
+
+- **设置页重新编排**：保持单页平铺，不增加二级导航；将原先混在一张长卡里的来源、凭据、菜单栏、提醒、刷新、AgentSync、更新和诊断重排为“数据来源 / 平台账户与额度 / 菜单栏与提醒 / 刷新与启动 / 工具与维护”五段，并固定顶部返回栏。未安装工具改为一条汇总提示，DeepSeek 明确为不计入 Coding 合计的平台账户，Kimi 本地用量与官方额度连接保持解耦；关闭全部 Coding 来源后，首页仍保留独立的 Kimi/方舟订阅额度与设置入口。同步修复手动 Token 输入按钮无效、网页登录重复点击打断登录、菜单栏合计口径与通知文案不准确等问题。DeepSeek 凭据改为先验证再原子保存，Keychain 写入或删除失败会明确提示，空白输入不会覆盖或清除旧凭据。影响范围：`SettingsView.swift`、`RootView.swift`、`OverviewView.swift`、`Store.swift`、`LoginSync.swift`、`ConfigStoreTests.swift`、`README.md`。
+- **Kimi Code 本地用量正式接入**：同时扫描 standalone 与 Kimi.app 官方 `wire.jsonl`，只认结构化 `usage.record`，聚合四类 Token、请求、会话、模型、今日 24 小时和连续 7 天；忽略 `step.end` 镜像，包含子 Agent，跨运行目录的完整 session 副本去重。Kimi 已进入来源开关、自动刷新、历史、总览、个人画像、模型榜与 API 等价费用，不读取或上报会话正文和凭据。
+- **订阅剩余量总览**：新增独立卡片平铺 Codex、Kimi Code 与火山方舟 Agent/Coding Plan 的 5 小时/周/月/会话窗口。Kimi 支持用户主动配置的 Kimi For Coding Key 直查官方 `/coding/v1/usages`，Key 以原子更新方式存于 Keychain，保存或清除失败均不会误报成功；未配置时只回退本机 loopback。当前官方 `used` 口径优先，兼容旧 `remaining`；鉴权/格式失败不保留旧额度，短暂网络失败最多保留 10 分钟 last-good 并到期主动清除；官方响应以流式 128 KiB 上限读取。方舟通过已登录 arkcli 的只读 `usage plan` 查询且 Agent Plan 保留 AFP 单位；各窗口不强行合并，Kimi 会员月额度明确标为需网页查看。
+- **连续时间趋势与 B 单位**：1D 改为真实 0–23 小时轴；7D/30D/全部保留中间零用量日期或周/月空桶，不再让日期消失。Token 缩写补齐 B 并在 999.5M 边界自动提升。
+- **价格来源兜底规则**：API 等价价优先采用 OpenRouter 公共模型目录；OpenRouter 缺失时仅接受模型官方公开价，仍无可靠来源则保留缺价，不用相近模型猜价。Kimi Code 的 `k3-agent` / `k2d6-agent` 已按官方模型映射接入 OpenRouter 快照；Doubao-Seed-Evolving 采用火山方舟人民币公开原价，保留人民币金额并按固定参考汇率 `$1 = ¥6.90` 汇总为美元。
+
+- **总览 UI 逻辑分层**：将膨胀到 800 余行的总览拆为约 130 行的加载与编排协调器、纯数据 `OverviewSnapshot` 和无状态卡片组件，并提取各来源面板共用的顶栏、指标与隐私提示组件；新增快照测试覆盖来源开关、平台账户与 Coding Agent 归属、排行、Skills 合并、趋势筛选与空选择。影响范围：`OverviewSnapshot.swift`、`OverviewView.swift`、`OverviewCards.swift`、`SourceDashboardComponents.swift`、各来源 Views、`OverviewSnapshotTests.swift`。
+- **Kaboo 式本地工具覆盖扩展**：新增统一 `LocalUsageCollector` 协议与产品级注册表，并接入 OpenCode、Gemini CLI、GitHub Copilot CLI 三个纯本地来源。OpenCode 只读 SQLite 的结构化消息用量；Gemini CLI 兼容 JSONL/旧 JSON、同 message ID 更新覆盖、迁移文件按 session ID 去重和无末尾换行；Copilot 依据官方 session event schema 读取最新 `session.shutdown`，把 input/cache read/cache write/output/reasoning 拆成互斥五类，沿 parent 链排除 rewind 旧分支，并聚合请求、消息、Skills 与代码增删行。三者均进入独立面板、来源开关、自动刷新、首页工具明细、历史趋势、模型榜、缓存画像与 API 等价成本，且不上传任何数据；来源入口在首页按产品级纵向平铺。影响范围：`LocalUsageCollectorRegistry.swift`、`OpenCodeUsage.swift`、`GeminiUsage.swift`、`CopilotUsage.swift`、对应 Views、`RootView.swift`、`OverviewView.swift` 及测试。
+- **本地个人 AI 画像**：总览新增可选范围内的活跃天数、连续活跃、主力工具与占比、近 7 天会话数，以及 Claude/Codex/Kimi Code/OpenCode/Gemini/Copilot 输入缓存复用率；同步生成“连续创作”“多工具协作”等本地标签。DeepSeek 作为平台/API 账户单独展示，不进入 Coding Agent 合计、画像、工具榜或 API 等价成本；Agent session 中的 `deepseek-*` 模型仍完整归属对应工具。所有计算只消费现有聚合数据，不读取或上传会话内容，并遵循来源开关。影响范围：`PersonalUsageProfile.swift`、`OverviewView.swift`、`PersonalUsageProfileTests.swift`。
+- **工具明细与模型榜**：所选时间范围的工具用量直接并入首页总量卡，每个产品/客户端只出现一次；模型榜按近 7 天各本地来源聚合并保留采集来源，避免把工具和底层模型混为一个维度；Cursor 仅有订阅周期数据，暂不混入 7 天模型榜。影响范围：`PersonalUsageRankings.swift`、`OverviewView.swift`、`OverviewCards.swift`、`PersonalUsageRankingsTests.swift`。
+- **跨工具个人 Skills 榜**：总览新增近 7 天 Skills 排行，按名称合并 Claude、Codex 与 GitHub Copilot CLI 并展示来源占比。Claude 只认结构化 `Skill` tool_use 且按 ID 去重；Codex 只认真实读取标准 `skills/<name>/SKILL.md` 的工具调用，过滤普通消息、`$变量` 和仅输出路径的命令；Copilot 沿用 `skill.invoked`。聚合结果只保留 Skill 名、来源与次数，不保存命令、路径或会话内容。影响范围：`PersonalSkillRankings.swift`、`ClaudeUsage.swift`、`CodexUsage.swift`、`OverviewView.swift`、`UsageWindowTests.swift`、`PersonalSkillRankingsTests.swift`。
+- **API 等价成本参考**：新增五类 Token 独立计价和按生效日匹配的不可变价格快照，模型名统一大小写并去除 Codex effort 后缀，未知价格返回缺失而非 0 元。总览按 2026-08-12 OpenRouter 公共模型目录的本地快照展示近 7 天 API 等价参考金额和价格覆盖率；运行时不访问 OpenRouter，并明确该金额不是订阅费、平台账单或历史成交价。Claude/Codex 模型聚合同步补齐输入、缓存、输出和 reasoning 明细。影响范围：`APICostEstimator.swift`、`ClaudeUsage.swift`、`CodexUsage.swift`、`OverviewView.swift`、`CursorView.swift`、`APICostEstimatorTests.swift`、`UsageWindowTests.swift`。
+- **一级时间导航与单页信息流**：主页顶部只保留 1D / 7D / 30D / 全部，不再设置第二层工具导航；范围总量与各工具明细合并成一张卡，运行状态、额度或会话摘要直接在首页纵向平铺，点击内容行才进入原有详情，配置同步也作为普通内容入口。时间选择统一切换合计、活跃天数、主力工具、Token 趋势和 DeepSeek 平台费用；“全部”只表示 TokenMeter 本机已积累的历史，明确显示记录起点并按跨度自动以日、周或月聚合。模型榜、会话数和 API 等价参考仍保持其真实近 7 天口径。影响范围：`RootView.swift`、`UsageHistoryRange.swift`、`HistoryStore.swift`、`OverviewView.swift`、`OverviewCards.swift`、各来源 Views、`Store.swift` 及测试。
+- **发布元数据门禁**：`make release-check` 在 Release 编译后核对 App 版本、Bundle ID 与主程序，打包时额外强制验证 arm64，避免再次生成版本号或架构与文件名不一致的 DMG；CI 升级到 Node 24 的 `actions/checkout@v7`。影响范围：`verify-release-metadata.sh`、`Makefile`、`package.sh`、`ci.yml`。
+- **全源自动刷新**：定时器现在会刷新所有已启用的 DeepSeek、Claude、Codex 与 Cursor 数据源，不再只刷新 DeepSeek；打开菜单栏面板也会刷新全部启用来源，并在 60 秒内复用本地源缓存。Claude、Codex、Cursor 的定时或手动强刷若撞上正在加载，会合并为结束后的一次补跑且等待最终结果，不再被 in-flight 门禁吞掉；重新开启来源时立即补一次数据，历史落盘后会驱动总览趋势图即时重读。配置同步仍不参与定时扫描；新增刷新计划回归测试。影响范围：`AppState.swift`、`AppDelegate.swift`、`OverviewView.swift`、`SettingsView.swift`、`ForcedRefreshCoalescer.swift`、`AppStateRefreshTests.swift`、`ForcedRefreshCoalescerTests.swift`。
+- **DeepSeek 凭据刷新防竞态**：余额与用量请求现在也会合并重叠的强制刷新；请求期间若 API Key 或 Usage Token 被保存、清除或网页登录替换，旧响应会被丢弃并按最新凭据补跑，避免旧结果覆盖新状态。清除 API Key 时同步清空旧余额，避免残留余额继续参与预警。影响范围：`AppState.swift`、`DashboardView.swift`、`OverviewView.swift`、`SettingsView.swift`、`ForcedRefreshCoalescer.swift`、`ForcedRefreshCoalescerTests.swift`。
+- **告警状态重新布防**：通知关闭期间若指标恢复正常，现在仍会清除旧告警 latch；关闭来源/阈值也会重新布防，重新开启后再次越线可以正常提醒。监控开关、阈值、通知和菜单栏显示设置及余额加载完成后会立即刷新状态栏，不再等待 15 分钟。影响范围：`AlertLatch.swift`、`AppDelegate.swift`、`AppState.swift`、`SettingsView.swift`、`AlertLatchTests.swift`。
+- **状态栏刷新合并**：设置连续变化或与 15 分钟定时器重叠时，不再并发启动多轮 Claude/Codex 扫描；刷新期间的多次请求合并为结束后最多一次补跑，既保留最终状态又减少重复 I/O。影响范围：`StatusRefreshCoalescer.swift`、`AppDelegate.swift`、`StatusRefreshCoalescerTests.swift`。
+- **状态栏缓存复用**：菜单栏用量与配额改为复用 AppState 的 Claude/Codex 缓存和同一实时配额结果，不再绕过面板缓存独立扫描文件与请求配额；来源加载完成后自动触发一次合并后的状态栏刷新，保证显示最终值。影响范围：`AppDelegate.swift`、`AppState.swift`。
+- **状态栏旧结果拦截**：Claude/Codex 扫描期间若用户关闭来源、修改阈值、切换菜单栏模式或关闭通知，旧任务不再按过期设置更新图标或发通知；由刷新合并器按最新设置补跑。影响范围：`StatusRefreshSettings.swift`、`AppDelegate.swift`、`StatusRefreshSettingsTests.swift`。
+- **通知授权遵循开关**：已关闭“系统通知预警”的用户重启应用时不再触发通知权限申请；只有开关处于开启状态或用户主动重新开启时才请求授权。影响范围：`Notifier.swift`、`AppDelegate.swift`、`SettingsView.swift`、`NotifierTests.swift`。
+- **通知入队二次门禁**：系统授权查询完成后、真正入队前会在主线程再次核对应用内通知开关，避免关闭后仍晚到一条提醒；被开关拦截的提醒不会消耗告警 latch，重新开启后仍可正常提醒。影响范围：`Notifier.swift`、`AlertLatch.swift`、`NotifierTests.swift`、`AlertLatchTests.swift`。
+- **总览遵循来源开关**：关闭监控源后，缓存旧值不再计入今日合计、范围趋势合计或继续显示对应来源/Cursor 周期卡；历史文件不删除，重新开启即可恢复展示。影响范围：`OverviewSourceSelection.swift`、`OverviewView.swift`、`OverviewSourceSelectionTests.swift`。
+- **配置同步面板开关**：设置页新增可持久化的 AgentSync 面板开关，默认开启；关闭后隐藏配置同步入口并阻止后续扫描、拉取、预览与写入，旧预览窗口也无法绕过开关；已有缓存不删除，安全恢复用的回滚仍可执行。影响范围：`Store.swift`、`AppState.swift`、`SettingsView.swift`、`ConfigSyncWindow.swift`、`AgentSyncService.swift`、`ConfigStoreTests.swift`、`AgentSyncContractTests.swift`。
+- **配置同步强刷补跑**：AgentSync 扫描进行中发生拉取、写入、回滚或手动强刷时，不再吞掉写后刷新；多个强制请求合并为当前扫描结束后的一次补跑，并等待补跑完成再结束写操作，关闭面板则取消待补跑任务。影响范围：`ForcedRefreshCoalescer.swift`、`AppState.swift`、`ForcedRefreshCoalescerTests.swift`。
+
 ## v3.7.3 — 2026-08-12 — 用量统计与配置同步稳定性
 
 - **配置同步层选择**：同步层卡片新增“全选 / 全不选”快捷按钮，可一次切换 MCP、指令、Skills、Commands、Agents 与 Hooks。影响范围：`ConfigSyncView.swift`。

@@ -1,38 +1,65 @@
 import SwiftUI
-import Charts
 
-// 总览：四源今日合计 + 近 30 天 token 趋势（历史留存）。
-// 今日数仅含有按日数据的三源（DeepSeek/Claude/Codex）；Cursor 接口只给
-// 周期聚合、无法切出"今天"，单列「本期」不计入今日合计。
+// 总览协调器：只负责加载、范围选择和卡片编排。跨来源计算在
+// OverviewSnapshot，具体渲染在 OverviewCards，避免继续膨胀成单体 View。
 struct OverviewView: View {
     @EnvironmentObject var state: AppState
+    let range: UsageHistoryRange
+    let sources: [Provider]
+    let onOpenSource: (Provider) -> Void
     var onSettings: () -> Void
     @State private var history: [HistoryStore.DayPoint] = []
 
     var body: some View {
+        let data = snapshot
+        let entries = toolEntries(for: data)
         ScrollView {
             VStack(spacing: 10) {
                 header
-                todayCard
-                trendCard
-                if let cursor = state.cursor.result {
-                    cursorCard(cursor)
+                OverviewUsageCard(
+                    snapshot: data,
+                    range: range,
+                    entries: entries,
+                    onOpen: onOpenSource
+                )
+                if sources.contains(.deepseek) {
+                    OverviewDeepSeekPlatformCard(
+                        range: range,
+                        tokens: data.deepSeekPlatformTokens,
+                        cost: data.deepSeekPlatformCost,
+                        balance: state.balance,
+                        balanceState: state.balanceState,
+                        usageState: state.usageState,
+                        historyStartDate: data.deepSeekPlatformHistoryStartDate,
+                        availableHistoryDays: data.deepSeekPlatformAvailableHistoryDays,
+                        onOpen: { onOpenSource(.deepseek) }
+                    )
+                }
+                OverviewSubscriptionQuotaCard(
+                    snapshot: subscriptionQuotaSnapshot,
+                    statuses: subscriptionQuotaStatuses
+                )
+                if data.periodTotal > 0 {
+                    OverviewTrendCard(snapshot: data, range: range)
+                    OverviewProfileCard(profile: data.profile, range: range)
+                    OverviewRankingsCard(
+                        rankings: data.rankings,
+                        skillRankings: data.skillRankings
+                    )
+                    if data.apiReferenceCost.totalTokens > 0 {
+                        OverviewAPICostCard(summary: data.apiReferenceCost)
+                    }
                 }
                 Spacer(minLength: 0)
             }
             .padding(14)
         }
         .scrollIndicators(.hidden)
-        // 触发全源加载（命中缓存即秒回），再读历史
         .task {
-            await withTaskGroup(of: Void.self) { g in
-                g.addTask { await state.loadClaude() }
-                g.addTask { await state.loadCodex() }
-                g.addTask { await state.loadCursor() }
-            }
-            if state.deepseekEnabled { state.refreshAll() }
-            history = HistoryStore.recent(30)
+            await loadSources()
+            reloadHistory()
         }
+        .onChange(of: state.historyRevision) { _, _ in reloadHistory() }
     }
 
     private var header: some View {
@@ -40,22 +67,125 @@ struct OverviewView: View {
             Image(systemName: "square.grid.2x2")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(Theme.brand)
-            Text("总览")
-                .font(.system(size: 15, weight: .bold))
+            Text("总览").font(.system(size: 15, weight: .bold))
             Spacer()
             iconButton("arrow.clockwise") {
                 Task {
-                    await withTaskGroup(of: Void.self) { g in
-                        g.addTask { await state.loadClaude(force: true) }
-                        g.addTask { await state.loadCodex(force: true) }
-                        g.addTask { await state.loadCursor(force: true) }
-                    }
-                    if state.deepseekEnabled { state.refreshAll() }
-                    history = HistoryStore.recent(30)
+                    await loadSources(force: true)
+                    reloadHistory()
                 }
             }
             iconButton("gearshape") { onSettings() }
         }
+    }
+
+    private var sourceSelection: OverviewSourceSelection {
+        OverviewSourceSelection(sources: sources.compactMap(\.codingHistorySource))
+    }
+
+    private var snapshot: OverviewSnapshot {
+        OverviewSnapshot(
+            selection: sourceSelection,
+            range: range,
+            history: range.slice(history),
+            streakHistory: history,
+            deepSeek: state.usage,
+            claude: state.claude.result,
+            codex: state.codex.result,
+            kimi: state.kimi.result,
+            openCode: state.opencode.result,
+            gemini: state.gemini.result,
+            copilot: state.copilot.result,
+            qwen: state.qwen.result,
+            cursor: state.cursor.result
+        )
+    }
+
+    private func toolEntries(for snapshot: OverviewSnapshot) -> [OverviewToolEntry] {
+        let visible = Set(snapshot.nonzeroPeriodSources)
+        return sources.compactMap { provider in
+            guard let source = provider.codingHistorySource,
+                  visible.contains(source),
+                  let tokens = snapshot.periodBySource[source],
+                  tokens > 0 else { return nil }
+            return OverviewToolEntry(
+                provider: provider,
+                tokens: tokens,
+                detail: detail(for: provider),
+                running: runningState(for: provider)
+            )
+        }
+    }
+
+    private func detail(for provider: Provider) -> String {
+        switch provider {
+        case .deepseek:
+            if let balance = state.balance {
+                return "余额 \(balance.symbol)\(balance.totalBalance) · 官方平台"
+            }
+            if state.balanceState == .noKey { return "未配置平台余额凭据" }
+            return "官方平台用量与余额"
+        case .claude:
+            guard let result = state.claude.result else { return state.claude.error ?? "本地用量待加载" }
+            return "近 7 天 \(result.weekSessions) 会话 · \(result.weekMessages) 请求"
+        case .codex:
+            if let limits = state.codex.result?.rateLimits {
+                let values = [limits.primary, limits.secondary].compactMap { window -> String? in
+                    guard let window else { return nil }
+                    return "\(Self.windowName(window.windowMinutes))剩余 \(Int(max(100 - window.usedPercent, 0)))%"
+                }
+                if !values.isEmpty { return values.joined(separator: " · ") }
+            }
+            if let result = state.codex.result {
+                return "近 7 天 \(result.weekSessions) 会话"
+            }
+            return state.codex.error ?? "本地用量待加载"
+        case .kimi:
+            guard let result = state.kimi.result else {
+                return state.kimi.error ?? "本地用量待加载"
+            }
+            return "近 7 天 \(result.weekSessions) 会话 · \(result.weekMessages) 请求"
+        case .opencode:
+            guard let result = state.opencode.result else { return state.opencode.error ?? "本地用量待加载" }
+            return "近 7 天 \(result.weekSessions) 会话 · \(result.weekMessages) 消息"
+        case .gemini:
+            guard let result = state.gemini.result else { return state.gemini.error ?? "本地用量待加载" }
+            return "近 7 天 \(result.weekSessions) 会话 · \(result.weekMessages) 消息"
+        case .copilot:
+            guard let result = state.copilot.result else { return state.copilot.error ?? "已结束会话待加载" }
+            return "近 7 天 \(result.weekSessions) 会话 · \(result.weekSkills) Skills"
+        case .qwen:
+            guard let result = state.qwen.result else { return state.qwen.error ?? "本地聚合用量待加载" }
+            return "近 7 天 \(result.weekSessions) 会话 · \(result.weekMessages) 请求"
+        case .cursor:
+            guard let result = state.cursor.result else { return state.cursor.error ?? "订阅周期用量待加载" }
+            let plan = result.membership?.uppercased() ?? "订阅周期"
+            return "\(plan) · 平台费用 $\(String(format: "%.2f", result.totalCostCents / 100))"
+        case .configsync:
+            let count = state.configSync.result?.profiles.count ?? 0
+            return count > 0 ? "已检测 \(count) 个 Agent 配置" : "同步 MCP、指令与 Skills"
+        }
+    }
+
+    private func runningState(for provider: Provider) -> Bool? {
+        switch provider {
+        case .deepseek, .configsync: return nil
+        case .claude: return state.claude.proc.running
+        case .codex: return state.codex.proc.running
+        case .kimi: return state.kimi.proc.running
+        case .opencode: return state.opencode.proc.running
+        case .gemini: return state.gemini.proc.running
+        case .copilot: return state.copilot.proc.running
+        case .qwen: return state.qwen.proc.running
+        case .cursor: return state.cursor.proc.running
+        }
+    }
+
+    private static func windowName(_ minutes: Int) -> String {
+        if minutes == 10_080 { return "周" }
+        if minutes % 1_440 == 0 { return "\(minutes / 1_440)天" }
+        if minutes % 60 == 0 { return "\(minutes / 60)小时" }
+        return "\(minutes)分钟"
     }
 
     private func iconButton(_ name: String, action: @escaping () -> Void) -> some View {
@@ -69,139 +199,67 @@ struct OverviewView: View {
         .contentShape(Rectangle())
     }
 
-    // MARK: - 今日全源合计
-
-    private var deepseekToday: Int {
-        state.usage?.days.first { $0.date == DateUtil.today() }?.totalTokens ?? 0
-    }
-    // cc 路由到 deepseek 后端的 token 已计入 DeepSeek 官方源，合计时从 Claude
-    // 侧扣掉避免双算（Claude tab 自身仍显示含后端的完整用量，不受影响）
-    private var claudeBackendDup: Int { state.claude.result?.todayDeepseekBackend ?? 0 }
-    private var claudeToday: Int { state.claude.result?.today?.totalTokens ?? 0 }
-    private var claudeTodayNet: Int { max(claudeToday - claudeBackendDup, 0) }
-    private var codexToday: Int { state.codex.result?.today?.totalTokens ?? 0 }
-    private var cursorToday: Int { state.cursor.result?.todayTokens ?? 0 }
-    private var todayTotal: Int { deepseekToday + claudeTodayNet + codexToday + cursorToday }
-
-    private var todayCard: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("今日全源合计", systemImage: "sun.max")
-                    .font(.system(size: 12, weight: .semibold))
-                Text("\(Fmt.tokensShort(todayTotal)) tokens")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(Theme.brand)
-                HStack(spacing: 0) {
-                    srcStat("DeepSeek", deepseekToday, Theme.brand)
-                    srcStat("Claude", claudeTodayNet, Theme.claude)
-                    srcStat("Codex", codexToday, Theme.codex)
-                    srcStat("Cursor", cursorToday, Theme.cursor)
-                }
-                if claudeBackendDup > 0 {
-                    Text("已扣除 cc 经 DeepSeek 后端的 \(Fmt.tokensShort(claudeBackendDup))（与 DeepSeek 源重叠，避免双算）")
-                        .font(.system(size: 9)).foregroundStyle(.tertiary)
-                }
-            }
+    private func loadSources(force: Bool = false) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await state.loadClaude(force: force) }
+            group.addTask { await state.loadCodex(force: force) }
+            group.addTask { await state.loadKimi(force: force) }
+            group.addTask { await state.loadOpenCode(force: force) }
+            group.addTask { await state.loadGemini(force: force) }
+            group.addTask { await state.loadCopilot(force: force) }
+            group.addTask { await state.loadQwen(force: force) }
+            group.addTask { await state.loadCursor(force: force) }
+            group.addTask { await state.loadSubscriptionQuotas(force: force) }
         }
+        if state.deepseekEnabled { state.refreshAll(force: force) }
     }
 
-    private func srcStat(_ name: String, _ tokens: Int, _ color: Color) -> some View {
-        VStack(spacing: 2) {
-            Text(Fmt.tokensShort(tokens))
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(color)
-            Text(name).font(.system(size: 9)).foregroundStyle(.secondary)
+    private func reloadHistory() {
+        history = HistoryStore.all()
+    }
+
+    private var subscriptionQuotaSnapshot: SubscriptionQuotaSnapshot {
+        SubscriptionQuotaSnapshot(
+            codex: state.codexEnabled ? state.codex.result?.rateLimits : nil,
+            kimi: state.kimiQuota.result,
+            ark: state.arkPlanQuota.result
+        )
+    }
+
+    private var subscriptionQuotaStatuses: [SubscriptionQuotaSourceStatus] {
+        [
+            .init(
+                source: .codex,
+                title: "Codex",
+                loading: state.codex.loading,
+                message: !state.codexEnabled
+                    ? "监控源已关闭"
+                    : (!CodexUsage.isAvailable
+                        ? "未检测到 Codex 本地数据"
+                        : (state.codex.error ?? "尚未获得可验证的官方配额快照"))
+            ),
+            .init(
+                source: .kimiCode,
+                title: "Kimi Code",
+                loading: state.kimiQuota.loading,
+                message: state.kimiQuota.error ?? "尚未获得 Kimi Code 配额快照",
+                warning: kimiQuotaWarning
+            ),
+            .init(
+                source: .ark,
+                title: "火山方舟 Agent Plan",
+                loading: state.arkPlanQuota.loading,
+                message: state.arkPlanQuota.error ?? "未检测到已订阅的 Agent/Coding Plan"
+            ),
+        ]
+    }
+
+    private var kimiQuotaWarning: String? {
+        guard state.kimiQuota.result != nil, let error = state.kimiQuota.error else {
+            return nil
         }
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - 近 30 天趋势
-
-    private struct Seg: Identifiable {
-        let id = UUID()
-        let date: String
-        let source: String
-        let tokens: Int
-    }
-
-    private var segments: [Seg] {
-        history.flatMap { p -> [Seg] in
-            [(HistorySource.deepseek, "DeepSeek"), (.claude, "Claude"),
-             (.codex, "Codex"), (.cursor, "Cursor")]
-                .compactMap { (src, name) in
-                    let v = p.bySource[src] ?? 0
-                    return v > 0 ? Seg(date: Fmt.mmdd(p.date), source: name, tokens: v) : nil
-                }
-        }
-    }
-
-    private var trendCard: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Label("近 30 天 Token 趋势", systemImage: "chart.bar.xaxis")
-                        .font(.system(size: 12, weight: .semibold))
-                    Spacer()
-                    let total = history.reduce(0) { $0 + $1.total }
-                    Text("合计 \(Fmt.tokensShort(total))")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
-                }
-                if segments.isEmpty {
-                    Text("暂无历史数据（每次刷新后逐日累积）")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 120)
-                } else {
-                    Chart(segments) { s in
-                        BarMark(
-                            x: .value("日期", s.date),
-                            y: .value("Token", s.tokens))
-                        .foregroundStyle(by: .value("源", s.source))
-                        .cornerRadius(1)
-                    }
-                    .chartForegroundStyleScale([
-                        "DeepSeek": Theme.brand, "Claude": Theme.claude,
-                        "Codex": Theme.codex, "Cursor": Theme.cursor,
-                    ])
-                    .chartLegend(position: .bottom, spacing: 4)
-                    // 30 天标签太密，每 5 天一标
-                    .chartXAxis {
-                        AxisMarks(values: .automatic(desiredCount: 6)) { _ in
-                            AxisGridLine(); AxisTick(); AxisValueLabel()
-                        }
-                    }
-                    .tokenYAxis()
-                    .frame(height: 160)
-                }
-                if let cost = monthCostText {
-                    Divider()
-                    Text(cost).font(.system(size: 10)).foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    // 30 天 DeepSeek 成本合计（目前唯一带单价的源）
-    private var monthCostText: String? {
-        let cost = history.reduce(0.0) { $0 + $1.cost }
-        guard cost > 0 else { return nil }
-        return "近 30 天 DeepSeek 成本 \(Fmt.money(cost))"
-    }
-
-    // MARK: - Cursor 本期（无按日数据，单列）
-
-    private func cursorCard(_ r: CursorUsageResult) -> some View {
-        Card {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Label("Cursor 本订阅周期", systemImage: "cursorarrow.rays")
-                        .font(.system(size: 12, weight: .semibold))
-                    Spacer()
-                    Text("$\(String(format: "%.2f", r.totalCostCents / 100))")
-                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.cursor)
-                }
-                Text("本期累计 \(Fmt.tokensShort(r.totalTokens)) tokens（今日合计与趋势已含 Cursor 当日用量）")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
-            }
-        }
+        guard let succeededAt = state.kimiQuota.succeededAt else { return error }
+        let age = max(Int(Date().timeIntervalSince(succeededAt) / 60), 0)
+        return "\(error) · 上次成功 \(age) 分钟前"
     }
 }

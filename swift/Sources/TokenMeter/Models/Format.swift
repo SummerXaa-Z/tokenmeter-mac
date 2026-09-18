@@ -11,9 +11,15 @@ enum Fmt {
         return f.string(from: NSNumber(value: n)) ?? String(n)
     }
 
-    // Token 缩写：380000000 -> "380M"、1000000 -> "1.0M"、2609 -> "2.6K"
+    // Token 缩写：1200000000 -> "1.2B"、380000000 -> "380M"、
+    // 1000000 -> "1.0M"、2609 -> "2.6K"。M 四舍五入到 1000 时提升为 B，
+    // 避免在窄卡片里出现“1000M”这种难读边界值。
     static func tokensShort(_ n: Int) -> String {
         let d = Double(n)
+        if (d / 1e6).rounded() >= 1_000 {
+            if d >= 1e11 { return String(format: "%.0fB", d / 1e9) }
+            return String(format: "%.1fB", d / 1e9)
+        }
         if d >= 1e8 { return String(format: "%.0fM", d / 1e6) }
         if d >= 1e6 { return String(format: "%.1fM", d / 1e6) }
         if d >= 1e3 { return String(format: "%.1fK", d / 1e3) }
@@ -32,6 +38,24 @@ enum Fmt {
               let m = Int(parts[1]), let d = Int(parts[2]) else { return date }
         return "\(m)/\(d)"
     }
+
+    // "2026-06-11" -> "2026/6/11"
+    static func ymd(_ date: String) -> String {
+        let parts = date.split(separator: "-")
+        guard parts.count == 3,
+              let y = Int(parts[0]), let m = Int(parts[1]), let d = Int(parts[2]) else {
+            return date
+        }
+        return "\(y)/\(m)/\(d)"
+    }
+
+    // "2026-06-11" -> "2026/6"
+    static func ym(_ date: String) -> String {
+        let parts = date.split(separator: "-")
+        guard parts.count == 3,
+              let y = Int(parts[0]), let m = Int(parts[1]) else { return date }
+        return "\(y)/\(m)"
+    }
 }
 
 // 日期工具，对应 todayStr / dateKey / addDays / recentUsageDays
@@ -43,6 +67,15 @@ enum DateUtil {
     }
 
     static func today() -> String { key(Date()) }
+
+    static func date(from key: String) -> Date? {
+        let parts = key.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        guard let date = Calendar.current.date(
+            from: DateComponents(year: parts[0], month: parts[1], day: parts[2])
+        ), DateUtil.key(date) == key else { return nil }
+        return date
+    }
 
     static func addDays(_ date: Date, _ offset: Int) -> Date {
         Calendar.current.date(byAdding: .day, value: offset, to: date) ?? date

@@ -5,6 +5,7 @@ import Charts
 // 数据全部来自本地 ~/.codex/sessions，刷新即重扫。
 struct CodexView: View {
     @EnvironmentObject var state: AppState
+    var onBack: () -> Void
     var onSettings: () -> Void
 
     var body: some View {
@@ -39,28 +40,15 @@ struct CodexView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "terminal")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Theme.codex)
-            Text("Codex Monitor")
-                .font(.system(size: 15, weight: .bold))
-            RunningBadge(snapshot: state.codex.proc)
-            Spacer()
-            iconButton("arrow.clockwise") { Task { await state.loadCodex(force: true) } }
-            iconButton("gearshape") { onSettings() }
-        }
-    }
-
-    private func iconButton(_ name: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: name)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 26, height: 26)
-        }
-        .buttonStyle(.plain)
-        .contentShape(Rectangle())
+        SourceDashboardHeader(
+            icon: "terminal",
+            title: "Codex Monitor",
+            color: Theme.codex,
+            process: state.codex.proc,
+            onBack: onBack,
+            onRefresh: { Task { await state.loadCodex(force: true) } },
+            onSettings: onSettings
+        )
     }
 
     // MARK: - 配额窗口
@@ -126,10 +114,13 @@ struct CodexView: View {
                     .font(.system(size: 12, weight: .semibold))
                 let t = r.today
                 HStack(spacing: 0) {
-                    stat("Token", Fmt.tokensShort(t?.totalTokens ?? 0))
-                    stat("会话", "\(t?.sessionCount ?? 0)")
-                    stat("缓存命中", t?.cacheHitRate.map { String(format: "%.0f%%", $0) } ?? "—")
-                    stat("输出", Fmt.tokensShort((t?.outputTokens ?? 0)))
+                    SourceMetric(title: "Token", value: Fmt.tokensShort(t?.totalTokens ?? 0))
+                    SourceMetric(title: "会话", value: "\(t?.sessionCount ?? 0)")
+                    SourceMetric(
+                        title: "缓存命中",
+                        value: t?.cacheHitRate.map { String(format: "%.0f%%", $0) } ?? "—"
+                    )
+                    SourceMetric(title: "输出", value: Fmt.tokensShort(t?.outputTokens ?? 0))
                 }
                 Divider()
                 HStack {
@@ -139,14 +130,6 @@ struct CodexView: View {
                 }
             }
         }
-    }
-
-    private func stat(_ title: String, _ value: String) -> some View {
-        VStack(spacing: 2) {
-            Text(value).font(.system(size: 14, weight: .semibold, design: .rounded))
-            Text(title).font(.system(size: 9)).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
     }
 
     // MARK: - 7 天柱图

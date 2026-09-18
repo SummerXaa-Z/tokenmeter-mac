@@ -10,7 +10,12 @@ enum Theme {
     static let response = Color(hex: 0x8B5CF6)     // 输出
     static let codex = Color(hex: 0x10A37F)        // OpenAI 绿
     static let claude = Color(hex: 0xD97757)       // Anthropic 橙
+    static let kimi = Color(hex: 0x7C3AED)         // Kimi 紫
     static let cursor = Color(hex: 0x7C8AFF)       // Cursor 紫蓝
+    static let opencode = Color(hex: 0xF59E0B)     // OpenCode 琥珀
+    static let gemini = Color(hex: 0x4285F4)       // Gemini 蓝
+    static let copilot = Color(hex: 0x6E40C9)      // GitHub Copilot 紫
+    static let qwen = Color(hex: 0x615CED)          // Qwen 蓝紫
 
     static let panelWidth: CGFloat = 420
     static let panelHeight: CGFloat = 600
