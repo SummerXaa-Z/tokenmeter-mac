@@ -1,11 +1,10 @@
 # Changelog
 
-## Unreleased
+## v3.8.0 — 2026-09-18 — 多源本地用量、总览重构与个人画像
 
 - **Qwen Code 用量接入**：新增纯本地只读 `~/.qwen/usage_record.jsonl` 采集器，按官方 session 聚合语义以后记录覆盖旧记录，拆分输入、缓存读取、输出与 reasoning，并接入来源开关、自动刷新、历史、1D 小时趋势、连续 7 天、模型榜、画像、API 等价参考和独立详情页；不读取 chats 对话、代码、工具参数或凭据。
 - **零用量 Agent 隐藏**：首页工具明细仅展示所选 1D / 7D / 30D / 全部范围内 Token 大于 0 的 Coding Agent；设置开关和历史保留，切换范围后按该范围重新出现。
 - **一键 Agent 资产同步**：设置新增默认关闭的自动同步开关，首次确认真源后每 30 分钟按层覆盖全部兼容目标；后端使用单一备份事务、目标指纹检查、写后复验和异常回滚，跳过 Memory 与已有不同 Rules，并保留高级预览/回滚入口。
-
 - **设置页重新编排**：保持单页平铺，不增加二级导航；将原先混在一张长卡里的来源、凭据、菜单栏、提醒、刷新、AgentSync、更新和诊断重排为“数据来源 / 平台账户与额度 / 菜单栏与提醒 / 刷新与启动 / 工具与维护”五段，并固定顶部返回栏。未安装工具改为一条汇总提示，DeepSeek 明确为不计入 Coding 合计的平台账户，Kimi 本地用量与官方额度连接保持解耦；关闭全部 Coding 来源后，首页仍保留独立的 Kimi/方舟订阅额度与设置入口。同步修复手动 Token 输入按钮无效、网页登录重复点击打断登录、菜单栏合计口径与通知文案不准确等问题。DeepSeek 凭据改为先验证再原子保存，Keychain 写入或删除失败会明确提示，空白输入不会覆盖或清除旧凭据。影响范围：`SettingsView.swift`、`RootView.swift`、`OverviewView.swift`、`Store.swift`、`LoginSync.swift`、`ConfigStoreTests.swift`、`README.md`。
 - **Kimi Code 本地用量正式接入**：同时扫描 standalone 与 Kimi.app 官方 `wire.jsonl`，只认结构化 `usage.record`，聚合四类 Token、请求、会话、模型、今日 24 小时和连续 7 天；忽略 `step.end` 镜像，包含子 Agent，跨运行目录的完整 session 副本去重。Kimi 已进入来源开关、自动刷新、历史、总览、个人画像、模型榜与 API 等价费用，不读取或上报会话正文和凭据。
 - **订阅剩余量总览**：新增独立卡片平铺 Codex、Kimi Code 与火山方舟 Agent/Coding Plan 的 5 小时/周/月/会话窗口。Kimi 支持用户主动配置的 Kimi For Coding Key 直查官方 `/coding/v1/usages`，Key 以原子更新方式存于 Keychain，保存或清除失败均不会误报成功；未配置时只回退本机 loopback。当前官方 `used` 口径优先，兼容旧 `remaining`；鉴权/格式失败不保留旧额度，短暂网络失败最多保留 10 分钟 last-good 并到期主动清除；官方响应以流式 128 KiB 上限读取。方舟通过已登录 arkcli 的只读 `usage plan` 查询且 Agent Plan 保留 AFP 单位；各窗口不强行合并，Kimi 会员月额度明确标为需网页查看。
