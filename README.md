@@ -96,15 +96,6 @@ TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：统一查�
 - 账户与订阅计划、计费周期进度与续订倒计时、本周期按模型 token 与费用、超额消费上限进度（开通 usage-based 的账户）。
 - token 只在本机读取、只发往 cursor.com，不经任何第三方。
 
-### 配置同步（多 Agent 工具）
-- 把 MCP server 定义与指令文件（CLAUDE.md / AGENTS.md / rules）在 Claude Code / Codex / Cursor / Trae / Qoder / Cline（含 CN·Work·SOLO 变体）之间统一。
-- 单一真源 → 单向推送：选一个工具当真源抽取配置，勾选目标工具一键推送，不做双向。
-- 写入前独立窗口预览结构化 diff（哪些 server 新增/修改/移除），二次确认才落盘；写前自动备份，可一键回滚。
-- env 里的 secret 全程脱敏展示（只显示存在，不露明文）。
-- 依赖独立的 `agentsync` CLI（Python），需先安装：`uv tool install --editable ~/Documents/code-xt/agentsync`。未检测到该命令时此 tab 自动隐藏。
-- 可在设置中关闭配置同步面板；关闭后不再扫描、拉取、预览或写入，已有缓存与 AgentSync 配置不会被删除，必要时仍可从已完成窗口回滚。
-- 设置中的“自动同步 Agent 资产”默认关闭；首次打开时确认一个真源，之后每 30 分钟按资产层自动补齐所有兼容目标。每次同步都先完整规划、做单一备份事务并写后复验，异常自动回滚；Memory 不自动同步，已有不同 Rules 只报告冲突而不覆盖。
-
 ### 通用
 - 总览提供本地“个人 AI 画像”：可选范围内的活跃与连续使用、主力工具占比，以及近 7 天会话数和输入缓存复用率，并生成个人使用标签；工具用量直接并入首页明细，模型榜与 Skills 榜独立展示，Skills 榜合并 Claude、Codex、Copilot 的明确调用证据并保留来源。所有画像只保留聚合数字，不上传会话内容。
 - 主页只保留 1D / 7D / 30D / 全部一级时间导航并记住选择，不设置第二层工具导航；范围总量与各工具用量合并为一张纵向明细卡，只显示所选范围内 Token 大于 0 的 Agent，设置开关与历史不会被删除，切换范围后可重新出现。活跃天数、主力工具、Token 趋势和 DeepSeek 平台费用共用同一范围。“全部”明确标注本机记录起点，并按历史跨度自动以日、周或月聚合；模型榜、会话与 API 等价参考仍保持近 7 天，避免把短窗口数据伪装成长周期。
@@ -144,7 +135,7 @@ swift/
 ├── project.yml                      # XcodeGen 工程定义
 ├── scripts/package.sh               # 构建 + 签名 + 打 dmg
 ├── Resources/Assets.xcassets        # 图标资源
-├── Tests/TokenMeterTests            # XCTest：AgentSync 契约与配置同步选择逻辑
+├── Tests/TokenMeterTests            # XCTest：配额与解析契约、用量窗口与配置存储
 └── Sources/TokenMeter/
     ├── Shell/        # main + AppDelegate（状态栏 + popover 外壳 + 菜单栏预警）
     ├── Models/       # AppState（数据流）、Models（接口模型）、Format
@@ -193,7 +184,7 @@ GitHub Actions 与发布前验证使用更完整入口：
 make release-check
 ```
 
-`make test` 会先用 XcodeGen 重新生成 `swift/TokenMeter.xcodeproj`，再跑 XCTest。`make release-check` 会追加 Release build，并核对 App 版本、Bundle ID 与主程序元数据；push / PR 时由 GitHub Actions 执行。当前测试重点覆盖 AgentSync JSON 解码契约、配置同步目标选择与用量窗口边界。
+`make test` 会先用 XcodeGen 重新生成 `swift/TokenMeter.xcodeproj`，再跑 XCTest。`make release-check` 会追加 Release build，并核对 App 版本、Bundle ID 与主程序元数据；push / PR 时由 GitHub Actions 执行。当前测试重点覆盖配额与解析契约、用量窗口边界和配置存储。
 
 需要目视检查菜单栏首页、时间范围和详情返回时，可运行 `make ui-smoke`。它只在 Debug 构建打开 420×600 的普通测试窗口，并跳过通知申请、更新检查与后台计时器；正常启动和 Release 包仍是纯菜单栏应用。
 

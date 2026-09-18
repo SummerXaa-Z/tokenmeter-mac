@@ -172,14 +172,6 @@ enum DiagnosticReport {
                     path: CursorUsage.stateDB.path,
                     detail: nil
                 ),
-                SourceStatus(
-                    name: "AgentSync",
-                    enabled: true,
-                    available: AgentSyncService.isAvailable,
-                    running: "n/a",
-                    path: AgentSyncService.cliPath?.path,
-                    detail: nil
-                ),
             ]
         )
     }

@@ -161,15 +161,12 @@ struct OverviewView: View {
             guard let result = state.cursor.result else { return state.cursor.error ?? "订阅周期用量待加载" }
             let plan = result.membership?.uppercased() ?? "订阅周期"
             return "\(plan) · 平台费用 $\(String(format: "%.2f", result.totalCostCents / 100))"
-        case .configsync:
-            let count = state.configSync.result?.profiles.count ?? 0
-            return count > 0 ? "已检测 \(count) 个 Agent 配置" : "同步 MCP、指令与 Skills"
         }
     }
 
     private func runningState(for provider: Provider) -> Bool? {
         switch provider {
-        case .deepseek, .configsync: return nil
+        case .deepseek: return nil
         case .claude: return state.claude.proc.running
         case .codex: return state.codex.proc.running
         case .kimi: return state.kimi.proc.running

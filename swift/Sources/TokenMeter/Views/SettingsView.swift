@@ -5,7 +5,6 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @EnvironmentObject var state: AppState
     var onBack: () -> Void
-    var onOpenConfigSync: () -> Void
 
     private let store = ConfigStore.shared
     @State private var apiKeyInput = ""
@@ -24,7 +23,6 @@ struct SettingsView: View {
     @State private var notificationsOn = true
     @State private var balanceAlert = 0
     @State private var diagnosticStatus = ""
-    @State private var assetSyncSourceDraft = ""
 
     @StateObject private var sync = LoginSyncController()
     @ObservedObject private var updater = Updater.shared
@@ -69,7 +67,7 @@ struct SettingsView: View {
 
                     sectionTitle(
                         "工具与维护",
-                        hint: "配置同步、软件更新与脱敏诊断"
+                        hint: "软件更新与脱敏诊断"
                     )
                     maintenanceSection
                     footer
@@ -80,7 +78,6 @@ struct SettingsView: View {
         }
         .onAppear {
             reloadStatus()
-            Task { await prepareAssetSyncSettings() }
         }
         .onReceive(sync.$captured.compactMap { $0 }) { _ in
             syncing = false
@@ -215,7 +212,7 @@ struct SettingsView: View {
             return Binding(get: { state.qwenEnabled }, set: { state.setQwenEnabled($0) })
         case .cursor:
             return Binding(get: { state.cursorEnabled }, set: { state.setCursorEnabled($0) })
-        case .deepseek, .configsync:
+        case .deepseek:
             return .constant(false)
         }
     }
@@ -239,7 +236,7 @@ struct SettingsView: View {
         case .copilot: return "session 汇总"
         case .qwen: return "官方 session 聚合用量"
         case .cursor: return "通过 cursor.com 查询账户用量"
-        case .deepseek, .configsync: return ""
+        case .deepseek: return ""
         }
     }
 
@@ -254,7 +251,6 @@ struct SettingsView: View {
         case .qwen: return "q.circle"
         case .cursor: return "cursorarrow.rays"
         case .deepseek: return "server.rack"
-        case .configsync: return "arrow.triangle.2.circlepath"
         }
     }
 
@@ -269,7 +265,6 @@ struct SettingsView: View {
         case .qwen: return Theme.qwen
         case .cursor: return Theme.cursor
         case .deepseek: return Theme.brand
-        case .configsync: return .secondary
         }
     }
 
@@ -610,25 +605,6 @@ struct SettingsView: View {
     private var maintenanceSection: some View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
-                Toggle(isOn: Binding(
-                    get: { state.assetSyncEnabled },
-                    set: { enabled in handleAssetSyncToggle(enabled) }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Label("自动同步 Agent 资产", systemImage: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(AgentSyncService.isAvailable
-                             ? "打开后按真源自动补齐所有兼容 Agent；写前预演并备份"
-                             : "未检测到 agentsync CLI")
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
-                    }
-                }
-                .disabled(!AgentSyncService.isAvailable || state.assetSync.loading)
-
-                if AgentSyncService.isAvailable {
-                    assetSyncPlanControls
-                }
-
                 Divider()
                 VStack(alignment: .leading, spacing: 7) {
                     Label("软件更新", systemImage: "arrow.down.circle")
@@ -671,156 +647,6 @@ struct SettingsView: View {
                 }
             }
         }
-    }
-
-    private var assetSyncProfiles: [ConfigProfile] {
-        state.configSync.result?.profiles ?? []
-    }
-
-    private var assetSyncSourceProfiles: [ConfigProfile] {
-        assetSyncProfiles.filter(AgentAssetSyncSelection.isValidSource)
-    }
-
-    private var assetSyncPlanControls: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 8) {
-                Text("真源")
-                    .font(.system(size: 11, weight: .semibold))
-                Picker("", selection: $assetSyncSourceDraft) {
-                    Text("请选择").tag("")
-                    ForEach(assetSyncSourceProfiles) { profile in
-                        Text(profile.label).tag(profile.key)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .disabled(state.assetSyncEnabled || state.configSync.loading)
-                Spacer(minLength: 0)
-                if state.assetSync.loading {
-                    ProgressView().controlSize(.small)
-                } else if state.assetSyncEnabled {
-                    Button("立即同步") { state.runAssetSyncNow() }
-                        .font(.system(size: 10))
-                }
-            }
-
-            if let summary = assetSyncPlanSummary {
-                Text(summary)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if state.configSync.loading {
-                Text("正在扫描本机 Agent 资产能力…")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
-            } else if assetSyncSourceProfiles.isEmpty {
-                Text("没有找到包含可同步资产的真源")
-                    .font(.system(size: 10)).foregroundStyle(.orange)
-            } else {
-                Text("首次只需确认一次真源；之后新安装的兼容 Agent 会自动纳入。")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
-            }
-
-            if let message = state.assetSync.error, !message.isEmpty {
-                Text(message)
-                    .font(.system(size: 10))
-                    .foregroundStyle(message.contains("冲突") ? .orange : .red)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if let last = store.assetSyncLastSuccessAt {
-                Text("上次成功：\(relativeAssetSyncTime(last))")
-                    .font(.system(size: 10)).foregroundStyle(.tertiary)
-            }
-
-            Toggle(isOn: Binding(
-                get: { state.configSyncEnabled },
-                set: { state.setConfigSyncEnabled($0) }
-            )) {
-                Text("显示高级配置同步与回滚入口")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            }
-
-            if state.configSyncEnabled {
-                Button("打开高级同步与回滚") {
-                    onOpenConfigSync()
-                }
-                .font(.system(size: 10))
-            }
-        }
-        .padding(.leading, 36)
-    }
-
-    private var assetSyncPlanSummary: String? {
-        guard let profile = assetSyncSourceProfiles.first(where: {
-            $0.key == assetSyncSourceDraft
-        }) else { return nil }
-        let groups = AgentAssetSyncSelection.layerTargets(
-            sourceKey: profile.key,
-            profiles: assetSyncProfiles
-        )
-        let layerNames: [String: String] = [
-            "mcp": "MCP", "rules": "规则", "skills": "Skills",
-            "commands": "Commands", "agents": "Agents", "hooks": "Hooks",
-        ]
-        let parts = groups.compactMap { group -> String? in
-            guard !group.targetKeys.isEmpty else { return nil }
-            return "\(layerNames[group.layer] ?? group.layer) → \(group.targetKeys.count) 个"
-        }
-        guard !parts.isEmpty else { return "当前没有兼容的推送目标" }
-        return "当前适配：\(profile.label) 为真源 · " + parts.joined(separator: " · ")
-    }
-
-    private func prepareAssetSyncSettings() async {
-        guard AgentSyncService.isAvailable else { return }
-        // 高级入口即使被隐藏，一键同步设置也需要一次只读 scan。
-        await state.loadConfigSync(force: true, allowHidden: true)
-
-        if state.assetSyncEnabled {
-            guard let saved = state.assetSyncSourceKey,
-                  let profile = assetSyncProfiles.first(where: { $0.key == saved }),
-                  AgentAssetSyncSelection.isValidSource(profile)
-            else {
-                assetSyncSourceDraft = ""
-                state.assetSync.error = "已暂停：原真源当前没有可同步资产；关闭开关后可重新选择"
-                return
-            }
-            assetSyncSourceDraft = saved
-            return
-        }
-
-        if let choice = AgentAssetSyncSelection.sourceChoice(
-            savedSourceKey: state.assetSyncSourceKey,
-            profiles: assetSyncProfiles
-        ) {
-            assetSyncSourceDraft = choice.sourceKey
-            if choice.origin == .saved {
-                state.confirmAssetSyncSource(choice.sourceKey)
-            }
-        } else {
-            assetSyncSourceDraft = ""
-        }
-    }
-
-    private func handleAssetSyncToggle(_ enabled: Bool) {
-        if !enabled {
-            state.setAssetSyncEnabled(false)
-            return
-        }
-        guard !assetSyncSourceDraft.isEmpty else {
-            state.assetSync.error = "请先确认一个 Agent 作为资产真源"
-            return
-        }
-        // 用户打开开关就是对当前可见真源的唯一一次明确确认。
-        state.confirmAssetSyncSource(assetSyncSourceDraft)
-        state.setAssetSyncEnabled(true)
-    }
-
-    private func relativeAssetSyncTime(_ timestamp: TimeInterval) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return formatter.localizedString(
-            for: Date(timeIntervalSince1970: timestamp),
-            relativeTo: Date()
-        )
     }
 
     private var updateBusy: Bool {

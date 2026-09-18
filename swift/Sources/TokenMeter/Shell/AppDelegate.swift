@@ -44,19 +44,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         appState.rearmTimer()
 
-        // 一键资产同步只在用户之前明确开启时于启动执行一次；不挂到高频
-        // Token 刷新定时器，避免反复写配置。之后可在设置中手动“立即同步”。
-        if appState.assetSyncEnabled {
-            appState.runAssetSyncNow()
-        }
-        assetSyncTimer = Timer.scheduledTimer(withTimeInterval: 1_800, repeats: true) {
-            [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.appState.assetSyncEnabled else { return }
-                self.appState.runAssetSyncNow()
-            }
-        }
-
         // 仅在用户开启通知时申请权限；关闭状态重启不能再次打扰用户。
         Notifier.requestAuthorizationIfEnabled(ConfigStore.shared.notificationsEnabled)
 
@@ -78,7 +65,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var quotaTimer: Timer?
-    private var assetSyncTimer: Timer?
 
 #if DEBUG
     private func showUISmokeWindow() {

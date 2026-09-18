@@ -117,10 +117,6 @@ final class ConfigStore {
         static let copilotMonitor = "copilotMonitorEnabled"
         static let qwenMonitor = "qwenMonitorEnabled"
         static let cursorMonitor = "cursorMonitorEnabled"
-        static let configSync = "configSyncEnabled"
-        static let assetSyncEnabled = "agentAssetSyncEnabled"
-        static let assetSyncSourceKey = "agentAssetSyncSourceKey"
-        static let assetSyncLastSuccessAt = "agentAssetSyncLastSuccessAt"
         static let menubarInfo = "menubarInfoMode"
         static let zhipuQuotaDomain = "zhipuQuotaDomain"
         static let claudeDailyTokenLimit = "claudeDailyTokenLimitM"
@@ -290,53 +286,6 @@ final class ConfigStore {
         set { defaults.set(newValue, forKey: DKey.cursorMonitor) }
     }
 
-    // 配置同步面板默认开启；关闭只隐藏入口并阻止扫描，不删除已加载缓存。
-    var configSyncEnabled: Bool {
-        get { defaults.object(forKey: DKey.configSync) as? Bool ?? true }
-        set { defaults.set(newValue, forKey: DKey.configSync) }
-    }
-
-    // 自动资产同步与配置同步面板是两个独立开关。默认关闭，避免升级后静默写入 Agent 配置。
-    var assetSyncEnabled: Bool {
-        get { defaults.object(forKey: DKey.assetSyncEnabled) as? Bool ?? false }
-        set { defaults.set(newValue, forKey: DKey.assetSyncEnabled) }
-    }
-
-    var assetSyncSourceKey: String? {
-        get {
-            guard let value = defaults.string(forKey: DKey.assetSyncSourceKey)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-                  !value.isEmpty else {
-                return nil
-            }
-            return value
-        }
-        set {
-            guard let value = newValue?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-                  !value.isEmpty else {
-                defaults.removeObject(forKey: DKey.assetSyncSourceKey)
-                return
-            }
-            defaults.set(value, forKey: DKey.assetSyncSourceKey)
-        }
-    }
-
-    var assetSyncLastSuccessAt: TimeInterval? {
-        get {
-            guard defaults.object(forKey: DKey.assetSyncLastSuccessAt) != nil else {
-                return nil
-            }
-            return defaults.double(forKey: DKey.assetSyncLastSuccessAt)
-        }
-        set {
-            if let newValue {
-                defaults.set(newValue, forKey: DKey.assetSyncLastSuccessAt)
-            } else {
-                defaults.removeObject(forKey: DKey.assetSyncLastSuccessAt)
-            }
-        }
-    }
 
     // 菜单栏图标旁文字："off" / "total" 今日合计 / "claude" 今日 / "codex" 配额剩余
     var menubarInfoMode: String {

@@ -4,65 +4,6 @@ import XCTest
 @testable import TokenMeter
 
 final class ConfigStoreTests: XCTestCase {
-    func testConfigSyncDefaultsOnAndPersistsOff() throws {
-        let suiteName = "TokenMeterTests.ConfigStore.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let store = ConfigStore(defaults: defaults)
-        XCTAssertTrue(store.configSyncEnabled)
-
-        store.configSyncEnabled = false
-
-        XCTAssertFalse(ConfigStore(defaults: defaults).configSyncEnabled)
-    }
-
-    func testAssetSyncDefaultsOffAndDoesNotChangeConfigSyncDefault() throws {
-        let suiteName = "TokenMeterTests.ConfigStore.AssetSync.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let store = ConfigStore(defaults: defaults)
-        XCTAssertFalse(store.assetSyncEnabled)
-        XCTAssertTrue(store.configSyncEnabled)
-
-        store.assetSyncEnabled = true
-
-        let reloaded = ConfigStore(defaults: defaults)
-        XCTAssertTrue(reloaded.assetSyncEnabled)
-        XCTAssertTrue(reloaded.configSyncEnabled)
-    }
-
-    func testAssetSyncSourceTrimsPersistsAndEmptyValueClears() throws {
-        let suiteName = "TokenMeterTests.ConfigStore.AssetSync.Source.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let store = ConfigStore(defaults: defaults)
-        XCTAssertNil(store.assetSyncSourceKey)
-
-        store.assetSyncSourceKey = "  claude\n"
-        XCTAssertEqual(ConfigStore(defaults: defaults).assetSyncSourceKey, "claude")
-
-        store.assetSyncSourceKey = " \t "
-        XCTAssertNil(ConfigStore(defaults: defaults).assetSyncSourceKey)
-    }
-
-    func testAssetSyncLastSuccessPersistsAndCanBeCleared() throws {
-        let suiteName = "TokenMeterTests.ConfigStore.AssetSync.Success.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let store = ConfigStore(defaults: defaults)
-        XCTAssertNil(store.assetSyncLastSuccessAt)
-
-        store.assetSyncLastSuccessAt = 1_787_000_123
-        XCTAssertEqual(ConfigStore(defaults: defaults).assetSyncLastSuccessAt, 1_787_000_123)
-
-        store.assetSyncLastSuccessAt = nil
-        XCTAssertNil(ConfigStore(defaults: defaults).assetSyncLastSuccessAt)
-    }
-
     func testOpenCodeMonitorDefaultsOnAndPersistsOff() throws {
         let suiteName = "TokenMeterTests.ConfigStore.OpenCode.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

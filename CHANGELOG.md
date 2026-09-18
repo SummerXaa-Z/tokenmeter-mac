@@ -3,6 +3,7 @@
 ## Unreleased
 
 - **智谱 GLM Coding Plan 额度接入**：订阅剩余量总览新增智谱卡片，支持用户主动配置智谱 API Key 查询官方监控接口（国内版 `open.bigmodel.cn` / 国际版 `api.z.ai` 可选），平铺 5 小时、每周 token 额度与工具调用月度次数，并显示套餐档位。窗口识别锚定响应 `unit` 字段并兼容上游 `CREDIT_LIMIT` 改名（不按重置时间排序，避免周期末尾窗口标反）；Key 只存本机 Keychain、只发往所选域名；鉴权失败立即清快照，短暂网络失败最多保留 10 分钟 last-good，响应以流式 128 KiB 上限读取。影响范围：`ZhipuQuotaService.swift`、`Store.swift`、`AppState.swift`、`SubscriptionQuotaSnapshot.swift`、`SettingsView.swift`、`OverviewView.swift`、`OverviewCards.swift`、`Theme.swift` 及测试。
+- **下线 AgentSync 配置同步**：移除「配置同步」面板、自动 Agent 资产同步与 30 分钟定时任务，以及外部用户本就无法安装的本机 `agentsync` CLI 依赖；应用回归纯本地只读监控定位，不再写任何 Agent 工具的配置文件。同步清理设置项、诊断条目与相关测试；历史 UserDefaults 键不再读取（留在本机无害），agentsync CLI 自身与其已写入的备份、回滚能力不受影响。影响范围：删除 `AgentSyncService.swift`、`ConfigSyncView.swift`、`ConfigSyncWindow.swift`、`AgentSyncContractTests.swift`，及 `AppState.swift`、`SettingsView.swift`、`RootView.swift`、`OverviewView.swift`、`OverviewCards.swift`、`AppDelegate.swift`、`Store.swift`、`DiagnosticReport.swift` 中的引用。
 
 ## v3.8.0 — 2026-09-18 — 多源本地用量、总览重构与个人画像
 

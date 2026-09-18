@@ -435,7 +435,6 @@ extension Provider {
         case .copilot: return .copilot
         case .qwen: return .qwen
         case .cursor: return .cursor
-        case .configsync: return nil
         }
     }
 
@@ -455,7 +454,6 @@ extension Provider {
         case .copilot: return "chevron.left.forwardslash.chevron.right"
         case .qwen: return "q.circle"
         case .cursor: return "cursorarrow.rays"
-        case .configsync: return "arrow.triangle.2.circlepath"
         }
     }
 

@@ -73,15 +73,6 @@ final class AppState: ObservableObject {
     // 智谱订阅额度同样只在用户明确配置 Key 后查询官方接口。
     @Published var zhipuQuota: QuotaCache<ZhipuQuotaResult> = .init()
 
-    // 配置同步：本机各工具的 MCP/指令现状（调 agentsync CLI 子进程）
-    @Published var configSync: SourceCache<ConfigScanResult> = .init()
-    @Published var configSyncEnabled: Bool = true
-    // 一键资产同步是独立、显式授权的写入能力。默认关闭，不能复用历史上
-    // 默认开启的“显示配置同步面板”开关，否则升级后会意外改写用户配置。
-    @Published private(set) var assetSyncEnabled: Bool = false
-    @Published private(set) var assetSyncSourceKey: String?
-    @Published var assetSync: SourceCache<AgentAssetSyncResult> = .init()
-
     // 缓存新鲜度：60s 内视为新鲜，View 出现时直接复用
     static let sourceTTL: TimeInterval = 60
     nonisolated static let kimiQuotaLastGoodTTL: TimeInterval = 10 * 60
@@ -104,8 +95,6 @@ final class AppState: ObservableObject {
     private var zhipuQuotaRefresh = ForcedRefreshCoalescer()
     private var zhipuQuotaExpiryTask: Task<Void, Never>?
     private var arkPlanQuotaRefresh = ForcedRefreshCoalescer()
-    private var configSyncRefresh = ForcedRefreshCoalescer()
-    private var assetSyncTask: Task<Void, Never>?
     private let balanceRefreshCompletion = RefreshCompletionWaiter()
     private let usageRefreshCompletion = RefreshCompletionWaiter()
     private let claudeRefreshCompletion = RefreshCompletionWaiter()
@@ -119,7 +108,6 @@ final class AppState: ObservableObject {
     private let kimiQuotaRefreshCompletion = RefreshCompletionWaiter()
     private let zhipuQuotaRefreshCompletion = RefreshCompletionWaiter()
     private let arkPlanQuotaRefreshCompletion = RefreshCompletionWaiter()
-    private let configSyncRefreshCompletion = RefreshCompletionWaiter()
 
     init() {
         refreshIntervalSeconds = store.refreshIntervalSeconds
@@ -133,9 +121,6 @@ final class AppState: ObservableObject {
         copilotEnabled = store.copilotMonitorEnabled
         qwenEnabled = store.qwenMonitorEnabled
         cursorEnabled = store.cursorMonitorEnabled
-        configSyncEnabled = store.configSyncEnabled
-        assetSyncEnabled = store.assetSyncEnabled
-        assetSyncSourceKey = store.assetSyncSourceKey
         claudeDailyLimitM = store.claudeDailyTokenLimitM
         menubarInfoMode = store.menubarInfoMode
     }
@@ -252,7 +237,7 @@ final class AppState: ObservableObject {
         Task { await loadUsage(force: force) }
     }
 
-    // 自动刷新覆盖所有已启用监控源；配置同步不是用量监控，不在定时扫描范围内。
+    // 自动刷新覆盖所有已启用监控源。
     // 各加载器都有 in-flight 门禁，慢请求不会与下一轮定时器叠加。
     func refreshEnabledSources(trigger: RefreshTrigger = .scheduled) {
         for source in Self.enabledRefreshSources(
@@ -884,138 +869,6 @@ final class AppState: ObservableObject {
         }
     }
 
-    // MARK: - 配置同步（agentsync CLI）
-
-    func loadConfigSync(force: Bool = false, allowHidden: Bool = false) async {
-        guard (configSyncEnabled || allowHidden), AgentSyncService.isAvailable else { return }
-        if !force, !configSyncRefresh.isRefreshing, isFresh(configSync.loadedAt) { return }
-        guard configSyncRefresh.request(force: force) else {
-            if force { await configSyncRefreshCompletion.wait() }
-            return
-        }
-        configSync.loading = true
-        defer {
-            configSync.loading = false
-            configSyncRefreshCompletion.resumeAll()
-        }
-
-        while true {
-            configSync.error = nil
-            do {
-                let r = try await AgentSyncService.scan()
-                configSync.result = r
-                configSync.loadedAt = Date()
-            } catch {
-                configSync.result = nil
-                configSync.error = (error as? AgentSyncError)?.errorDescription ?? error.localizedDescription
-            }
-
-            guard configSyncRefresh.finish() else { break }
-            guard (configSyncEnabled || allowHidden), AgentSyncService.isAvailable else {
-                configSyncRefresh.cancel()
-                break
-            }
-        }
-    }
-
-    // 拉取真源到 canonical，成功后刷新现状
-    func configSyncPull(from source: String, layers: [String]) async throws -> PullResult {
-        try ConfigSyncAccess.requireEnabled(configSyncEnabled)
-        let r = try await AgentSyncService.pull(from: source, layers: layers)
-        await loadConfigSync(force: true)
-        return r
-    }
-
-    func configSyncPreview(to targets: [String], layers: [String]) async throws -> PushResult {
-        try ConfigSyncAccess.requireEnabled(configSyncEnabled)
-        return try await AgentSyncService.pushPreview(to: targets, layers: layers)
-    }
-
-    // 落盘写入目标工具，成功后刷新现状
-    func configSyncApply(to targets: [String], layers: [String]) async throws -> PushResult {
-        try ConfigSyncAccess.requireEnabled(configSyncEnabled)
-        let r = try await AgentSyncService.pushApply(to: targets, layers: layers)
-        await loadConfigSync(force: true)
-        return r
-    }
-
-    func configSyncRollback(ts: String) async throws -> RollbackResult {
-        let r = try await AgentSyncService.rollback(ts: ts)
-        await loadConfigSync(force: true)
-        return r
-    }
-
-    /// 设置一键同步。开启前必须已有用户明确确认过的有效真源；这里不猜源，
-    /// 也不把 UI 的“推荐预选”当授权。成功打开后立即执行一次安全 reconcile。
-    func setAssetSyncEnabled(_ enabled: Bool) {
-        guard enabled != assetSyncEnabled else { return }
-        if enabled {
-            guard let source = assetSyncSourceKey, !source.isEmpty else {
-                assetSync.error = "请先确认一个 Agent 作为资产真源"
-                return
-            }
-            store.assetSyncEnabled = true
-            assetSyncEnabled = true
-            runAssetSyncNow()
-        } else {
-            assetSyncTask?.cancel()
-            assetSyncTask = nil
-            store.assetSyncEnabled = false
-            assetSyncEnabled = false
-            assetSync.loading = false
-        }
-    }
-
-    /// 首次选择只保存用户明确确认的真源；目标与资产层始终由最新 scan 自动计算。
-    func confirmAssetSyncSource(_ source: String) {
-        let normalized = source.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else { return }
-        store.assetSyncSourceKey = normalized
-        assetSyncSourceKey = normalized
-        assetSync.error = nil
-    }
-
-    func runAssetSyncNow() {
-        guard assetSyncEnabled else { return }
-        guard AgentSyncService.isAvailable else {
-            assetSync.error = AgentSyncError.cliNotFound.errorDescription
-            return
-        }
-        guard let source = assetSyncSourceKey, !source.isEmpty else {
-            assetSync.error = "请先确认一个 Agent 作为资产真源"
-            return
-        }
-        guard assetSyncTask == nil else { return }
-
-        assetSync.loading = true
-        assetSync.error = nil
-        assetSyncTask = Task { [weak self] in
-            guard let self else { return }
-            defer {
-                self.assetSync.loading = false
-                self.assetSyncTask = nil
-            }
-            do {
-                // reconcile 自身先完成全量 dry-run，再在同一事务里 apply；Swift
-                // 不把 preview/apply 拆成两个有竞态的子进程。
-                let result = try await AgentSyncService.reconcile(from: source, apply: true)
-                guard !Task.isCancelled else { return }
-                guard self.assetSyncEnabled, self.assetSyncSourceKey == source else { return }
-                self.assetSync.result = result
-                self.assetSync.loadedAt = Date()
-                self.assetSync.error = result.conflicts.isEmpty
-                    ? nil
-                    : "有 \(result.conflicts.count) 处已有资产冲突，已安全跳过"
-                self.store.assetSyncLastSuccessAt = Date().timeIntervalSince1970
-                await self.loadConfigSync(force: true, allowHidden: true)
-            } catch {
-                guard !Task.isCancelled else { return }
-                self.assetSync.error = (error as? AgentSyncError)?.errorDescription
-                    ?? error.localizedDescription
-            }
-        }
-    }
-
     // 自动刷新定时器，对应原版 setInterval effect
     func rearmTimer() {
         timer?.invalidate()
@@ -1112,11 +965,6 @@ final class AppState: ObservableObject {
         store.cursorMonitorEnabled = enabled
         cursorEnabled = enabled
         if enabled { Task { await loadCursor(force: true) } }
-    }
-
-    func setConfigSyncEnabled(_ enabled: Bool) {
-        store.configSyncEnabled = enabled
-        configSyncEnabled = enabled
     }
 
     func setClaudeDailyLimit(_ limitM: Int) {

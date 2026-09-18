@@ -18,7 +18,6 @@ enum Provider: String, CaseIterable, Identifiable {
     case copilot = "Copilot"
     case qwen = "Qwen Code"
     case cursor = "Cursor"
-    case configsync = "配置同步"
     var id: String { rawValue }
 
     // 没装对应工具就不显示该 tab
@@ -33,7 +32,6 @@ enum Provider: String, CaseIterable, Identifiable {
         case .copilot: return CopilotUsage.isAvailable
         case .qwen: return QwenCodeUsage.isAvailable
         case .cursor: return CursorUsage.isAvailable
-        case .configsync: return AgentSyncService.isAvailable
         }
     }
 }
@@ -59,7 +57,6 @@ struct RootView: View {
             case .copilot: return state.copilotEnabled
             case .qwen: return state.qwenEnabled
             case .cursor: return state.cursorEnabled
-            case .configsync: return state.configSyncEnabled && p.available
             }
         }
     }
@@ -103,13 +100,10 @@ struct RootView: View {
                             QwenCodeView(onBack: back, onSettings: { view = .settings })
                         case .cursor:
                             CursorView(onBack: back, onSettings: { view = .settings })
-                        case .configsync:
-                            ConfigSyncView(onBack: back, onSettings: { view = .settings })
                     }
                 case .settings:
                     SettingsView(
-                        onBack: { view = .dashboard },
-                        onOpenConfigSync: { view = .source(.configsync) }
+                        onBack: { view = .dashboard }
                     )
                 case .detail(let key):
                     ModelDetailView(modelKey: key, onBack: { view = .source(.deepseek) })
