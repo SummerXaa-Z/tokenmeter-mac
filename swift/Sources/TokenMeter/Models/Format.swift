@@ -2,27 +2,58 @@ import Foundation
 
 // 数据格式化，对应原版 main.tsx 顶部的 fmt* 工具函数
 enum Fmt {
-    // 千分位整数：2609 -> "2,609"
-    static func int(_ n: Int) -> String {
+    // 千分位整数：2609 -> "2,609"。formatter 只在首用时配置一次。
+    private static let intFormatter: NumberFormatter = {
         let f = NumberFormatter()
         f.numberStyle = .decimal
         f.groupingSeparator = ","
         f.locale = Locale(identifier: "en_US")
-        return f.string(from: NSNumber(value: n)) ?? String(n)
+        return f
+    }()
+
+    static func int(_ n: Int) -> String {
+        intFormatter.string(from: NSNumber(value: n)) ?? String(n)
+    }
+
+    // 百分比：0.87 -> "87%"（视图不要再内联 String(format: "%.0f%%")）
+    static func percent(_ value: Double) -> String {
+        String(format: "%.0f%%", value)
+    }
+
+    // 美元金额：1.5 -> "$1.50"；整数额度可传 fractionDigits: 0
+    static func usd(_ value: Double, fractionDigits: Int = 2) -> String {
+        String(format: "$%.\(fractionDigits)f", value)
+    }
+
+    // 距目标时刻的中文倒计时："3 天后" / "5 小时后" / "12 分钟后"。
+    // 已过期返回 elapsedText（默认"已"，调用方拼接"已重置"等完整句）。
+    static func countdown(to date: Date, elapsedText: String = "已") -> String {
+        let interval = date.timeIntervalSinceNow
+        if interval <= 0 { return elapsedText }
+        let hours = Int(interval) / 3600
+        if hours >= 24 { return "\(hours / 24) 天后" }
+        if hours >= 1 { return "\(hours) 小时后" }
+        return "\(max(Int(interval) / 60, 1)) 分钟后"
     }
 
     // Token 缩写：1200000000 -> "1.2B"、380000000 -> "380M"、
-    // 1000000 -> "1.0M"、2609 -> "2.6K"。M 四舍五入到 1000 时提升为 B，
-    // 避免在窄卡片里出现“1000M”这种难读边界值。
+    // 1000000 -> "1M"、2609 -> "2.6K"。尾随 .0 一律省去，让图表轴刻度
+    // （25M/50M/75M/100M）与正文数值保持同一格式。M 四舍五入到 1000 时
+    // 提升为 B，避免在窄卡片里出现“1000M”这种难读边界值。
     static func tokensShort(_ n: Int) -> String {
         let d = Double(n)
+        // 先格式化数字再去掉尾随 .0，最后拼单位——否则 ".0" 匹配不到
+        func short(_ value: Double, _ unit: String) -> String {
+            let s = String(format: "%.1f", value)
+            return (s.hasSuffix(".0") ? String(s.dropLast(2)) : s) + unit
+        }
         if (d / 1e6).rounded() >= 1_000 {
             if d >= 1e11 { return String(format: "%.0fB", d / 1e9) }
-            return String(format: "%.1fB", d / 1e9)
+            return short(d / 1e9, "B")
         }
         if d >= 1e8 { return String(format: "%.0fM", d / 1e6) }
-        if d >= 1e6 { return String(format: "%.1fM", d / 1e6) }
-        if d >= 1e3 { return String(format: "%.1fK", d / 1e3) }
+        if d >= 1e6 { return short(d / 1e6, "M") }
+        if d >= 1e3 { return short(d / 1e3, "K") }
         return String(n)
     }
 
@@ -37,6 +68,17 @@ enum Fmt {
         guard parts.count == 3,
               let m = Int(parts[1]), let d = Int(parts[2]) else { return date }
         return "\(m)/\(d)"
+    }
+
+    // Date -> "6/11"（formatter 静态复用，视图不再各自 new DateFormatter）
+    private static let mmddDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "M/d"
+        return f
+    }()
+
+    static func mmdd(_ date: Date) -> String {
+        mmddDateFormatter.string(from: date)
     }
 
     // "2026-06-11" -> "2026/6/11"

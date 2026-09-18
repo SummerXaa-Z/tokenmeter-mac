@@ -57,7 +57,7 @@ struct BalanceCard: View {
 
     private func metric(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
+            Text(label).font(.system(size: 11)).foregroundStyle(.secondary)
             Text(value).font(.system(size: 13, weight: .semibold))
         }
     }
@@ -100,7 +100,7 @@ struct UsageRow: View {
                         progressBar
                         if let d = data, let rate = d.cacheHitRate {
                             Text("缓存命中 \(Int(rate))%")
-                                .font(.system(size: 10)).foregroundStyle(accent)
+                                .font(.system(size: 11)).foregroundStyle(accent)
                         }
                     }
                     Spacer()
@@ -109,26 +109,21 @@ struct UsageRow: View {
                             .font(.system(size: 14, weight: .bold))
                         if let d = data, d.cost > 0 {
                             Text("\(Fmt.tokensShort(Int(Double(d.totalTokens) / d.cost))) T/¥")
-                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
                         }
                     }
                 }
             }
+            .hoverHighlight()
         }
         .buttonStyle(.plain)
     }
 
     private var progressBar: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(.quaternary).frame(height: 4)
-                Capsule().fill(accent)
-                    .frame(width: data.map {
-                        max(4, CGFloat($0.totalTokens) / CGFloat(maxTokens) * geo.size.width)
-                    } ?? 0, height: 4)
-            }
-        }
-        .frame(height: 4)
+        QuotaBar(
+            progress: data.map { Double($0.totalTokens) / Double(max(maxTokens, 1)) } ?? 0,
+            tint: accent
+        )
     }
 }
 
@@ -176,7 +171,7 @@ struct UsageChartCard: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     Text(state == .ok ? summary : "—")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 if state == .ok {
                     chart

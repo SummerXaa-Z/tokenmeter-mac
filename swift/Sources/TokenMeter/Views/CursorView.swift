@@ -19,12 +19,11 @@ struct CursorView: View {
                     summaryCard(r)
                     modelsCard(r)
                 } else if state.cursor.loading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
+                    SourceStateView(loading: true, message: "正在读取…")
                 } else if let errorText = state.cursor.error {
-                    Text(errorText)
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 60).padding(.horizontal, 20)
+                    SourceStateView(message: errorText)
+                } else {
+                    SourceStateView(message: "未读取到 Cursor 账户用量")
                 }
                 Spacer(minLength: 0)
             }
@@ -42,6 +41,7 @@ struct CursorView: View {
             color: Theme.cursor,
             process: state.cursor.proc,
             showProcessCount: false,
+            refreshing: state.cursor.loading,
             onBack: onBack,
             onRefresh: { Task { await state.loadCursor(force: true) } },
             onSettings: onSettings
@@ -58,7 +58,7 @@ struct CursorView: View {
                     Spacer()
                     if let plan = r.membership {
                         Text(plan.uppercased())
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Theme.cursor.opacity(0.15), in: Capsule())
                             .foregroundStyle(Theme.cursor)
@@ -68,7 +68,7 @@ struct CursorView: View {
                     Text(email).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 if let start = r.startOfMonth {
-                    Text("自 \(Self.mmdd(start)) 起 · \(Fmt.tokensShort(r.totalTokens)) tokens · $\(String(format: "%.2f", r.totalCostCents / 100))")
+                    Text("自 \(Fmt.mmdd(start)) 起 · \(Fmt.tokensShort(r.totalTokens)) tokens · \(Fmt.usd(r.totalCostCents / 100))")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
                 }
             }
@@ -83,15 +83,14 @@ struct CursorView: View {
                     Label("订阅周期", systemImage: "calendar.badge.clock")
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
-                    Text("\(Self.mmdd(sub.periodStart)) – \(Self.mmdd(sub.periodEnd))")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text("\(Fmt.mmdd(sub.periodStart)) – \(Fmt.mmdd(sub.periodEnd))")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 // 周期进度（时间维度）
                 let total = sub.periodEnd.timeIntervalSince(sub.periodStart)
                 let elapsed = min(max(Date().timeIntervalSince(sub.periodStart), 0), total)
-                ProgressView(value: elapsed, total: max(total, 1))
-                    .tint(Theme.cursor.opacity(0.5))
-                Text("周期已过 \(Int(elapsed / max(total, 1) * 100))% · 续订 \(Self.resetText(sub.periodEnd))")
+                QuotaBar(progress: elapsed / max(total, 1), tint: Theme.cursor.opacity(0.5))
+                Text("周期已过 \(Int(elapsed / max(total, 1) * 100))% · 续订 \(Fmt.countdown(to: sub.periodEnd, elapsedText: "即将刷新"))")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
                 if sub.usageBasedEnabled, sub.hardLimitDollars > 0 {
                     Divider()
@@ -100,23 +99,16 @@ struct CursorView: View {
                         Text("超额消费上限")
                             .font(.system(size: 11, weight: .medium))
                         Spacer()
-                        Text(String(format: "$%.2f / $%.0f", spent, sub.hardLimitDollars))
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                        Text("\(Fmt.usd(spent)) / \(Fmt.usd(sub.hardLimitDollars, fractionDigits: 0))")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                     let ratio = spent / sub.hardLimitDollars
-                    ProgressView(value: min(spent, sub.hardLimitDollars), total: sub.hardLimitDollars)
-                        .tint(ratio >= 0.9 ? .red : ratio >= 0.7 ? .orange : Theme.cursor)
+                    QuotaBar(
+                        progress: min(spent, sub.hardLimitDollars) / sub.hardLimitDollars,
+                        tint: ratio >= 0.9 ? .red : ratio >= 0.7 ? .orange : Theme.cursor)
                 }
             }
         }
-    }
-
-    private static func resetText(_ date: Date) -> String {
-        let interval = date.timeIntervalSinceNow
-        if interval <= 0 { return "即将刷新" }
-        let days = Int(interval) / 86400
-        if days >= 1 { return "\(days) 天后" }
-        return "\(max(Int(interval) / 3600, 1)) 小时后"
     }
 
     // MARK: - 本月汇总
@@ -128,11 +120,11 @@ struct CursorView: View {
                 HStack(spacing: 0) {
                     stat("Token", Fmt.tokensShort(r.totalTokens))
                     stat("输出", Fmt.tokensShort(r.totalOutputTokens))
-                    stat("缓存命中", r.cacheHitRate.map { String(format: "%.0f%%", $0) } ?? "—")
-                    stat("平台费用", String(format: "$%.2f", r.totalCostCents / 100))
+                    stat("缓存命中", r.cacheHitRate.map { Fmt.percent($0) } ?? "—")
+                    stat("平台费用", Fmt.usd(r.totalCostCents / 100))
                 }
                 Text("平台返回的用量费用，不等同于固定订阅费。")
-                    .font(.system(size: 9)).foregroundStyle(.tertiary)
+                    .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
         }
     }
@@ -140,7 +132,7 @@ struct CursorView: View {
     private func stat(_ title: String, _ value: String) -> some View {
         VStack(spacing: 2) {
             Text(value).font(.system(size: 14, weight: .semibold, design: .rounded))
-            Text(title).font(.system(size: 9)).foregroundStyle(.secondary)
+            Text(title).font(.system(size: 11)).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
     }
@@ -163,23 +155,16 @@ struct CursorView: View {
                                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                                     .lineLimit(1).truncationMode(.middle)
                                 Spacer()
-                                Text("$\(String(format: "%.2f", m.costCents / 100))")
-                                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                                Text(Fmt.usd(m.costCents / 100))
+                                    .font(.system(size: 11)).foregroundStyle(.secondary)
                             }
                             Text("输入 \(Fmt.tokensShort(m.inputTokens)) · 输出 \(Fmt.tokensShort(m.outputTokens)) · 缓存 \(Fmt.tokensShort(m.cacheReadTokens))")
-                                .font(.system(size: 9)).foregroundStyle(.tertiary)
-                            ProgressView(value: m.costCents, total: maxCost)
-                                .tint(Theme.cursor)
+                                .font(.system(size: 10)).foregroundStyle(.tertiary)
+                            QuotaBar(progress: m.costCents / maxCost, tint: Theme.cursor)
                         }
                     }
                 }
             }
         }
-    }
-
-    private static func mmdd(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "M/d"
-        return f.string(from: date)
     }
 }

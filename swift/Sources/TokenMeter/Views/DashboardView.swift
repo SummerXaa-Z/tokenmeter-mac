@@ -32,29 +32,15 @@ struct DashboardView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            iconButton("chevron.left", action: onBack)
-            Image(systemName: "gauge.with.dots.needle.50percent")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Theme.brand)
-            Text("TokenMeter")
-                .font(.system(size: 15, weight: .bold))
-            Spacer()
-            iconButton("globe") { PlatformPortal.shared.open() }
-                .help("打开 DeepSeek 开放平台")
-            iconButton("arrow.clockwise") { state.refreshAll(force: true) }
-            iconButton("gearshape") { onSettings() }
-        }
-    }
-
-    private func iconButton(_ name: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: name)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 26, height: 26)
-        }
-        .buttonStyle(.plain)
-        .contentShape(Rectangle())
+        SourceDashboardHeader(
+            icon: "gauge.with.dots.needle.50percent",
+            title: "TokenMeter",
+            color: Theme.brand,
+            refreshing: state.balanceState == .loading || state.usageState == .loading,
+            onBack: onBack,
+            onRefresh: { state.refreshAll(force: true) },
+            onSettings: onSettings,
+            onOpenPlatform: { PlatformPortal.shared.open() }
+        )
     }
 }

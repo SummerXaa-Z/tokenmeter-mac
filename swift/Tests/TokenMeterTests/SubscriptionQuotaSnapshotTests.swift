@@ -300,8 +300,8 @@ final class SubscriptionQuotaSnapshotTests: XCTestCase {
         XCTAssertEqual(group.periods.map(\.label), ["5小时", "每周", "工具调用"])
         XCTAssertEqual(group.periods.map(\.remainingPercent), [75, 56, 28])
         XCTAssertEqual(group.periods.map(\.resetAt), [fiveHourReset, weeklyReset, nil])
-        XCTAssertEqual(group.periods[0].detail, "已用 10.3M / 40.0M")
-        XCTAssertEqual(group.periods[1].detail, "已用 53.0M / 120M")
+        XCTAssertEqual(group.periods[0].detail, "已用 10.3M / 40M")
+        XCTAssertEqual(group.periods[1].detail, "已用 53M / 120M")
         XCTAssertEqual(group.periods[2].detail, "已用 72 / 100 次")
     }
 

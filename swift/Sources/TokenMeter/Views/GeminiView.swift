@@ -16,16 +16,11 @@ struct GeminiView: View {
                     modelsCard(result)
                     privacyCard
                 } else if state.gemini.loading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
+                    SourceStateView(loading: true, message: "正在读取…")
                 } else if let error = state.gemini.error {
-                    Text(error)
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 60).padding(.horizontal, 20)
+                    SourceStateView(message: error)
                 } else {
-                    Text("未找到 Gemini CLI 本地用量")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                        .padding(.top, 60)
+                    SourceStateView(message: "未找到 Gemini CLI 本地数据")
                 }
                 Spacer(minLength: 0)
             }
@@ -41,6 +36,7 @@ struct GeminiView: View {
             title: "Gemini CLI Monitor",
             color: Theme.gemini,
             process: state.gemini.proc,
+            refreshing: state.gemini.loading,
             onBack: onBack,
             onRefresh: { Task { await state.loadGemini(force: true) } },
             onSettings: onSettings
@@ -55,16 +51,16 @@ struct GeminiView: View {
                     .font(.system(size: 12, weight: .semibold))
                 HStack(spacing: 0) {
                     SourceMetric(title: "Token", value: Fmt.tokensShort(today?.totalTokens ?? 0))
-                    SourceMetric(title: "消息", value: "\(today?.messageCount ?? 0)")
-                    SourceMetric(title: "会话", value: "\(today?.sessionCount ?? 0)")
+                    SourceMetric(title: "消息", value: Fmt.int(today?.messageCount ?? 0))
+                    SourceMetric(title: "会话", value: Fmt.int(today?.sessionCount ?? 0))
                     SourceMetric(
                         title: "缓存命中",
-                        value: today?.cacheHitRate.map { String(format: "%.0f%%", $0) } ?? "—"
+                        value: today?.cacheHitRate.map { Fmt.percent($0) } ?? "—"
                     )
                 }
                 Divider()
-                Text("近 7 天 \(Fmt.tokensShort(result.weekTotal)) tokens · \(result.weekMessages) 条 Gemini 消息 · \(result.weekSessions) 个日会话")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                Text("近 7 天 \(Fmt.tokensShort(result.weekTotal)) tokens · \(Fmt.int(result.weekMessages)) 条 Gemini 消息 · \(Fmt.int(result.weekSessions)) 个日会话")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
     }
@@ -72,7 +68,7 @@ struct GeminiView: View {
     private func weekChartCard(_ result: GeminiUsageResult) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("最近 7 天 Token", systemImage: "chart.bar")
+                Label("最近 7 天 Token", systemImage: "chart.bar.fill")
                     .font(.system(size: 12, weight: .semibold))
                 Chart(result.days) { day in
                     BarMark(
@@ -94,9 +90,9 @@ struct GeminiView: View {
                 }
                 .chartForegroundStyleScale([
                     "缓存读取": Theme.hit,
-                    "新输入": Theme.miss,
+                    "新输入": Theme.input,
                     "输出": Theme.response,
-                    "推理": Theme.gemini,
+                    "推理": Theme.miss,
                 ])
                 .chartLegend(position: .bottom, spacing: 4)
                 .tokenYAxis()
@@ -118,14 +114,13 @@ struct GeminiView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(model.model)
-                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                                     .lineLimit(1).truncationMode(.middle)
                                 Spacer()
-                                Text("\(Fmt.tokensShort(model.totalTokens)) · \(model.messageCount) 条")
-                                    .font(.system(size: 9)).foregroundStyle(.secondary)
+                                Text("\(Fmt.tokensShort(model.totalTokens)) · \(Fmt.int(model.messageCount)) 条")
+                                    .font(.system(size: 11)).foregroundStyle(.secondary)
                             }
-                            ProgressView(value: Double(model.totalTokens), total: Double(maximum))
-                                .tint(Theme.gemini)
+                            QuotaBar(progress: Double(model.totalTokens) / Double(maximum), tint: Theme.gemini)
                         }
                     }
                 }

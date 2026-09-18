@@ -29,7 +29,7 @@ struct ModelDetailView: View {
             if let m = model {
                 Card {
                     HStack(spacing: 16) {
-                        stat("总 Tokens", Fmt.tokensShort(m.totalTokens))
+                        stat("总 Token", Fmt.tokensShort(m.totalTokens))
                         stat("请求数", Fmt.int(m.requestCount))
                         stat("消费", Fmt.money(m.cost))
                     }
@@ -45,7 +45,7 @@ struct ModelDetailView: View {
                 }
                 Card {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("近 7 天 Tokens").font(.system(size: 12, weight: .medium))
+                        Text("近 7 天 Token").font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.secondary)
                         Chart(points) { p in
                             BarMark(x: .value("日期", p.date), y: .value("Tokens", p.tokens))
@@ -57,9 +57,7 @@ struct ModelDetailView: View {
                     }
                 }
             } else {
-                Spacer()
-                Text("暂无数据").foregroundStyle(.secondary)
-                Spacer()
+                SourceStateView(message: "暂无数据")
             }
             Spacer(minLength: 0)
         }
@@ -67,24 +65,17 @@ struct ModelDetailView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Button(action: onBack) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            Image(systemName: isFlash ? "bolt.fill" : "brain")
-                .foregroundStyle(accent)
-            Text(isFlash ? "V4 Flash" : "V4 Pro")
-                .font(.system(size: 15, weight: .bold))
-            Spacer()
-        }
+        SourceDashboardHeader(
+            icon: isFlash ? "bolt.fill" : "brain",
+            title: isFlash ? "V4 Flash" : "V4 Pro",
+            color: accent,
+            onBack: onBack
+        )
     }
 
     private func stat(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
+            Text(label).font(.system(size: 11)).foregroundStyle(.secondary)
             Text(value).font(.system(size: 15, weight: .bold))
         }
         .frame(maxWidth: .infinity, alignment: .leading)

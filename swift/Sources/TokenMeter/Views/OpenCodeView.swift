@@ -17,16 +17,11 @@ struct OpenCodeView: View {
                     modelsCard(result)
                     privacyCard
                 } else if state.opencode.loading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
+                    SourceStateView(loading: true, message: "正在读取…")
                 } else if let error = state.opencode.error {
-                    Text(error)
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 60).padding(.horizontal, 20)
+                    SourceStateView(message: error)
                 } else {
-                    Text("未找到 OpenCode 本地用量")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                        .padding(.top, 60)
+                    SourceStateView(message: "未找到 OpenCode 本地数据")
                 }
                 Spacer(minLength: 0)
             }
@@ -42,6 +37,7 @@ struct OpenCodeView: View {
             title: "OpenCode Monitor",
             color: Theme.opencode,
             process: state.opencode.proc,
+            refreshing: state.opencode.loading,
             onBack: onBack,
             onRefresh: { Task { await state.loadOpenCode(force: true) } },
             onSettings: onSettings
@@ -56,16 +52,16 @@ struct OpenCodeView: View {
                     .font(.system(size: 12, weight: .semibold))
                 HStack(spacing: 0) {
                     SourceMetric(title: "Token", value: Fmt.tokensShort(today?.totalTokens ?? 0))
-                    SourceMetric(title: "消息", value: "\(today?.messageCount ?? 0)")
-                    SourceMetric(title: "会话", value: "\(today?.sessionCount ?? 0)")
+                    SourceMetric(title: "消息", value: Fmt.int(today?.messageCount ?? 0))
+                    SourceMetric(title: "会话", value: Fmt.int(today?.sessionCount ?? 0))
                     SourceMetric(
                         title: "缓存命中",
-                        value: today?.cacheHitRate.map { String(format: "%.0f%%", $0) } ?? "—"
+                        value: today?.cacheHitRate.map { Fmt.percent($0) } ?? "—"
                     )
                 }
                 Divider()
-                Text("近 7 天 \(Fmt.tokensShort(result.weekTotal)) tokens · \(result.weekMessages) 条 assistant 消息 · \(result.weekSessions) 个日会话")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                Text("近 7 天 \(Fmt.tokensShort(result.weekTotal)) tokens · \(Fmt.int(result.weekMessages)) 条 assistant 消息 · \(Fmt.int(result.weekSessions)) 个日会话")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
     }
@@ -73,7 +69,7 @@ struct OpenCodeView: View {
     private func weekChartCard(_ result: OpenCodeUsageResult) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("最近 7 天 Token", systemImage: "chart.bar")
+                Label("最近 7 天 Token", systemImage: "chart.bar.fill")
                     .font(.system(size: 12, weight: .semibold))
                 Chart(result.days) { day in
                     BarMark(
@@ -95,8 +91,8 @@ struct OpenCodeView: View {
                 }
                 .chartForegroundStyleScale([
                     "缓存读取": Theme.hit,
-                    "缓存写入": Theme.opencode,
-                    "新输入": Theme.miss,
+                    "缓存写入": Theme.miss,
+                    "新输入": Theme.input,
                     "输出": Theme.response,
                 ])
                 .chartLegend(position: .bottom, spacing: 4)
@@ -114,8 +110,8 @@ struct OpenCodeView: View {
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
                     if result.weekCost > 0 {
-                        Text(String(format: "原生估算 $%.2f", result.weekCost))
-                            .font(.system(size: 9)).foregroundStyle(.secondary)
+                        Text("原生估算 \(Fmt.usd(result.weekCost))")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }
                 if result.models.isEmpty {
@@ -126,14 +122,13 @@ struct OpenCodeView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(model.model)
-                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                                     .lineLimit(1).truncationMode(.middle)
                                 Spacer()
-                                Text("\(Fmt.tokensShort(model.totalTokens)) · \(model.messageCount) 条")
-                                    .font(.system(size: 9)).foregroundStyle(.secondary)
+                                Text("\(Fmt.tokensShort(model.totalTokens)) · \(Fmt.int(model.messageCount)) 条")
+                                    .font(.system(size: 11)).foregroundStyle(.secondary)
                             }
-                            ProgressView(value: Double(model.totalTokens), total: Double(maximum))
-                                .tint(Theme.opencode)
+                            QuotaBar(progress: Double(model.totalTokens) / Double(maximum), tint: Theme.opencode)
                         }
                     }
                 }

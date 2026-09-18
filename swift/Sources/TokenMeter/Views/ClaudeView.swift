@@ -20,11 +20,9 @@ struct ClaudeView: View {
                     modelCard(r)
                     projectCard(r)
                 } else if state.claude.loading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
+                    SourceStateView(loading: true, message: "正在读取…")
                 } else {
-                    Text("未找到 Claude 本地数据（~/.claude/projects）")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                        .padding(.top, 60)
+                    SourceStateView(message: "未找到 Claude 本地数据（~/.claude/projects）")
                 }
                 Spacer(minLength: 0)
             }
@@ -41,6 +39,7 @@ struct ClaudeView: View {
             title: "Claude Monitor",
             color: Theme.claude,
             process: state.claude.proc,
+            refreshing: state.claude.loading,
             onBack: onBack,
             onRefresh: { Task { await state.loadClaude(force: true) } },
             onSettings: onSettings
@@ -56,17 +55,17 @@ struct ClaudeView: View {
                 let t = r.today
                 HStack(spacing: 0) {
                     SourceMetric(title: "Token", value: Fmt.tokensShort(t?.totalTokens ?? 0))
-                    SourceMetric(title: "请求", value: "\(t?.messageCount ?? 0)")
+                    SourceMetric(title: "请求", value: Fmt.int(t?.messageCount ?? 0))
                     SourceMetric(
                         title: "缓存命中",
-                        value: t?.cacheHitRate.map { String(format: "%.0f%%", $0) } ?? "—"
+                        value: t?.cacheHitRate.map { Fmt.percent($0) } ?? "—"
                     )
                     SourceMetric(title: "输出", value: Fmt.tokensShort(t?.outputTokens ?? 0))
                 }
                 Divider()
                 HStack {
-                    Text("近 7 天合计 \(Fmt.tokensShort(r.weekTotal)) tokens · \(r.weekMessages) 次请求")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text("近 7 天合计 \(Fmt.tokensShort(r.weekTotal)) tokens · \(Fmt.int(r.weekMessages)) 次请求")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                     Spacer()
                 }
             }
@@ -79,21 +78,10 @@ struct ClaudeView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("今日分时（Token）", systemImage: "clock")
                     .font(.system(size: 12, weight: .semibold))
-                Chart(r.todayHours) { h in
-                    BarMark(
-                        x: .value("时", String(format: "%02d", h.hour)),
-                        y: .value("Token", h.totalTokens))
-                    .foregroundStyle(Theme.claude.opacity(h.totalTokens > 0 ? 0.9 : 0.2))
-                }
-                .chartXAxis {
-                    AxisMarks(values: ["00", "06", "12", "18", "23"]) { v in
-                        AxisValueLabel {
-                            if let h = v.as(String.self) { Text("\(Int(h) ?? 0)时") }
-                        }
-                    }
-                }
-                .tokenYAxis()
-                .frame(height: 70)
+                SourceHourChart(
+                    bars: r.todayHours.map { .init(hour: $0.hour, tokens: $0.totalTokens) },
+                    color: Theme.claude
+                )
             }
         }
     }
@@ -102,7 +90,7 @@ struct ClaudeView: View {
     private func weekChartCard(_ r: ClaudeUsageResult) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("最近 7 天 Token", systemImage: "chart.bar")
+                Label("最近 7 天 Token", systemImage: "chart.bar.fill")
                     .font(.system(size: 12, weight: .semibold))
                 Chart(r.days) { day in
                     BarMark(
@@ -123,8 +111,8 @@ struct ClaudeView: View {
                     .foregroundStyle(by: .value("类型", "输出"))
                 }
                 .chartForegroundStyleScale([
-                    "缓存读取": Theme.hit, "缓存写入": Theme.claude,
-                    "新输入": Theme.miss, "输出": Theme.response,
+                    "缓存读取": Theme.hit, "缓存写入": Theme.miss,
+                    "新输入": Theme.input, "输出": Theme.response,
                 ])
                 .chartLegend(position: .bottom, spacing: 4)
                 .tokenYAxis()
@@ -142,8 +130,8 @@ struct ClaudeView: View {
                     .font(.system(size: 12, weight: .semibold))
                 compareRow("Token", Fmt.tokensShort(c.thisTotalTokens),
                            Fmt.tokensShort(c.lastTotalTokens), c.totalChange)
-                compareRow("请求", "\(c.thisMessageCount)",
-                           "\(c.lastMessageCount)", c.messageChange)
+                compareRow("请求", Fmt.int(c.thisMessageCount),
+                           Fmt.int(c.lastMessageCount), c.messageChange)
                 compareRow("输出", Fmt.tokensShort(c.thisOutputTokens),
                            Fmt.tokensShort(c.lastOutputTokens), c.outputChange)
             }
@@ -161,7 +149,7 @@ struct ClaudeView: View {
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .frame(width: 52, alignment: .leading)
             Text("上周 \(prev)")
-                .font(.system(size: 10)).foregroundStyle(.secondary)
+                .font(.system(size: 11)).foregroundStyle(.secondary)
             Spacer()
             changeBadge(change)
         }
@@ -171,7 +159,7 @@ struct ClaudeView: View {
     private func changeBadge(_ change: Double?) -> some View {
         Group {
             if let change {
-                Text("\(change >= 0 ? "↑" : "↓") \(String(format: "%.0f%%", abs(change)))")
+                Text("\(change >= 0 ? "↑" : "↓") \(Fmt.percent(abs(change)))")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundStyle(change >= 0 ? .red : .green)
             } else {
@@ -224,11 +212,10 @@ struct ClaudeView: View {
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .lineLimit(1).truncationMode(.middle)
                 Spacer()
-                Text("\(Fmt.tokensShort(total)) · \(count) 次")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                Text("\(Fmt.tokensShort(total)) · \(Fmt.int(count)) 次")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
-            ProgressView(value: Double(total), total: Double(maxTotal))
-                .tint(Theme.claude)
+            QuotaBar(progress: Double(total) / Double(maxTotal), tint: Theme.claude)
         }
     }
 }

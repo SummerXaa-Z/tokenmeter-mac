@@ -24,11 +24,9 @@ struct CodexView: View {
                     modelCard(r)
                     projectCard(r)
                 } else if state.codex.loading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
+                    SourceStateView(loading: true, message: "正在读取…")
                 } else {
-                    Text("未找到 Codex 本地数据（~/.codex/sessions）")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                        .padding(.top, 60)
+                    SourceStateView(message: "未找到 Codex 本地数据（~/.codex/sessions）")
                 }
                 Spacer(minLength: 0)
             }
@@ -45,6 +43,7 @@ struct CodexView: View {
             title: "Codex Monitor",
             color: Theme.codex,
             process: state.codex.proc,
+            refreshing: state.codex.loading,
             onBack: onBack,
             onRefresh: { Task { await state.loadCodex(force: true) } },
             onSettings: onSettings
@@ -64,7 +63,7 @@ struct CodexView: View {
                     Spacer()
                     if let plan = limits?.planType {
                         Text(plan.uppercased())
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Theme.codex.opacity(0.15), in: Capsule())
                             .foregroundStyle(Theme.codex)
@@ -98,11 +97,10 @@ struct CodexView: View {
                 Text("剩余 \(Int(remaining))%")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundStyle(Self.remainingColor(remaining))
-                Text("· \(Self.resetText(w.resetsAt)) 重置")
+                Text("· \(Fmt.countdown(to: w.resetsAt))重置")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
-            ProgressView(value: min(remaining, 100), total: 100)
-                .tint(Self.remainingColor(remaining))
+            QuotaBar(progress: remaining / 100, tint: Self.remainingColor(remaining))
         }
     }
 
@@ -115,17 +113,17 @@ struct CodexView: View {
                 let t = r.today
                 HStack(spacing: 0) {
                     SourceMetric(title: "Token", value: Fmt.tokensShort(t?.totalTokens ?? 0))
-                    SourceMetric(title: "会话", value: "\(t?.sessionCount ?? 0)")
+                    SourceMetric(title: "会话", value: Fmt.int(t?.sessionCount ?? 0))
                     SourceMetric(
                         title: "缓存命中",
-                        value: t?.cacheHitRate.map { String(format: "%.0f%%", $0) } ?? "—"
+                        value: t?.cacheHitRate.map { Fmt.percent($0) } ?? "—"
                     )
                     SourceMetric(title: "输出", value: Fmt.tokensShort(t?.outputTokens ?? 0))
                 }
                 Divider()
                 HStack {
-                    Text("近 7 天合计 \(Fmt.tokensShort(r.weekTotal)) tokens · \(r.weekSessions) 个会话")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text("近 7 天合计 \(Fmt.tokensShort(r.weekTotal)) tokens · \(Fmt.int(r.weekSessions)) 个会话")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                     Spacer()
                 }
             }
@@ -136,7 +134,7 @@ struct CodexView: View {
     private func weekChartCard(_ r: CodexUsageResult) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("最近 7 天 Token", systemImage: "chart.bar")
+                Label("最近 7 天 Token", systemImage: "chart.bar.fill")
                     .font(.system(size: 12, weight: .semibold))
                 Chart(r.days) { day in
                     BarMark(
@@ -153,7 +151,7 @@ struct CodexView: View {
                     .foregroundStyle(by: .value("类型", "输出"))
                 }
                 .chartForegroundStyleScale([
-                    "缓存输入": Theme.hit, "新输入": Theme.miss, "输出": Theme.response,
+                    "缓存输入": Theme.hit, "新输入": Theme.input, "输出": Theme.response,
                 ])
                 .chartLegend(position: .bottom, spacing: 4)
                 .tokenYAxis()
@@ -168,21 +166,10 @@ struct CodexView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("今日分时（Token）", systemImage: "clock")
                     .font(.system(size: 12, weight: .semibold))
-                Chart(r.todayHours) { h in
-                    BarMark(
-                        x: .value("时", String(format: "%02d", h.hour)),
-                        y: .value("Token", h.totalTokens))
-                    .foregroundStyle(Theme.codex.opacity(h.totalTokens > 0 ? 0.9 : 0.2))
-                }
-                .chartXAxis {
-                    AxisMarks(values: ["00", "06", "12", "18", "23"]) { v in
-                        AxisValueLabel {
-                            if let h = v.as(String.self) { Text("\(Int(h) ?? 0)时") }
-                        }
-                    }
-                }
-                .tokenYAxis()
-                .frame(height: 70)
+                SourceHourChart(
+                    bars: r.todayHours.map { .init(hour: $0.hour, tokens: $0.totalTokens) },
+                    color: Theme.codex
+                )
             }
         }
     }
@@ -232,10 +219,9 @@ struct CodexView: View {
                     .lineLimit(1).truncationMode(.middle)
                 Spacer()
                 Text("\(Fmt.tokensShort(total))\(suffix)")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
-            ProgressView(value: Double(total), total: Double(maxTotal))
-                .tint(Theme.codex)
+            QuotaBar(progress: Double(total) / Double(maxTotal), tint: Theme.codex)
         }
     }
 
@@ -255,15 +241,6 @@ struct CodexView: View {
         if remaining <= 10 { return .red }
         if remaining <= 30 { return .orange }
         return Theme.codex
-    }
-
-    private static func resetText(_ date: Date) -> String {
-        let interval = date.timeIntervalSinceNow
-        if interval <= 0 { return "已" }
-        let hours = Int(interval) / 3600
-        if hours >= 24 { return "\(hours / 24) 天后" }
-        if hours >= 1 { return "\(hours) 小时后" }
-        return "\(max(Int(interval) / 60, 1)) 分钟后"
     }
 
     private static func relative(_ date: Date) -> String {

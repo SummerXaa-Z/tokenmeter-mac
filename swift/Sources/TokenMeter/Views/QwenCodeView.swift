@@ -18,12 +18,9 @@ struct QwenCodeView: View {
                     modelsCard(result)
                     privacyCard
                 } else if state.qwen.loading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
+                    SourceStateView(loading: true, message: "正在读取…")
                 } else {
-                    Text(state.qwen.error ?? "未找到 Qwen Code 本地聚合用量")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 60).padding(.horizontal, 20)
+                    SourceStateView(message: state.qwen.error ?? "未找到 Qwen Code 本地数据")
                 }
                 Spacer(minLength: 0)
             }
@@ -39,6 +36,7 @@ struct QwenCodeView: View {
             title: "Qwen Code Monitor",
             color: Theme.qwen,
             process: state.qwen.proc,
+            refreshing: state.qwen.loading,
             onBack: onBack,
             onRefresh: { Task { await state.loadQwen(force: true) } },
             onSettings: onSettings
@@ -53,11 +51,11 @@ struct QwenCodeView: View {
                     .font(.system(size: 12, weight: .semibold))
                 HStack(spacing: 0) {
                     SourceMetric(title: "Token", value: Fmt.tokensShort(today?.totalTokens ?? 0))
-                    SourceMetric(title: "请求", value: "\(today?.messageCount ?? 0)")
-                    SourceMetric(title: "会话", value: "\(today?.sessionCount ?? 0)")
+                    SourceMetric(title: "请求", value: Fmt.int(today?.messageCount ?? 0))
+                    SourceMetric(title: "会话", value: Fmt.int(today?.sessionCount ?? 0))
                     SourceMetric(
                         title: "缓存命中",
-                        value: today?.cacheHitRate.map { String(format: "%.0f%%", $0) } ?? "—"
+                        value: today?.cacheHitRate.map { Fmt.percent($0) } ?? "—"
                     )
                 }
                 Divider()
@@ -73,8 +71,8 @@ struct QwenCodeView: View {
 
     private func tokenPart(_ title: String, _ value: Int, _ color: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.system(size: 9)).foregroundStyle(color)
-            Text(Fmt.tokensShort(value)).font(.system(size: 10, weight: .semibold))
+            Text(title).font(.system(size: 11)).foregroundStyle(color)
+            Text(Fmt.tokensShort(value)).font(.system(size: 11, weight: .semibold))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -82,27 +80,14 @@ struct QwenCodeView: View {
     private func hourlyCard(_ result: QwenCodeUsageResult) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("今日小时趋势", systemImage: "clock")
+                Label("今日分时（Token）", systemImage: "clock")
                     .font(.system(size: 12, weight: .semibold))
-                Chart(result.todayHours) { row in
-                    BarMark(
-                        x: .value("小时", row.hour),
-                        y: .value("Token", row.totalTokens)
-                    )
-                    .foregroundStyle(Theme.qwen)
-                }
-                .chartXScale(domain: 0...23)
-                .chartXAxis {
-                    AxisMarks(values: [0, 4, 8, 12, 16, 20, 23]) { value in
-                        AxisValueLabel {
-                            if let hour = value.as(Int.self) { Text(String(format: "%02d", hour)) }
-                        }
-                    }
-                }
-                .tokenYAxis()
-                .frame(height: 125)
+                SourceHourChart(
+                    bars: result.todayHours.map { .init(hour: $0.hour, tokens: $0.totalTokens) },
+                    color: Theme.qwen
+                )
                 Text("Qwen 在 Session 结束时写入聚合记录，因此小时归属按 Session 结束时间。")
-                    .font(.system(size: 9)).foregroundStyle(.tertiary)
+                    .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
         }
     }
@@ -110,7 +95,7 @@ struct QwenCodeView: View {
     private func weekCard(_ result: QwenCodeUsageResult) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("最近 7 天 Token", systemImage: "chart.bar")
+                Label("最近 7 天 Token", systemImage: "chart.bar.fill")
                     .font(.system(size: 12, weight: .semibold))
                 Chart(result.days) { day in
                     BarMark(x: .value("日期", Fmt.mmdd(day.date)), y: .value("缓存读取", day.cachedInputTokens))
@@ -124,9 +109,9 @@ struct QwenCodeView: View {
                 }
                 .chartForegroundStyleScale([
                     "缓存读取": Theme.hit,
-                    "新输入": Theme.miss,
+                    "新输入": Theme.input,
                     "输出": Theme.response,
-                    "推理": Theme.qwen,
+                    "推理": Theme.miss,
                 ])
                 .chartLegend(position: .bottom, spacing: 4)
                 .tokenYAxis()
@@ -148,14 +133,13 @@ struct QwenCodeView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(model.model)
-                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                                     .lineLimit(1).truncationMode(.middle)
                                 Spacer()
-                                Text("\(Fmt.tokensShort(model.totalTokens)) · \(model.messageCount) 请求")
-                                    .font(.system(size: 9)).foregroundStyle(.secondary)
+                                Text("\(Fmt.tokensShort(model.totalTokens)) · \(Fmt.int(model.messageCount)) 请求")
+                                    .font(.system(size: 11)).foregroundStyle(.secondary)
                             }
-                            ProgressView(value: Double(model.totalTokens), total: Double(maximum))
-                                .tint(Theme.qwen)
+                            QuotaBar(progress: Double(model.totalTokens) / Double(maximum), tint: Theme.qwen)
                         }
                     }
                 }

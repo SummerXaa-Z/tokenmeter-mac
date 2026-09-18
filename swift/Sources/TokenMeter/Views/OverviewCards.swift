@@ -46,27 +46,33 @@ struct OverviewUsageCard: View {
             VStack(alignment: .leading, spacing: 0) {
                 Label("\(range.scopeTitle) AI Coding 用量", systemImage: "calendar")
                     .font(.system(size: 12, weight: .semibold))
-                Text("\(Fmt.tokensShort(snapshot.periodTotal)) tokens")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(Theme.brand)
-                    .padding(.top, 5)
+                // 数字当主角、单位退后：整行同字号会让 "tokens" 与数值抢重点
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(Fmt.tokensShort(snapshot.periodTotal))
+                        .font(Theme.heroFont)
+                        .foregroundStyle(Theme.brand)
+                    Text("tokens")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Theme.brand.opacity(0.55))
+                }
+                .padding(.top, 5)
                 if let coverage = range.localCoverageText(
                     historyStartDate: snapshot.historyStartDate,
                     availableDays: snapshot.availableHistoryDays
                 ) {
                     Text(coverage)
-                        .font(.system(size: 9))
+                        .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                         .padding(.top, 2)
                 }
                 if snapshot.selection.sources.isEmpty {
                     Text("尚未启用用量来源")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)
                 } else if entries.isEmpty {
                     Text("所选时间范围暂无 Agent 用量")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)
                 }
@@ -92,22 +98,23 @@ struct OverviewUsageCard: View {
                                     }
                                 }
                                 Text(entry.detail)
-                                    .font(.system(size: 9))
+                                    .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
                             Spacer(minLength: 4)
                             if let tokens = entry.tokens {
                                 Text(Fmt.tokensShort(tokens))
-                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
                                     .foregroundStyle(entry.provider.overviewColor)
                             }
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(.system(size: 10, weight: .semibold))
                                 .foregroundStyle(.tertiary)
                         }
                         .padding(.vertical, 7)
                         .contentShape(Rectangle())
+                        .hoverHighlight()
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("TokenMeter.Source.\(entry.provider.rawValue)")
@@ -137,14 +144,15 @@ struct OverviewDeepSeekPlatformCard: View {
                     HStack(spacing: 7) {
                         Label("DeepSeek 平台账户", systemImage: "creditcard")
                             .font(.system(size: 12, weight: .semibold))
+                        // 说明性徽章用中性灰，不与品牌蓝交互/数据元素争抢注意力
                         Text("不计入 Coding 合计")
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(Theme.brand)
+                            .font(Theme.badgeFont)
+                            .foregroundStyle(.secondary)
                             .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Theme.brand.opacity(0.1), in: Capsule())
+                            .background(.quaternary, in: Capsule())
                         Spacer(minLength: 4)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(.tertiary)
                     }
 
@@ -155,7 +163,7 @@ struct OverviewDeepSeekPlatformCard: View {
                     }
 
                     Text(statusText)
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                         .foregroundStyle(statusColor)
                         .fixedSize(horizontal: false, vertical: true)
                     if let coverage = range.localCoverageText(
@@ -163,11 +171,12 @@ struct OverviewDeepSeekPlatformCard: View {
                         availableDays: availableHistoryDays
                     ) {
                         Text(coverage)
-                            .font(.system(size: 9))
+                            .font(.system(size: 10))
                             .foregroundStyle(.tertiary)
                     }
                 }
                 .contentShape(Rectangle())
+                .hoverHighlight()
             }
             .buttonStyle(.plain)
         }
@@ -213,7 +222,7 @@ struct OverviewDeepSeekPlatformCard: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
             Text(label)
-                .font(.system(size: 8))
+                .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
@@ -245,7 +254,7 @@ struct OverviewSubscriptionQuotaCard: View {
                         }
                         if let warning = status.warning {
                             Label("\(warning)（显示上次成功数据）", systemImage: "exclamationmark.triangle")
-                                .font(.system(size: 8))
+                                .font(.system(size: 11))
                                 .foregroundStyle(.orange)
                                 .padding(.leading, 26)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -255,7 +264,7 @@ struct OverviewSubscriptionQuotaCard: View {
 
                 Divider().opacity(0.35)
                 Text("额度只读：Codex 查询官方配额；Kimi 使用用户主动配置的 Key 查询官方接口，未配置时仅访问本机 127.0.0.1；方舟只调用本机已登录 arkcli；智谱使用用户配置的 Key 查询所选域名的官方监控接口。TokenMeter 不会上报本地会话或统计结果。")
-                    .font(.system(size: 9))
+                    .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
         }
@@ -273,7 +282,7 @@ struct OverviewSubscriptionQuotaCard: View {
                 Text(status.title)
                     .font(.system(size: 11, weight: .semibold))
                 Text(status.loading ? "正在读取剩余额度…" : status.message)
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -297,7 +306,7 @@ struct OverviewSubscriptionQuotaCard: View {
                     .font(.system(size: 11, weight: .semibold))
                 if let subtitle = group.subtitle {
                     Text(subtitle)
-                        .font(.system(size: 8, weight: .medium))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(color(for: group.source))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
@@ -308,7 +317,7 @@ struct OverviewSubscriptionQuotaCard: View {
 
             if group.periods.isEmpty {
                 Text("已检测到订阅，但当前没有可展示的额度窗口。")
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .padding(.leading, 26)
             } else {
@@ -319,13 +328,13 @@ struct OverviewSubscriptionQuotaCard: View {
 
             if let extra = group.extraUsage {
                 Text(extraUsageText(extra))
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .padding(.leading, 26)
             }
             if group.source == .kimiCode {
                 Text("Kimi Code 的 5 小时/周额度不代表会员月总额度；月额度需在 Kimi 订阅页查看。")
-                    .font(.system(size: 9))
+                    .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 26)
             }
@@ -340,26 +349,24 @@ struct OverviewSubscriptionQuotaCard: View {
     ) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text(period.label)
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 42, alignment: .leading)
             VStack(alignment: .leading, spacing: 3) {
                 if let remaining = period.remainingPercent {
-                    ProgressView(value: remaining, total: 100)
-                        .progressViewStyle(.linear)
-                        .tint(quotaColor(remaining, fallback: color(for: source)))
+                    QuotaBar(progress: remaining / 100, tint: quotaColor(remaining, fallback: color(for: source)))
                 }
                 let details = [period.detail, period.resetAt.map(resetText)].compactMap { $0 }
                 if !details.isEmpty {
                     Text(details.joined(separator: " · "))
-                        .font(.system(size: 8))
+                        .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                         .lineLimit(2)
                 }
             }
             .frame(maxWidth: .infinity)
             Text(period.remainingPercent.map { "\(Int($0.rounded()))%" } ?? "—")
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(period.remainingPercent.map {
                     quotaColor($0, fallback: color(for: source))
                 } ?? Color.secondary)
@@ -393,11 +400,15 @@ struct OverviewSubscriptionQuotaCard: View {
     }
 
     private func resetText(_ date: Date) -> String {
+        Self.resetFormatter.string(from: date)
+    }
+
+    private static let resetFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "M/d HH:mm 重置"
-        return formatter.string(from: date)
-    }
+        return formatter
+    }()
 
     private func extraUsageText(_ extra: SubscriptionQuotaExtraUsage) -> String {
         var parts = [
@@ -480,17 +491,19 @@ struct OverviewProfileCard: View {
                         profile.primaryShare.map { "主力 \(Int(($0 * 100).rounded()))%" }
                             ?? "主力工具"
                     )
-                    stat("\(profile.weeklySessions)", "7日会话")
+                    stat("\(Fmt.int(profile.weeklySessions))", "7日会话")
                 }
 
                 if !profile.badges.isEmpty {
                     HStack(spacing: 5) {
                         ForEach(profile.badges, id: \.self) { badge in
+                            // 画像标签是说明性徽章，与“不计入 Coding 合计”同款中性灰，
+                            // 不占用品牌蓝的注意力预算
                             Text(badge)
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundStyle(Theme.brand)
+                                .font(Theme.badgeFont.weight(.medium))
+                                .foregroundStyle(.secondary)
                                 .padding(.horizontal, 7).padding(.vertical, 3)
-                                .background(Theme.brand.opacity(0.1), in: Capsule())
+                                .background(.quaternary, in: Capsule())
                         }
                     }
                 }
@@ -499,20 +512,18 @@ struct OverviewProfileCard: View {
                 if let rate = profile.cacheHitRate {
                     HStack {
                         Text("近 7 天输入缓存复用")
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
                         Spacer()
                         Text("\(Int((rate * 100).rounded()))%")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Theme.hit)
                     }
-                    ProgressView(value: rate)
-                        .progressViewStyle(.linear)
-                        .tint(Theme.hit)
+                    QuotaBar(progress: rate, tint: Theme.hit)
                     Text("缓存读取 \(Fmt.tokensShort(profile.cachedInputTokens)) · 非缓存输入 \(Fmt.tokensShort(profile.nonCachedInputTokens)) · 当前统计 Claude / Codex / Kimi Code / OpenCode / Gemini / Copilot")
-                        .font(.system(size: 9)).foregroundStyle(.tertiary)
+                        .font(.system(size: 10)).foregroundStyle(.tertiary)
                 } else {
                     Text("刷新本地来源后生成近 7 天缓存画像；数据只保存在本机。")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
         }
@@ -529,7 +540,7 @@ struct OverviewProfileCard: View {
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
-            Text(label).font(.system(size: 9)).foregroundStyle(.secondary)
+            Text(label).font(.system(size: 11)).foregroundStyle(.secondary)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
@@ -564,7 +575,7 @@ struct OverviewRankingsCard: View {
                 }
 
                 Text("模型榜保留采集来源；Cursor 当前只有订阅周期聚合，暂不混入 7 天模型榜。")
-                    .font(.system(size: 9)).foregroundStyle(.tertiary)
+                    .font(.system(size: 10)).foregroundStyle(.tertiary)
 
                 Divider()
                 header("Skills 榜", detail: "近 7 天 · 只认明确调用证据")
@@ -578,7 +589,7 @@ struct OverviewRankingsCard: View {
                 }
 
                 Text("Claude 统计原生 Skill 工具；Codex 统计工具实际读取标准 SKILL.md；Copilot 统计 skill.invoked。普通消息提及不计入。")
-                    .font(.system(size: 9)).foregroundStyle(.tertiary)
+                    .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
         }
     }
@@ -587,13 +598,13 @@ struct OverviewRankingsCard: View {
         HStack {
             Text(title).font(.system(size: 11, weight: .semibold))
             Spacer()
-            Text(detail).font(.system(size: 9)).foregroundStyle(.secondary)
+            Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
         }
     }
 
     private func empty(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 10)).foregroundStyle(.secondary)
+            .font(.system(size: 11)).foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 3)
     }
@@ -609,11 +620,11 @@ struct OverviewRankingsCard: View {
         HStack(spacing: 7) {
             rankLabel(rank)
             Circle().fill(source.overviewColor).frame(width: 6, height: 6)
-            Text(name).font(.system(size: 10, weight: .medium)).lineLimit(1)
+            Text(name).font(.system(size: 11, weight: .medium)).lineLimit(1)
             if showsSource { sourceBadge(source) }
             Spacer(minLength: 4)
             Text("\(Fmt.tokensShort(tokens)) · \(Int((share * 100).rounded()))%")
-                .font(.system(size: 9, weight: .medium, design: .rounded))
+                .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
         }
     }
@@ -622,33 +633,33 @@ struct OverviewRankingsCard: View {
         HStack(spacing: 7) {
             rankLabel(rank)
             Image(systemName: "sparkles")
-                .font(.system(size: 8, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.brand)
-            Text(entry.name).font(.system(size: 10, weight: .medium)).lineLimit(1)
+            Text(entry.name).font(.system(size: 11, weight: .medium)).lineLimit(1)
             ForEach(Array(entry.sources.prefix(2))) { sourceCount in
                 sourceBadge(sourceCount.source)
             }
             if entry.sources.count > 2 {
                 Text("+\(entry.sources.count - 2)")
-                    .font(.system(size: 8)).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
-            Text("\(entry.invocationCount)次 · \(Int((entry.share * 100).rounded()))%")
-                .font(.system(size: 9, weight: .medium, design: .rounded))
+            Text("\(Fmt.int(entry.invocationCount))次 · \(Int((entry.share * 100).rounded()))%")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
         }
     }
 
     private func rankLabel(_ rank: Int) -> some View {
         Text("\(rank)")
-            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .font(.system(size: 11, weight: .bold, design: .rounded))
             .foregroundStyle(rank <= 3 ? Theme.brand : .secondary)
             .frame(width: 14)
     }
 
     private func sourceBadge(_ source: HistorySource) -> some View {
         Text(source.overviewName)
-            .font(.system(size: 8, weight: .medium))
+            .font(.system(size: 10, weight: .medium))
             .foregroundStyle(source.overviewColor)
             .padding(.horizontal, 5).padding(.vertical, 2)
             .background(source.overviewColor.opacity(0.1), in: Capsule())
@@ -666,30 +677,28 @@ struct OverviewAPICostCard: View {
                     Label("近 7 天 API 等价参考", systemImage: "dollarsign.circle")
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
-                    Text(summary.amounts.isEmpty ? "暂无参考价" : String(format: "$%.2f", summary.total))
+                    Text(summary.amounts.isEmpty ? "暂无参考价" : Fmt.usd(summary.total))
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundStyle(Theme.brand)
                 }
                 HStack {
-                    Text("价格覆盖").font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text("价格覆盖").font(.system(size: 11)).foregroundStyle(.secondary)
                     Spacer()
                     Text("\(Int((coverage * 100).rounded()))% · \(Fmt.tokensShort(summary.matchedTokens)) tokens")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                 }
-                ProgressView(value: coverage)
-                    .progressViewStyle(.linear)
-                    .tint(coverage >= 0.95 ? Theme.hit : .orange)
+                QuotaBar(progress: coverage, tint: coverage >= 0.95 ? Theme.hit : .orange)
                 if !summary.unpricedModels.isEmpty {
                     Text("另有 \(summary.unpricedModels.count) 个模型缺少参考价，未计入金额。")
-                        .font(.system(size: 9)).foregroundStyle(.orange)
+                        .font(.system(size: 11)).foregroundStyle(.orange)
                 }
                 if let conversionNote {
                     Text(conversionNote)
-                        .font(.system(size: 9)).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Text(pricingPolicyText)
-                    .font(.system(size: 9)).foregroundStyle(.tertiary)
+                    .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
         }
     }
@@ -721,6 +730,15 @@ struct OverviewTrendCard: View {
     let snapshot: OverviewSnapshot
     let range: UsageHistoryRange
 
+    // 两个粒度分支共用的来源配色，避免两份字典各自漂移
+    private static let sourceScale: KeyValuePairs<String, Color> = [
+        "Claude": Theme.claude,
+        "Codex": Theme.codex, "Kimi Code": Theme.kimi,
+        "OpenCode": Theme.opencode,
+        "Gemini": Theme.gemini, "Copilot": Theme.copilot,
+        "Cursor": Theme.cursor,
+    ]
+
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
@@ -732,7 +750,7 @@ struct OverviewTrendCard: View {
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
                     Text(trendSummary)
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 if snapshot.trend.isEmpty {
                     Text(emptyText)
@@ -749,17 +767,11 @@ struct OverviewTrendCard: View {
                             .cornerRadius(1)
                         }
                     }
-                    .chartForegroundStyleScale([
-                        "Claude": Theme.claude,
-                        "Codex": Theme.codex, "Kimi Code": Theme.kimi,
-                        "OpenCode": Theme.opencode,
-                        "Gemini": Theme.gemini, "Copilot": Theme.copilot,
-                        "Cursor": Theme.cursor,
-                    ])
+                    .chartForegroundStyleScale(Self.sourceScale)
                     .chartLegend(position: .bottom, spacing: 4)
                     .chartXScale(domain: 0...23)
                     .chartXAxis {
-                        AxisMarks(values: [0, 4, 8, 12, 16, 20, 23]) { value in
+                        AxisMarks(values: [0, 6, 12, 18, 23]) { value in
                             AxisGridLine(); AxisTick()
                             AxisValueLabel {
                                 if let hour = value.as(Int.self) { Text("\(hour)时") }
@@ -777,13 +789,7 @@ struct OverviewTrendCard: View {
                         .foregroundStyle(by: .value("源", point.source.overviewChartName))
                         .cornerRadius(1)
                     }
-                    .chartForegroundStyleScale([
-                        "Claude": Theme.claude,
-                        "Codex": Theme.codex, "Kimi Code": Theme.kimi,
-                        "OpenCode": Theme.opencode,
-                        "Gemini": Theme.gemini, "Copilot": Theme.copilot,
-                        "Cursor": Theme.cursor,
-                    ])
+                    .chartForegroundStyleScale(Self.sourceScale)
                     .chartLegend(position: .bottom, spacing: 4)
                     .chartXAxis {
                         AxisMarks(values: .automatic(desiredCount: 6)) { _ in
@@ -796,7 +802,7 @@ struct OverviewTrendCard: View {
                 if snapshot.trendGranularity == .hour,
                    !snapshot.hourlyUnattributedSources.isEmpty {
                     Text("\(snapshot.hourlyUnattributedSources.map(\.overviewName).joined(separator: "、")) 仅有今日汇总或小时明细未完整加载，未在小时图中平均摊分。")
-                        .font(.system(size: 9)).foregroundStyle(.tertiary)
+                        .font(.system(size: 10)).foregroundStyle(.tertiary)
                 }
             }
         }

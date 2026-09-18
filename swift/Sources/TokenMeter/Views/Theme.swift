@@ -7,6 +7,7 @@ enum Theme {
     static let pro = Color(hex: 0xDA38F0)          // V4 Pro
     static let hit = Color(hex: 0x4091FF)          // 缓存命中
     static let miss = Color(hex: 0xFF9C2B)         // 缓存未命中
+    static let input = Color(hex: 0x34C759)        // 新输入（未命中缓存的输入）
     static let response = Color(hex: 0x8B5CF6)     // 输出
     static let codex = Color(hex: 0x10A37F)        // OpenAI 绿
     static let claude = Color(hex: 0xD97757)       // Anthropic 橙
@@ -21,6 +22,20 @@ enum Theme {
     static let panelWidth: CGFloat = 420
     static let panelHeight: CGFloat = 600
     static let corner: CGFloat = 12
+
+    // 字号刻度（420pt 弹窗内的完整层级，新代码一律取这些档位，不再引入新的魔法数字）：
+    //   26 hero 数字 · 15 页标题 · 13 设置段标题 · 12 卡片/连接标题 ·
+    //   11 行标题(semibold)与正文细节(regular) · 10 脚注、徽章与 tertiary 说明。
+    // 副标题/状态行/小数值走 11；只有胶囊徽章和 tertiary 灰字才允许 10，
+    // 更小会在暗色卡底上糊掉。
+    static let heroFont = Font.system(size: 26, weight: .bold, design: .rounded)
+    static let pageTitleFont = Font.system(size: 15, weight: .bold)
+    static let sectionTitleFont = Font.system(size: 13, weight: .bold)
+    static let cardTitleFont = Font.system(size: 12, weight: .semibold)
+    static let rowTitleFont = Font.system(size: 11, weight: .semibold)
+    static let detailFont = Font.system(size: 11)
+    static let footnoteFont = Font.system(size: 10)
+    static let badgeFont = Font.system(size: 10, weight: .semibold)
 }
 
 extension Color {
@@ -35,7 +50,8 @@ extension Color {
 import Charts
 
 // 所有 token 数量图表共用的 Y 轴：tokensShort 格式（30M / 1.2B），
-// 替代 Swift Charts 默认的 3.0E7 科学计数法
+// 替代 Swift Charts 默认的刻度文案。Charts 给出的刻度值是 Double，
+// 必须走 Double 分支，否则自定义标签落空、回退到系统默认格式。
 extension View {
     func tokenYAxis() -> some View {
         chartYAxis {
@@ -43,13 +59,15 @@ extension View {
                 AxisGridLine()
                 AxisValueLabel {
                     if let n = v.as(Int.self) { Text(Fmt.tokensShort(n)) }
+                    else if let d = v.as(Double.self) { Text(Fmt.tokensShort(Int(d))) }
                 }
             }
         }
     }
 }
 
-// 卡片容器：原生材质背景 + 圆角，替代 Tauri 版的玻璃拟态自绘
+// 卡片容器：原生材质背景 + 圆角，替代 Tauri 版的玻璃拟态自绘。
+// 描边用 primary 而非 .white，亮色模式下才有可见的发丝线。
 struct Card<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
@@ -59,6 +77,44 @@ struct Card<Content: View>: View {
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: Theme.corner))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.corner)
-                    .strokeBorder(.white.opacity(0.06), lineWidth: 1))
+                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1))
     }
+}
+
+// 全 app 统一的细进度条（4pt 胶囊）：用量占比、配额剩余、覆盖率都用它，
+// 不再各页混用 GeometryReader 手绘与内联 ProgressView。
+struct QuotaBar: View {
+    let progress: Double   // 任意比例值，内部收敛到 0...1
+    var tint: Color = Theme.brand
+
+    var body: some View {
+        let fraction = min(max(progress, 0), 1)
+        return GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.quaternary)
+                if fraction > 0 {
+                    Capsule().fill(tint)
+                        .frame(width: max(4, fraction * geo.size.width))
+                }
+            }
+        }
+        .frame(height: 4)
+    }
+}
+
+// 菜单栏面板是纯鼠标场景：可点的行/卡需要悬停反馈，否则"能点"无从感知。
+private struct HoverHighlight: ViewModifier {
+    @State private var hovering = false
+    func body(content: Content) -> some View {
+        content
+            .background(
+                Color.primary.opacity(hovering ? 0.05 : 0),
+                in: RoundedRectangle(cornerRadius: 8)
+            )
+            .onHover { hovering = $0 }
+    }
+}
+
+extension View {
+    func hoverHighlight() -> some View { modifier(HoverHighlight()) }
 }

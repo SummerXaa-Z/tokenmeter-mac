@@ -23,6 +23,13 @@ struct SettingsView: View {
     @State private var notificationsOn = true
     @State private var balanceAlert = 0
     @State private var diagnosticStatus = ""
+    // 连接行的展开态：未配置的默认展开引导输入，已配置的收起成一行；
+    // 验证保存成功后自动收起，清除后保持展开方便重输。
+    @State private var expandBalanceKey = false
+    @State private var expandUsageToken = false
+    @State private var expandKimiKey = false
+    @State private var expandZhipuKey = false
+    @State private var expansionInitialized = false
 
     @StateObject private var sync = LoginSyncController()
     @ObservedObject private var updater = Updater.shared
@@ -39,36 +46,19 @@ struct SettingsView: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    sectionTitle(
-                        "数据来源",
-                        hint: "控制 Coding 用量采集；订阅额度连接在下方单独管理"
-                    )
+                    sectionTitle("数据来源")
                     sourcesSection
 
-                    sectionTitle(
-                        "平台账户与额度",
-                        hint: "DeepSeek、Kimi 与智谱需要连接；Codex、方舟读取本机已有登录态"
-                    )
-                    deepSeekAccountSection
-                    kimiQuotaKeySection
-                    zhipuQuotaKeySection
+                    sectionTitle("平台账户与额度")
+                    accountsSection
 
-                    sectionTitle(
-                        "菜单栏与提醒",
-                        hint: "选择常驻信息，并设置只在越线时触发一次的提醒"
-                    )
+                    sectionTitle("菜单栏与提醒")
                     displayAndAlertsSection
 
-                    sectionTitle(
-                        "刷新与启动",
-                        hint: "管理后台采集频率与 macOS 登录启动"
-                    )
+                    sectionTitle("刷新与启动")
                     runtimeSection
 
-                    sectionTitle(
-                        "工具与维护",
-                        hint: "软件更新与脱敏诊断"
-                    )
+                    sectionTitle("工具与维护")
                     maintenanceSection
                     footer
                 }
@@ -77,6 +67,13 @@ struct SettingsView: View {
             .scrollIndicators(.hidden)
         }
         .onAppear {
+            if !expansionInitialized {
+                expandBalanceKey = !store.apiKeyConfigured
+                expandUsageToken = !store.usageTokenConfigured
+                expandKimiKey = !store.kimiCodeKeyConfigured
+                expandZhipuKey = !store.zhipuKeyConfigured
+                expansionInitialized = true
+            }
             reloadStatus()
         }
         .onReceive(sync.$captured.compactMap { $0 }) { _ in
@@ -96,23 +93,13 @@ struct SettingsView: View {
         }
     }
 
-    private func sectionTitle(_ title: String, hint: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.system(size: 13, weight: .bold))
-            Text(hint).font(.system(size: 10)).foregroundStyle(.tertiary)
-        }
-        .padding(.top, 2)
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title).font(.system(size: 13, weight: .bold))
     }
 
     private var header: some View {
         HStack(spacing: 10) {
-            Button(action: onBack) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("返回")
+            SourceDashboardIconButton(name: "chevron.left", help: "返回上一页", action: onBack)
             Text("设置").font(.system(size: 15, weight: .bold))
             Spacer()
         }
@@ -175,16 +162,18 @@ struct SettingsView: View {
                         Text(providerDisplayName(provider))
                             .font(.system(size: 12, weight: .semibold))
                         Text(provider == .cursor ? "账户" : "本地")
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(.quaternary, in: Capsule())
                     }
                     Text(providerSubtitle(provider))
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
+                // 撑满剩余宽度，让所有开关统一靠右成一列
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .toggleStyle(.switch)
@@ -270,9 +259,11 @@ struct SettingsView: View {
 
     // MARK: - 平台账户与额度
 
-    private var deepSeekAccountSection: some View {
+    // 四个连接共用一张卡、同一套行结构：标题行（图标 + 名称 + 连接状态徽章 +
+    // 展开箭头）点击展开输入区。已配置的默认收起，避免整页空输入框。
+    private var accountsSection: some View {
         Card {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 0) {
                 Toggle(isOn: Binding(
                     get: { state.deepseekEnabled },
                     set: { state.setDeepseekEnabled($0) }
@@ -290,183 +281,168 @@ struct SettingsView: View {
                             Text("DeepSeek 开放平台")
                                 .font(.system(size: 12, weight: .semibold))
                             Text("余额与 API 消费 · 不计入 Coding 合计")
-                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
                         }
+                        // 与数据来源行一致：文字撑满，开关统一靠右
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 .toggleStyle(.switch)
                 .accessibilityLabel("DeepSeek 开放平台")
                 .accessibilityHint("余额与 API 消费，不计入 Coding 合计")
+                .padding(.vertical, 7)
 
-                Divider()
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack {
-                        Label("余额连接", systemImage: "key")
-                            .font(.system(size: 11, weight: .semibold))
-                        Spacer()
-                        credentialStatusBadge(apiStatus, configured: store.apiKeyConfigured)
-                    }
-                    Text("API Key 仅存本机 Keychain，用于查询平台余额。")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
-                    SecureField("sk-...", text: $apiKeyInput)
-                        .textFieldStyle(.roundedBorder)
-                    HStack {
-                        Button("验证并保存") { saveApiKey() }
-                            .disabled(busy || apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        Button("清除") { clearApiKey() }
-                            .disabled(busy || !store.apiKeyConfigured)
-                        Spacer()
-                    }
-                    if !apiStatus.isEmpty {
-                        Text(apiStatus)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(3)
-                    }
+                Divider().padding(.leading, 36)
+                connectionBalance
+                Divider().padding(.leading, 36)
+                connectionUsage
+                Divider().padding(.leading, 36)
+                connectionKimi
+                Divider().padding(.leading, 36)
+                connectionZhipu
+            }
+        }
+    }
+
+    private var connectionBalance: some View {
+        AccountConnectionRow(
+            icon: "key",
+            tint: Theme.brand,
+            title: "余额查询",
+            detail: "API Key 查询平台余额，只存本机 Keychain",
+            configured: store.apiKeyConfigured,
+            statusText: apiStatus,
+            expanded: $expandBalanceKey
+        ) {
+            SecureField("sk-...", text: $apiKeyInput)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Button("验证并保存") { saveApiKey() }
+                    .disabled(busy || apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("清除") { clearApiKey() }
+                    .disabled(busy || !store.apiKeyConfigured)
+                Spacer()
+            }
+        }
+    }
+
+    private var connectionUsage: some View {
+        AccountConnectionRow(
+            icon: "chart.bar.doc.horizontal",
+            tint: Theme.brand,
+            title: "平台消费查询",
+            detail: "需网页登录授权；Token 仍只存本机",
+            configured: store.usageTokenConfigured,
+            statusText: usageStatus,
+            expanded: $expandUsageToken
+        ) {
+            HStack(spacing: 10) {
+                Button(syncing ? "等待登录完成…" : "网页登录授权") { startSync() }
+                    .disabled(syncing)
+                Button(showManualPaste ? "收起手动输入" : "手动输入 Token") {
+                    showManualPaste.toggle()
                 }
-
-                Divider()
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack {
-                        Label("平台消费连接", systemImage: "chart.bar.doc.horizontal")
-                            .font(.system(size: 11, weight: .semibold))
-                        Spacer()
-                        credentialStatusBadge(usageStatus, configured: store.usageTokenConfigured)
-                    }
-                    Text("DeepSeek 未开放用量 API，需网页登录授权；Token 仍只存本机。")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
-                    HStack(spacing: 10) {
-                        Button(syncing ? "等待登录完成…" : "网页登录授权") { startSync() }
-                            .disabled(syncing)
-                        Button(showManualPaste ? "收起手动输入" : "手动输入 Token") {
-                            showManualPaste.toggle()
-                        }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.brand)
-                        .accessibilityIdentifier("TokenMeter.Settings.DeepSeek.ManualToken")
-                    }
-                    if showManualPaste {
-                        Text("浏览器控制台执行 JSON.parse(localStorage.userToken).value 后复制结果")
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
-                        SecureField("粘贴 Token", text: $usageTokenInput)
-                            .textFieldStyle(.roundedBorder)
-                        HStack {
-                            Button("验证并保存") { saveUsageToken() }
-                                .disabled(
-                                    busy || usageTokenInput
-                                        .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                )
-                            Button("清除") { clearUsageToken() }
-                                .disabled(busy || !store.usageTokenConfigured)
-                            Spacer()
-                        }
-                    }
-                    if !usageStatus.isEmpty {
-                        Text(usageStatus)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(3)
-                    }
+                .buttonStyle(.plain)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.brand)
+                .accessibilityIdentifier("TokenMeter.Settings.DeepSeek.ManualToken")
+            }
+            if showManualPaste {
+                Text("浏览器控制台执行 JSON.parse(localStorage.userToken).value 后复制结果")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                SecureField("粘贴 Token", text: $usageTokenInput)
+                    .textFieldStyle(.roundedBorder)
+                HStack {
+                    Button("验证并保存") { saveUsageToken() }
+                        .disabled(
+                            busy || usageTokenInput
+                                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        )
+                    Button("清除") { clearUsageToken() }
+                        .disabled(busy || !store.usageTokenConfigured)
+                    Spacer()
                 }
             }
         }
     }
 
-    private func credentialStatusBadge(_ status: String, configured: Bool) -> some View {
-        Text(configured ? "已连接" : "未连接")
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(configured ? Color.green : Color.secondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                (configured ? Color.green : Color.secondary).opacity(0.12),
-                in: Capsule()
-            )
-            .accessibilityLabel(status.isEmpty ? (configured ? "已连接" : "未连接") : status)
+    private var connectionKimi: some View {
+        AccountConnectionRow(
+            icon: "key.viewfinder",
+            tint: Theme.kimi,
+            title: "Kimi Coding 订阅额度",
+            detail: "官方 5 小时 / 周额度查询；本地用量无需 Key",
+            configured: store.kimiCodeKeyConfigured,
+            statusText: kimiCodeKeyStatus,
+            expanded: $expandKimiKey
+        ) {
+            Text("仅用于官方 5 小时、周额度与 Extra Usage；请求只发往 Kimi 官方，不读取 Kimi.app 或 CC Switch 私有配置。")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            SecureField("粘贴 Kimi For Coding Key", text: $kimiCodeKeyInput)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Button("验证并保存") { saveKimiCodeKey() }
+                    .disabled(
+                        busy || kimiCodeKeyInput
+                            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                Button("清除") { clearKimiCodeKey() }
+                    .disabled(busy || !store.kimiCodeKeyConfigured)
+                Spacer()
+            }
+        }
     }
 
-    private var kimiQuotaKeySection: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("Kimi For Coding Key", systemImage: "key.viewfinder")
-                    .font(.system(size: 12, weight: .semibold))
-                Text("仅用于官方 5 小时、周额度与 Extra Usage；本地 Kimi 用量不需要 Key。请求只发往 Kimi 官方，且不读取 Kimi.app 或 CC Switch 私有配置。")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                SecureField("粘贴 Kimi For Coding Key", text: $kimiCodeKeyInput)
-                    .textFieldStyle(.roundedBorder)
-                HStack {
-                    Button("验证并保存") { saveKimiCodeKey() }
-                        .disabled(
-                            busy || kimiCodeKeyInput
-                                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        )
-                    Button("清除") { clearKimiCodeKey() }
-                        .disabled(busy || !store.kimiCodeKeyConfigured)
-                    Spacer()
-                }
-                if !kimiCodeKeyStatus.isEmpty {
-                    Text(kimiCodeKeyStatus)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                }
+    private var connectionZhipu: some View {
+        AccountConnectionRow(
+            icon: "key.viewfinder",
+            tint: Theme.zhipu,
+            title: "智谱 GLM 订阅额度",
+            detail: "Coding Plan 额度与工具调用次数查询",
+            configured: store.zhipuKeyConfigured,
+            statusText: zhipuKeyStatus,
+            expanded: $expandZhipuKey
+        ) {
+            Text("Key 只存本机 Keychain，只发往所选域名的官方接口。")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Picker(
+                "接口域名",
+                selection: Binding(
+                    get: { store.zhipuQuotaDomain },
+                    set: { domain in
+                        guard domain != store.zhipuQuotaDomain else { return }
+                        store.zhipuQuotaDomain = domain
+                        if store.zhipuKeyConfigured {
+                            state.invalidateZhipuQuota()
+                            Task { await state.loadZhipuQuota(force: true) }
+                        }
+                    }
+                )
+            ) {
+                Text("国内版").tag(ZhipuQuotaDomain.china)
+                Text("国际版").tag(ZhipuQuotaDomain.international)
+            }
+            .pickerStyle(.segmented)
+            SecureField("粘贴智谱 API Key", text: $zhipuKeyInput)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Button("验证并保存") { saveZhipuKey() }
+                    .disabled(
+                        busy || zhipuKeyInput
+                            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                Button("清除") { clearZhipuKey() }
+                    .disabled(busy || !store.zhipuKeyConfigured)
+                Spacer()
             }
         }
     }
 
     // MARK: - 菜单栏与提醒
-
-    private var zhipuQuotaKeySection: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("智谱 GLM Coding Plan API Key", systemImage: "key.viewfinder")
-                    .font(.system(size: 12, weight: .semibold))
-                Text("仅用于查询 GLM Coding Plan 的 5 小时、每周额度与工具调用次数。Key 只存本机 Keychain，只发往所选域名的官方接口。")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Picker(
-                    "接口域名",
-                    selection: Binding(
-                        get: { store.zhipuQuotaDomain },
-                        set: { domain in
-                            guard domain != store.zhipuQuotaDomain else { return }
-                            store.zhipuQuotaDomain = domain
-                            if store.zhipuKeyConfigured {
-                                state.invalidateZhipuQuota()
-                                Task { await state.loadZhipuQuota(force: true) }
-                            }
-                        }
-                    )
-                ) {
-                    Text("国内版").tag(ZhipuQuotaDomain.china)
-                    Text("国际版").tag(ZhipuQuotaDomain.international)
-                }
-                .pickerStyle(.segmented)
-                SecureField("粘贴智谱 API Key", text: $zhipuKeyInput)
-                    .textFieldStyle(.roundedBorder)
-                HStack {
-                    Button("验证并保存") { saveZhipuKey() }
-                        .disabled(
-                            busy || zhipuKeyInput
-                                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        )
-                    Button("清除") { clearZhipuKey() }
-                        .disabled(busy || !store.zhipuKeyConfigured)
-                    Spacer()
-                }
-                if !zhipuKeyStatus.isEmpty {
-                    Text(zhipuKeyStatus)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                }
-            }
-        }
-    }
 
     private var displayAndAlertsSection: some View {
         Card {
@@ -486,7 +462,7 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                     .labelsHidden()
                     Text("“Claude + Codex”只显示这两个工具的今日合计，不代表首页全部 Coding 来源。")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
 
                 Divider()
@@ -505,14 +481,14 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("系统通知").font(.system(size: 12, weight: .semibold))
                         Text("Codex 配额 ≤10%、Claude 超阈值或 DeepSeek 余额过低时，仅在越线时提醒一次")
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }
 
                 Divider()
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Claude 日用量阈值")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                     Picker("", selection: Binding(
                         get: { state.claudeDailyLimitM },
                         set: { state.setClaudeDailyLimit($0) }
@@ -526,13 +502,14 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                     .labelsHidden()
                     Text("达到阈值后图标变橙，达到 1.5 倍变红；通知开启时同步提醒。")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 .disabled(!state.claudeEnabled || !ClaudeUsage.isAvailable)
 
+                Divider()
                 VStack(alignment: .leading, spacing: 5) {
                     Text("DeepSeek 余额提醒")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                     Picker("", selection: Binding(
                         get: { balanceAlert },
                         set: {
@@ -569,7 +546,7 @@ struct SettingsView: View {
                         Label("自动刷新", systemImage: "arrow.clockwise")
                             .font(.system(size: 12, weight: .semibold))
                         Text("刷新已启用来源；订阅额度与本地 Kimi 用量彼此独立")
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }
                 Picker("间隔", selection: Binding(
@@ -593,7 +570,7 @@ struct SettingsView: View {
                         Label("登录时启动", systemImage: "power")
                             .font(.system(size: 12, weight: .semibold))
                         Text("登录 macOS 后自动运行 TokenMeter")
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -605,7 +582,6 @@ struct SettingsView: View {
     private var maintenanceSection: some View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
-                Divider()
                 VStack(alignment: .leading, spacing: 7) {
                     Label("软件更新", systemImage: "arrow.down.circle")
                         .font(.system(size: 12, weight: .semibold))
@@ -622,7 +598,7 @@ struct SettingsView: View {
                     }
                     if !updateStatusText.isEmpty {
                         Text(updateStatusText)
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                     }
@@ -633,14 +609,14 @@ struct SettingsView: View {
                     Label("脱敏诊断", systemImage: "stethoscope")
                         .font(.system(size: 12, weight: .semibold))
                     Text("导出版本、系统、签名、数据源与工具状态；不包含凭据或会话内容。")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                     HStack {
                         Button("导出诊断信息") { exportDiagnostics() }
                         Spacer()
                     }
                     if !diagnosticStatus.isEmpty {
                         Text(diagnosticStatus)
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                     }
@@ -741,6 +717,7 @@ struct SettingsView: View {
                 try store.saveDeepSeekAPIKey(key)
                 apiKeyInput = ""
                 apiStatus = "验证通过，当前余额 \(balance.symbol)\(balance.totalBalance)\(balance.isAvailable ? "" : "（余额不足）")"
+                expandBalanceKey = false
                 await state.loadBalance(force: true)
             } catch {
                 apiStatus = (error as? CredentialStoreError)?.errorDescription
@@ -790,6 +767,7 @@ struct SettingsView: View {
                 state.kimiQuota.error = nil
                 let windowCount = (result.summary == nil ? 0 : 1) + result.limits.count
                 kimiCodeKeyStatus = "验证通过，已读取 \(windowCount) 个额度窗口"
+                expandKimiKey = false
             } catch {
                 kimiCodeKeyStatus = (error as? KimiQuotaError)?.errorDescription
                     ?? (error as? CredentialStoreError)?.errorDescription
@@ -844,6 +822,7 @@ struct SettingsView: View {
                 state.zhipuQuota.succeededAt = now
                 state.zhipuQuota.error = nil
                 zhipuKeyStatus = "验证通过，已读取 \(result.windowCount) 个额度窗口"
+                expandZhipuKey = false
             } catch {
                 zhipuKeyStatus = (error as? ZhipuQuotaError)?.errorDescription
                     ?? (error as? CredentialStoreError)?.errorDescription
@@ -929,8 +908,99 @@ struct SettingsView: View {
         await state.loadUsage(force: true)
         if case .ok = state.usageState, let usage = state.usage {
             usageStatus = "\(prefix)，本月消费 \(Fmt.money(usage.monthCost))"
+            expandUsageToken = false
         } else if case .error(let message) = state.usageState {
             usageStatus = "\(prefix)，但用量刷新失败：\(message)"
+        }
+    }
+}
+
+// 账户连接行：整行可点展开/收起；未连接的引导输入，已连接的收起成一行状态。
+private struct AccountConnectionRow<Fields: View>: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    let detail: String
+    let configured: Bool
+    let statusText: String
+    @Binding var expanded: Bool
+    let fields: Fields
+
+    init(
+        icon: String,
+        tint: Color,
+        title: String,
+        detail: String,
+        configured: Bool,
+        statusText: String,
+        expanded: Binding<Bool>,
+        @ViewBuilder fields: () -> Fields
+    ) {
+        self.icon = icon
+        self.tint = tint
+        self.title = title
+        self.detail = detail
+        self.configured = configured
+        self.statusText = statusText
+        self._expanded = expanded
+        self.fields = fields()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: icon)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(tint)
+                        .frame(width: 27, height: 27)
+                        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).font(.system(size: 12, weight: .semibold))
+                        Text(detail)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 4)
+                    Text(configured ? "已连接" : "未连接")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(configured ? Color.green : Color.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            (configured ? Color.green : Color.secondary).opacity(0.12),
+                            in: Capsule()
+                        )
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
+                }
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
+                .hoverHighlight()
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .accessibilityHint(expanded ? "收起输入区" : "展开输入区")
+
+            if expanded {
+                VStack(alignment: .leading, spacing: 7) {
+                    fields
+                    if !statusText.isEmpty {
+                        Text(statusText)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.leading, 36)
+                .transition(.opacity)
+            }
         }
     }
 }

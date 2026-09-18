@@ -19,16 +19,11 @@ struct CopilotView: View {
                     outputCard(result)
                     privacyCard
                 } else if state.copilot.loading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
+                    SourceStateView(loading: true, message: "正在读取…")
                 } else if let error = state.copilot.error {
-                    Text(error)
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 60).padding(.horizontal, 20)
+                    SourceStateView(message: error)
                 } else {
-                    Text("未找到 GitHub Copilot CLI 本地用量")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                        .padding(.top, 60)
+                    SourceStateView(message: "未找到 GitHub Copilot CLI 本地数据")
                 }
                 Spacer(minLength: 0)
             }
@@ -44,6 +39,7 @@ struct CopilotView: View {
             title: "GitHub Copilot Monitor",
             color: Theme.copilot,
             process: state.copilot.proc,
+            refreshing: state.copilot.loading,
             onBack: onBack,
             onRefresh: { Task { await state.loadCopilot(force: true) } },
             onSettings: onSettings
@@ -58,13 +54,13 @@ struct CopilotView: View {
                     .font(.system(size: 12, weight: .semibold))
                 HStack(spacing: 0) {
                     SourceMetric(title: "Token", value: Fmt.tokensShort(today?.totalTokens ?? 0))
-                    SourceMetric(title: "消息", value: "\(today?.messageCount ?? 0)")
-                    SourceMetric(title: "Skills", value: "\(today?.skillCount ?? 0)")
-                    SourceMetric(title: "新增行", value: "\(today?.linesAdded ?? 0)")
+                    SourceMetric(title: "消息", value: Fmt.int(today?.messageCount ?? 0))
+                    SourceMetric(title: "Skills", value: Fmt.int(today?.skillCount ?? 0))
+                    SourceMetric(title: "新增行", value: Fmt.int(today?.linesAdded ?? 0))
                 }
                 Divider()
-                Text("近 7 天 \(Fmt.tokensShort(result.weekTotal)) tokens · \(result.weekSessions) 个会话 · 缓存命中 \(cacheRateText(result))")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                Text("近 7 天 \(Fmt.tokensShort(result.weekTotal)) tokens · \(Fmt.int(result.weekSessions)) 个会话 · 缓存命中 \(cacheRateText(result))")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
     }
@@ -75,13 +71,13 @@ struct CopilotView: View {
             $0 + $1.inputTokens + $1.cachedInputTokens + $1.cacheWriteTokens
         }
         guard prompt > 0 else { return "—" }
-        return String(format: "%.0f%%", Double(cached) / Double(prompt) * 100)
+        return Fmt.percent(Double(cached) / Double(prompt) * 100)
     }
 
     private func weekChartCard(_ result: CopilotUsageResult) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("最近 7 天 Token（按会话结束日）", systemImage: "chart.bar")
+                Label("最近 7 天 Token（按会话结束日）", systemImage: "chart.bar.fill")
                     .font(.system(size: 12, weight: .semibold))
                 Chart(result.days) { day in
                     BarMark(
@@ -103,8 +99,8 @@ struct CopilotView: View {
                 }
                 .chartForegroundStyleScale([
                     "缓存读取": Theme.hit,
-                    "缓存写入": Theme.copilot.opacity(0.65),
-                    "新输入": Theme.miss,
+                    "缓存写入": Theme.miss,
+                    "新输入": Theme.input,
                     "输出": Theme.response,
                 ])
                 .chartLegend(position: .bottom, spacing: 4)
@@ -128,14 +124,13 @@ struct CopilotView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(model.model)
-                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                                     .lineLimit(1).truncationMode(.middle)
                                 Spacer()
-                                Text("\(Fmt.tokensShort(model.totalTokens)) · \(model.requestCount) 请求")
-                                    .font(.system(size: 9)).foregroundStyle(.secondary)
+                                Text("\(Fmt.tokensShort(model.totalTokens)) · \(Fmt.int(model.requestCount)) 请求")
+                                    .font(.system(size: 11)).foregroundStyle(.secondary)
                             }
-                            ProgressView(value: Double(model.totalTokens), total: Double(maximum))
-                                .tint(Theme.copilot)
+                            QuotaBar(progress: Double(model.totalTokens) / Double(maximum), tint: Theme.copilot)
                         }
                     }
                 }
@@ -150,28 +145,28 @@ struct CopilotView: View {
                     .font(.system(size: 12, weight: .semibold))
                 HStack {
                     Text("代码变更")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                     Spacer()
                     Text("+\(result.weekLinesAdded) / −\(result.weekLinesRemoved) 行")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
                 }
                 if result.skills.isEmpty {
                     Text("暂无 skill.invoked 记录")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 } else {
                     ForEach(result.skills.prefix(5)) { skill in
                         HStack {
                             Text(skill.name)
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
                                 .lineLimit(1)
                             Spacer()
                             Text("\(skill.invocationCount) 次")
-                                .font(.system(size: 9)).foregroundStyle(.secondary)
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
                         }
                     }
                 }
                 Text("代码行是 session 内工具变更累计，不等于 Git 最终合入行数。")
-                    .font(.system(size: 9)).foregroundStyle(.tertiary)
+                    .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
         }
     }

@@ -19,21 +19,11 @@ struct KimiView: View {
                     modelsCard(result)
                     privacyCard
                 } else if state.kimi.loading {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 60)
+                    SourceStateView(loading: true, message: "正在读取…")
                 } else if let error = state.kimi.error {
-                    Text(error)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 60)
-                        .padding(.horizontal, 20)
+                    SourceStateView(message: error)
                 } else {
-                    Text("未找到 Kimi Code 本地用量")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 60)
+                    SourceStateView(message: "未找到 Kimi Code 本地数据")
                 }
                 Spacer(minLength: 0)
             }
@@ -49,6 +39,7 @@ struct KimiView: View {
             title: "Kimi Code Monitor",
             color: Theme.kimi,
             process: state.kimi.proc,
+            refreshing: state.kimi.loading,
             onBack: onBack,
             onRefresh: { Task { await state.loadKimi(force: true) } },
             onSettings: onSettings
@@ -64,11 +55,11 @@ struct KimiView: View {
 
                 HStack(spacing: 0) {
                     SourceMetric(title: "Token", value: Fmt.tokensShort(today?.totalTokens ?? 0))
-                    SourceMetric(title: "请求", value: "\(today?.messageCount ?? 0)")
-                    SourceMetric(title: "会话", value: "\(today?.sessionCount ?? 0)")
+                    SourceMetric(title: "请求", value: Fmt.int(today?.messageCount ?? 0))
+                    SourceMetric(title: "会话", value: Fmt.int(today?.sessionCount ?? 0))
                     SourceMetric(
                         title: "缓存命中",
-                        value: today?.cacheHitRate.map { String(format: "%.0f%%", $0) } ?? "—"
+                        value: today?.cacheHitRate.map { Fmt.percent($0) } ?? "—"
                     )
                 }
 
@@ -83,8 +74,8 @@ struct KimiView: View {
 
                 Divider()
 
-                Text("近 7 天 \(Fmt.tokensShort(result.weekTotal)) tokens · \(result.weekMessages) 次请求 · \(result.weekSessions) 个会话")
-                    .font(.system(size: 10))
+                Text("近 7 天 \(Fmt.tokensShort(result.weekTotal)) tokens · \(Fmt.int(result.weekMessages)) 次请求 · \(Fmt.int(result.weekSessions)) 个会话")
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
         }
@@ -95,25 +86,10 @@ struct KimiView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("今日分时（Token）", systemImage: "clock")
                     .font(.system(size: 12, weight: .semibold))
-                Chart(result.todayHours) { hour in
-                    BarMark(
-                        x: .value("小时", hour.hour),
-                        y: .value("Token", hour.totalTokens)
-                    )
-                    .foregroundStyle(Theme.kimi.opacity(hour.totalTokens > 0 ? 0.9 : 0.2))
-                }
-                .chartXScale(domain: 0...23)
-                .chartXAxis {
-                    AxisMarks(values: [0, 6, 12, 18, 23]) { value in
-                        AxisValueLabel {
-                            if let hour = value.as(Int.self) {
-                                Text("\(hour)时")
-                            }
-                        }
-                    }
-                }
-                .tokenYAxis()
-                .frame(height: 76)
+                SourceHourChart(
+                    bars: result.todayHours.map { .init(hour: $0.hour, tokens: $0.totalTokens) },
+                    color: Theme.kimi
+                )
             }
         }
     }
@@ -121,7 +97,7 @@ struct KimiView: View {
     private func weekChartCard(_ result: KimiUsageResult) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("最近 7 天 Token", systemImage: "chart.bar")
+                Label("最近 7 天 Token", systemImage: "chart.bar.fill")
                     .font(.system(size: 12, weight: .semibold))
                 Chart(result.days) { day in
                     BarMark(
@@ -147,8 +123,8 @@ struct KimiView: View {
                 }
                 .chartForegroundStyleScale([
                     "缓存读取": Theme.hit,
-                    "缓存写入": Theme.kimi,
-                    "新输入": Theme.miss,
+                    "缓存写入": Theme.miss,
+                    "新输入": Theme.input,
                     "输出": Theme.response,
                 ])
                 .chartLegend(position: .bottom, spacing: 4)
@@ -173,16 +149,15 @@ struct KimiView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(model.model)
-                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                                 Spacer()
-                                Text("\(Fmt.tokensShort(model.totalTokens)) · \(model.messageCount) 次请求")
-                                    .font(.system(size: 9))
+                                Text("\(Fmt.tokensShort(model.totalTokens)) · \(Fmt.int(model.messageCount)) 次请求")
+                                    .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
                             }
-                            ProgressView(value: Double(model.totalTokens), total: Double(maximum))
-                                .tint(Theme.kimi)
+                            QuotaBar(progress: Double(model.totalTokens) / Double(maximum), tint: Theme.kimi)
                         }
                     }
                 }

@@ -21,6 +21,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showUISmokeWindow()
             return
         }
+        // 离屏渲染真实视图树为 PNG 供设计审查：无需录屏权限，进程内导出。
+        if let renderArg = ProcessInfo.processInfo.arguments.first(
+            where: { $0.hasPrefix("--ui-render=") })
+        {
+            runUIRender(outputPath: String(renderArg.dropFirst("--ui-render=".count)))
+            return
+        }
 #endif
         // 菜单栏应用：不占 Dock、不抢主菜单栏
         NSApp.setActivationPolicy(.accessory)
@@ -84,6 +91,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         smokeWindow = window
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    // 用法：TokenMeter --ui-render=<dir>。为每个页面在亮/暗两种外观下
+    // 生成 <page>-<appearance>.png 后退出。窗口放在屏幕外，用户无感。
+    private func runUIRender(outputPath: String) {
+        NSApp.setActivationPolicy(.accessory)
+        let dir = URL(fileURLWithPath: outputPath)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        func hosting<V: View>(_ view: V, height: CGFloat = Theme.panelHeight) -> NSView {
+            // cacheDisplay 只渲染视图树本身，页面不自带底色（真实 app 里由
+            // popover 窗口背景提供），离屏导出必须在这里补上等价底色。
+            let host = NSHostingView(rootView: view
+                .background(Color(nsColor: .windowBackgroundColor))
+                .environmentObject(appState))
+            host.setFrameSize(NSSize(width: Theme.panelWidth, height: height))
+            return host
+        }
+
+        let pages: [(name: String, view: NSView)] = [
+            ("overview", hosting(RootView())),
+            ("dashboard", hosting(
+                DashboardView(onBack: {}, onSettings: {}, onDetail: { _ in }))),
+            ("claude", hosting(ClaudeView(onBack: {}, onSettings: {}))),
+            ("codex", hosting(CodexView(onBack: {}, onSettings: {}))),
+            ("kimi", hosting(KimiView(onBack: {}, onSettings: {}))),
+            ("qwen", hosting(QwenCodeView(onBack: {}, onSettings: {}))),
+            ("cursor", hosting(CursorView(onBack: {}, onSettings: {}))),
+            ("settings", hosting(SettingsView(onBack: {}))),
+            // 长滚动页审计：整页高度导出设置页，覆盖首屏之外的滚动区
+            ("settings-full", hosting(SettingsView(onBack: {}), height: 3200)),
+        ]
+
+        var windows: [NSWindow] = []
+        for page in pages {
+            let bounds = page.view.bounds
+            let window = NSWindow(
+                contentRect: NSRect(
+                    x: 0, y: 0, width: bounds.width, height: bounds.height),
+                styleMask: .borderless, backing: .buffered, defer: false)
+            window.isOpaque = true
+            window.backgroundColor = .windowBackgroundColor
+            window.contentView = page.view
+            window.setFrameOrigin(CGPoint(x: -10_000, y: -10_000))
+            window.orderFrontRegardless()
+            windows.append(window)
+        }
+
+        for appearance in [(name: "light", ns: NSAppearance(named: .aqua)),
+                           (name: "dark", ns: NSAppearance(named: .darkAqua))]
+        {
+            NSApp.appearance = appearance.ns
+            // 等本地数据加载与图表布局稳定
+            let deadline = Date().addingTimeInterval(3.5)
+            while Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            }
+            for page in pages {
+                page.view.layoutSubtreeIfNeeded()
+                guard
+                    let rep = page.view.bitmapImageRepForCachingDisplay(in: page.view.bounds)
+                else { continue }
+                page.view.cacheDisplay(in: page.view.bounds, to: rep)
+                if let data = rep.representation(using: .png, properties: [:]) {
+                    try? data.write(
+                        to: dir.appendingPathComponent("\(page.name)-\(appearance.name).png"))
+                }
+            }
+        }
+        exit(0)
     }
 #endif
 

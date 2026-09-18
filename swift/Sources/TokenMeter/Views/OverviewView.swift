@@ -9,6 +9,7 @@ struct OverviewView: View {
     let onOpenSource: (Provider) -> Void
     var onSettings: () -> Void
     @State private var history: [HistoryStore.DayPoint] = []
+    @State private var refreshing = false
 
     var body: some View {
         let data = snapshot
@@ -63,20 +64,21 @@ struct OverviewView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "square.grid.2x2")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Theme.brand)
-            Text("总览").font(.system(size: 15, weight: .bold))
-            Spacer()
-            iconButton("arrow.clockwise") {
+        SourceDashboardHeader(
+            icon: "square.grid.2x2",
+            title: "总览",
+            color: Theme.brand,
+            refreshing: refreshing,
+            onRefresh: {
+                refreshing = true
                 Task {
                     await loadSources(force: true)
                     reloadHistory()
+                    refreshing = false
                 }
-            }
-            iconButton("gearshape") { onSettings() }
-        }
+            },
+            onSettings: onSettings
+        )
     }
 
     private var sourceSelection: OverviewSourceSelection {
@@ -127,7 +129,7 @@ struct OverviewView: View {
             return "官方平台用量与余额"
         case .claude:
             guard let result = state.claude.result else { return state.claude.error ?? "本地用量待加载" }
-            return "近 7 天 \(result.weekSessions) 会话 · \(result.weekMessages) 请求"
+            return "近 7 天 \(Fmt.int(result.weekSessions)) 会话 · \(Fmt.int(result.weekMessages)) 请求"
         case .codex:
             if let limits = state.codex.result?.rateLimits {
                 let values = [limits.primary, limits.secondary].compactMap { window -> String? in
@@ -137,30 +139,30 @@ struct OverviewView: View {
                 if !values.isEmpty { return values.joined(separator: " · ") }
             }
             if let result = state.codex.result {
-                return "近 7 天 \(result.weekSessions) 会话"
+                return "近 7 天 \(Fmt.int(result.weekSessions)) 会话"
             }
             return state.codex.error ?? "本地用量待加载"
         case .kimi:
             guard let result = state.kimi.result else {
                 return state.kimi.error ?? "本地用量待加载"
             }
-            return "近 7 天 \(result.weekSessions) 会话 · \(result.weekMessages) 请求"
+            return "近 7 天 \(Fmt.int(result.weekSessions)) 会话 · \(Fmt.int(result.weekMessages)) 请求"
         case .opencode:
             guard let result = state.opencode.result else { return state.opencode.error ?? "本地用量待加载" }
-            return "近 7 天 \(result.weekSessions) 会话 · \(result.weekMessages) 消息"
+            return "近 7 天 \(Fmt.int(result.weekSessions)) 会话 · \(Fmt.int(result.weekMessages)) 消息"
         case .gemini:
             guard let result = state.gemini.result else { return state.gemini.error ?? "本地用量待加载" }
-            return "近 7 天 \(result.weekSessions) 会话 · \(result.weekMessages) 消息"
+            return "近 7 天 \(Fmt.int(result.weekSessions)) 会话 · \(Fmt.int(result.weekMessages)) 消息"
         case .copilot:
             guard let result = state.copilot.result else { return state.copilot.error ?? "已结束会话待加载" }
-            return "近 7 天 \(result.weekSessions) 会话 · \(result.weekSkills) Skills"
+            return "近 7 天 \(Fmt.int(result.weekSessions)) 会话 · \(Fmt.int(result.weekSkills)) Skills"
         case .qwen:
             guard let result = state.qwen.result else { return state.qwen.error ?? "本地聚合用量待加载" }
-            return "近 7 天 \(result.weekSessions) 会话 · \(result.weekMessages) 请求"
+            return "近 7 天 \(Fmt.int(result.weekSessions)) 会话 · \(Fmt.int(result.weekMessages)) 请求"
         case .cursor:
             guard let result = state.cursor.result else { return state.cursor.error ?? "订阅周期用量待加载" }
             let plan = result.membership?.uppercased() ?? "订阅周期"
-            return "\(plan) · 平台费用 $\(String(format: "%.2f", result.totalCostCents / 100))"
+            return "\(plan) · 平台费用 \(Fmt.usd(result.totalCostCents / 100))"
         }
     }
 
@@ -183,17 +185,6 @@ struct OverviewView: View {
         if minutes % 1_440 == 0 { return "\(minutes / 1_440)天" }
         if minutes % 60 == 0 { return "\(minutes / 60)小时" }
         return "\(minutes)分钟"
-    }
-
-    private func iconButton(_ name: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: name)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 26, height: 26)
-        }
-        .buttonStyle(.plain)
-        .contentShape(Rectangle())
     }
 
     private func loadSources(force: Bool = false) async {

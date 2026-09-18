@@ -65,7 +65,7 @@ struct RootView: View {
         VStack(spacing: 0) {
             // 首页只有一层时间目录，工具在正文中平铺。
             if view == .dashboard {
-                rangeBar
+                rangeBar.transition(.opacity)
             }
             Group {
                 switch view {
@@ -73,40 +73,52 @@ struct RootView: View {
                     OverviewView(
                         range: historyRange,
                         sources: sources,
-                        onOpenSource: { view = .source($0) },
-                        onSettings: { view = .settings }
+                        onOpenSource: { push(.source($0)) },
+                        onSettings: { push(.settings) }
                     )
+                    .transition(.opacity)
                 case .source(let provider):
-                    let back = { view = AppView.dashboard }
+                    let back = { push(.dashboard) }
                     switch provider {
                         case .deepseek:
                             DashboardView(
                                 onBack: back,
-                                onSettings: { view = .settings },
-                                onDetail: { key in view = .detail(key) })
+                                onSettings: { push(.settings) },
+                                onDetail: { key in push(.detail(key)) })
+                                .transition(.opacity)
                         case .claude:
-                            ClaudeView(onBack: back, onSettings: { view = .settings })
+                            ClaudeView(onBack: back, onSettings: { push(.settings) })
+                                .transition(.opacity)
                         case .codex:
-                            CodexView(onBack: back, onSettings: { view = .settings })
+                            CodexView(onBack: back, onSettings: { push(.settings) })
+                                .transition(.opacity)
                         case .kimi:
-                            KimiView(onBack: back, onSettings: { view = .settings })
+                            KimiView(onBack: back, onSettings: { push(.settings) })
+                                .transition(.opacity)
                         case .opencode:
-                            OpenCodeView(onBack: back, onSettings: { view = .settings })
+                            OpenCodeView(onBack: back, onSettings: { push(.settings) })
+                                .transition(.opacity)
                         case .gemini:
-                            GeminiView(onBack: back, onSettings: { view = .settings })
+                            GeminiView(onBack: back, onSettings: { push(.settings) })
+                                .transition(.opacity)
                         case .copilot:
-                            CopilotView(onBack: back, onSettings: { view = .settings })
+                            CopilotView(onBack: back, onSettings: { push(.settings) })
+                                .transition(.opacity)
                         case .qwen:
-                            QwenCodeView(onBack: back, onSettings: { view = .settings })
+                            QwenCodeView(onBack: back, onSettings: { push(.settings) })
+                                .transition(.opacity)
                         case .cursor:
-                            CursorView(onBack: back, onSettings: { view = .settings })
+                            CursorView(onBack: back, onSettings: { push(.settings) })
+                                .transition(.opacity)
                     }
                 case .settings:
                     SettingsView(
-                        onBack: { view = .dashboard }
+                        onBack: { push(.dashboard) }
                     )
+                    .transition(.opacity)
                 case .detail(let key):
-                    ModelDetailView(modelKey: key, onBack: { view = .source(.deepseek) })
+                    ModelDetailView(modelKey: key, onBack: { push(.source(.deepseek)) })
+                        .transition(.opacity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -116,8 +128,15 @@ struct RootView: View {
         // 详情对应来源被关闭时直接回首页；本地数据路径暂时消失不抹掉历史入口。
         .onChange(of: sources) { _, newSources in
             if case .source(let provider) = view, !newSources.contains(provider) {
-                view = .dashboard
+                push(.dashboard)
             }
+        }
+    }
+
+    // 页面切换统一走这里：带 0.18s 交叉淡入，替代此前的瞬切
+    private func push(_ next: AppView) {
+        withAnimation(.easeInOut(duration: 0.18)) {
+            view = next
         }
     }
 
@@ -128,13 +147,15 @@ struct RootView: View {
                     historyRange = range
                     ConfigStore.shared.overviewHistoryRangeDays = range.rawValue
                 } label: {
+                    // 选中态用品牌蓝文字 + 软底色胶囊，而不是白字实心蓝：
+                    // 时间切换是控件不是数据，不该比下方的大数字更抢眼。
                     Text(range.tabTitle)
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(historyRange == range ? Color.white : Color.secondary)
+                        .foregroundStyle(historyRange == range ? Theme.brand : Color.secondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
                         .background(
-                            historyRange == range ? Theme.brand : Color.clear,
+                            historyRange == range ? Theme.brand.opacity(0.14) : Color.clear,
                             in: Capsule()
                         )
                 }
