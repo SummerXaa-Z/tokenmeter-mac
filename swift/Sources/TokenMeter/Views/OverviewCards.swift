@@ -254,7 +254,7 @@ struct OverviewSubscriptionQuotaCard: View {
                 }
 
                 Divider().opacity(0.35)
-                Text("额度只读：Codex 查询官方配额；Kimi 使用用户主动配置的 Key 查询官方接口，未配置时仅访问本机 127.0.0.1；方舟只调用本机已登录 arkcli。TokenMeter 不会上报本地会话或统计结果。")
+                Text("额度只读：Codex 查询官方配额；Kimi 使用用户主动配置的 Key 查询官方接口，未配置时仅访问本机 127.0.0.1；方舟只调用本机已登录 arkcli；智谱使用用户配置的 Key 查询所选域名的官方监控接口。TokenMeter 不会上报本地会话或统计结果。")
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
             }
@@ -373,6 +373,7 @@ struct OverviewSubscriptionQuotaCard: View {
         case .codex: return "terminal"
         case .kimiCode: return "moon.stars"
         case .ark: return "cloud"
+        case .zhipu: return "sparkles"
         }
     }
 
@@ -381,6 +382,7 @@ struct OverviewSubscriptionQuotaCard: View {
         case .codex: return Theme.codex
         case .kimiCode: return Theme.kimi
         case .ark: return .orange
+        case .zhipu: return Theme.zhipu
         }
     }
 

@@ -64,4 +64,28 @@ final class AppStateRefreshTests: XCTestCase {
             now: now
         ))
     }
+
+    func testZhipuQuotaLastGoodOnlySurvivesTransientFailureForTenMinutes() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        XCTAssertTrue(AppState.shouldKeepZhipuQuotaLastGood(
+            error: .requestFailed,
+            succeededAt: now.addingTimeInterval(-599),
+            now: now
+        ))
+        XCTAssertFalse(AppState.shouldKeepZhipuQuotaLastGood(
+            error: .requestFailed,
+            succeededAt: now.addingTimeInterval(-601),
+            now: now
+        ))
+        XCTAssertFalse(AppState.shouldKeepZhipuQuotaLastGood(
+            error: .authenticationFailed,
+            succeededAt: now,
+            now: now
+        ))
+        XCTAssertFalse(AppState.shouldKeepZhipuQuotaLastGood(
+            error: .requestFailed,
+            succeededAt: nil,
+            now: now
+        ))
+    }
 }

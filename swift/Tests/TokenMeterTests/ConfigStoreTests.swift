@@ -226,6 +226,71 @@ final class ConfigStoreTests: XCTestCase {
         }
     }
 
+    func testZhipuKeySaveTrimsBeforeWritingAndReportsConfigured() throws {
+        var savedValue: String?
+        var savedSlot: SecretSlot?
+        let suiteName = "TokenMeterTests.ConfigStore.Zhipu.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var stored: [SecretSlot: String] = [:]
+        let store = ConfigStore(
+            defaults: defaults,
+            keychainGet: { stored[$0] },
+            keychainSet: { value, slot in
+                stored[slot] = value
+                savedValue = value
+                savedSlot = slot
+                return errSecSuccess
+            },
+            keychainDelete: { slot in
+                stored[slot] = nil
+                return errSecSuccess
+            }
+        )
+
+        XCTAssertFalse(store.zhipuKeyConfigured)
+        XCTAssertNil(store.zhipuKeyPreview())
+
+        try store.saveZhipuKey("  test-zhipu-key-1234567890\n")
+
+        XCTAssertEqual(savedValue, "test-zhipu-key-1234567890")
+        XCTAssertEqual(savedSlot, .zhipuCodeKey)
+        XCTAssertTrue(store.zhipuKeyConfigured)
+        XCTAssertEqual(store.zhipuKeyPreview(), "test-zh...7890")
+
+        try store.clearZhipuKey()
+        XCTAssertFalse(store.zhipuKeyConfigured)
+
+        XCTAssertThrowsError(try store.saveZhipuKey("   ")) { error in
+            XCTAssertEqual(error as? CredentialStoreError, .emptyCredential)
+        }
+    }
+
+    func testZhipuQuotaDomainDefaultsToChinaAndPersists() throws {
+        let suiteName = "TokenMeterTests.ConfigStore.Zhipu.Domain.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = ConfigStore(defaults: defaults)
+        XCTAssertEqual(store.zhipuQuotaDomain, .china)
+        XCTAssertEqual(
+            ConfigStore(defaults: defaults).zhipuQuotaDomain.baseURL.absoluteString,
+            "https://open.bigmodel.cn"
+        )
+
+        store.zhipuQuotaDomain = .international
+
+        let reloaded = ConfigStore(defaults: defaults)
+        XCTAssertEqual(reloaded.zhipuQuotaDomain, .international)
+        XCTAssertEqual(
+            reloaded.zhipuQuotaDomain.baseURL.absoluteString,
+            "https://api.z.ai"
+        )
+
+        defaults.set("bogus", forKey: "zhipuQuotaDomain")
+        XCTAssertEqual(ConfigStore(defaults: defaults).zhipuQuotaDomain, .china)
+    }
+
     private func makeCredentialStore(
         get: @escaping (SecretSlot) -> String? = { _ in nil },
         set: @escaping (String, SecretSlot) -> OSStatus = { _, _ in errSecSuccess },

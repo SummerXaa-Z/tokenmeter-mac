@@ -64,6 +64,11 @@ TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：统一查�
 - standalone 与 Kimi.app 迁移副本按完整 session 去重；主 Agent 与子 Agent 用量都计入，但会话数仍按顶层 session 计算。
 - Kimi Code 订阅剩余量支持用户主动配置 Kimi For Coding Key 查询官方 `/coding/v1/usages`，Key 只存在本机 Keychain；未配置时才尝试 standalone `kimi web` 的 loopback 服务。5 小时/周额度与 Extra Usage 平铺展示，会员月总额度明确提示去订阅页查看。
 
+### 智谱 GLM Coding Plan
+- 订阅剩余量支持用户主动配置智谱 API Key 查询官方监控接口 `open.bigmodel.cn`（国内版）/ `api.z.ai`（国际版）的 5 小时、每周额度与工具调用月度次数，Key 只存在本机 Keychain、只发往所选域名的官方接口。
+- 窗口识别锚定响应中的 `unit` 字段并兼容上游 `CREDIT_LIMIT` 改名；该接口为智谱控制台同源接口，结构变化时按“暂不可用”降级，不影响其他数据源。
+- Claude Code 本地会话里的 glm-* 模型 token 用量仍按本地 Claude 源统计，此处只看订阅配额。
+
 ### OpenCode
 - 纯本地只读 `~/.local/share/opencode/opencode.db`，兼容 SQLite WAL，不连接 OpenCode 服务端。
 - 从 assistant 的结构化字段聚合五类 Token、模型、消息、会话和 OpenCode 原生费用估算。
@@ -117,7 +122,7 @@ TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：统一查�
 
 ### 隐私说明
 
-Claude / Codex / Kimi Code / OpenCode / Gemini CLI / GitHub Copilot CLI / Qwen Code 用量统计只读取本机已有的 session 或官方聚合记录，**不上传任何数据**。Skill 识别只保留明确结构化名称，或从 Codex 工具参数中短暂匹配标准 `SKILL.md` 路径；命令、路径、提示词、回复和 Skill 内容均不进入聚合结果。网络请求只用于用户所见功能：DeepSeek 官方余额/用量、ChatGPT 官方 Codex 配额、用户明确配置 Key 后的 Kimi 官方配额（或无 Key 时的本机 loopback）、经本机 arkcli 查询火山方舟套餐、cursor.com 用量，以及可关闭的 GitHub Releases 更新检查。价格目录固化在 App 内，运行时不查询 OpenRouter。Copilot 与 Qwen Code 采集器都不会连接各自服务端。
+Claude / Codex / Kimi Code / OpenCode / Gemini CLI / GitHub Copilot CLI / Qwen Code 用量统计只读取本机已有的 session 或官方聚合记录，**不上传任何数据**。Skill 识别只保留明确结构化名称，或从 Codex 工具参数中短暂匹配标准 `SKILL.md` 路径；命令、路径、提示词、回复和 Skill 内容均不进入聚合结果。网络请求只用于用户所见功能：DeepSeek 官方余额/用量、ChatGPT 官方 Codex 配额、用户明确配置 Key 后的 Kimi 官方配额（或无 Key 时的本机 loopback）、用户明确配置 Key 后的智谱官方配额（只发往所选域名 open.bigmodel.cn / api.z.ai）、经本机 arkcli 查询火山方舟套餐、cursor.com 用量，以及可关闭的 GitHub Releases 更新检查。价格目录固化在 App 内，运行时不查询 OpenRouter。Copilot 与 Qwen Code 采集器都不会连接各自服务端。
 
 支持范围、暂缓原因与新来源验收标准见 [本地用量来源覆盖](docs/local-source-coverage.md)。
 

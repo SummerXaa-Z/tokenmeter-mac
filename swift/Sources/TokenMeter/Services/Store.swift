@@ -9,6 +9,7 @@ enum SecretSlot: String {
     case balanceKey = "deepseek.slot.balance"
     case usageGrant = "deepseek.slot.usage"
     case kimiCodeKey = "kimi-code.slot.quota"
+    case zhipuCodeKey = "zhipu.slot.quota"
 }
 
 struct Keychain {
@@ -121,6 +122,7 @@ final class ConfigStore {
         static let assetSyncSourceKey = "agentAssetSyncSourceKey"
         static let assetSyncLastSuccessAt = "agentAssetSyncLastSuccessAt"
         static let menubarInfo = "menubarInfoMode"
+        static let zhipuQuotaDomain = "zhipuQuotaDomain"
         static let claudeDailyTokenLimit = "claudeDailyTokenLimitM"
         static let autoUpdateCheck = "autoUpdateCheckEnabled"
         static let lastUpdateCheck = "lastUpdateCheckAt"
@@ -177,6 +179,31 @@ final class ConfigStore {
 
     func clearKimiCodeKey() throws {
         try clearCredential(slot: .kimiCodeKey)
+    }
+
+    // 智谱 GLM Coding Plan 凭据只用于读取官方订阅额度，不参与本地 session 扫描。
+    var credZhipuKey: String? { keychainGet(.zhipuCodeKey) }
+
+    func saveZhipuKey(_ value: String) throws {
+        try saveCredential(value, slot: .zhipuCodeKey)
+    }
+
+    func clearZhipuKey() throws {
+        try clearCredential(slot: .zhipuCodeKey)
+    }
+
+    // 智谱分国内站（open.bigmodel.cn）与国际站（api.z.ai），账号与 Key 不互通。
+    var zhipuQuotaDomain: ZhipuQuotaDomain {
+        get {
+            guard let raw = defaults.string(forKey: DKey.zhipuQuotaDomain),
+                  let domain = ZhipuQuotaDomain(rawValue: raw) else {
+                return .china
+            }
+            return domain
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: DKey.zhipuQuotaDomain)
+        }
     }
 
     private func saveCredential(_ value: String, slot: SecretSlot) throws {
@@ -359,6 +386,11 @@ final class ConfigStore {
         return Self.credentialPreview(key)
     }
 
+    func zhipuKeyPreview() -> String? {
+        guard let key = credZhipuKey, !key.isEmpty else { return nil }
+        return Self.credentialPreview(key)
+    }
+
     private static func credentialPreview(_ key: String) -> String {
         let chars = Array(key)
         if chars.count <= 12 { return "已保存" }
@@ -370,4 +402,5 @@ final class ConfigStore {
     var apiKeyConfigured: Bool { credApiKey?.isEmpty == false }
     var usageTokenConfigured: Bool { credUsageToken?.isEmpty == false }
     var kimiCodeKeyConfigured: Bool { credKimiCodeKey?.isEmpty == false }
+    var zhipuKeyConfigured: Bool { credZhipuKey?.isEmpty == false }
 }

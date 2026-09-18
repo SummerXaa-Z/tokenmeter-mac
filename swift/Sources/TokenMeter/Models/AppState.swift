@@ -70,6 +70,8 @@ final class AppState: ObservableObject {
     // 方舟只通过已登录 arkcli 读取。快照都不落盘。
     @Published var kimiQuota: QuotaCache<KimiQuotaResult> = .init()
     @Published var arkPlanQuota: QuotaCache<ArkPlanQuotaSnapshot> = .init()
+    // 智谱订阅额度同样只在用户明确配置 Key 后查询官方接口。
+    @Published var zhipuQuota: QuotaCache<ZhipuQuotaResult> = .init()
 
     // 配置同步：本机各工具的 MCP/指令现状（调 agentsync CLI 子进程）
     @Published var configSync: SourceCache<ConfigScanResult> = .init()
@@ -83,6 +85,7 @@ final class AppState: ObservableObject {
     // 缓存新鲜度：60s 内视为新鲜，View 出现时直接复用
     static let sourceTTL: TimeInterval = 60
     nonisolated static let kimiQuotaLastGoodTTL: TimeInterval = 10 * 60
+    nonisolated static let zhipuQuotaLastGoodTTL: TimeInterval = 10 * 60
 
     private let store = ConfigStore.shared
     private var timer: Timer?
@@ -98,6 +101,8 @@ final class AppState: ObservableObject {
     private var cursorRefresh = ForcedRefreshCoalescer()
     private var kimiQuotaRefresh = ForcedRefreshCoalescer()
     private var kimiQuotaExpiryTask: Task<Void, Never>?
+    private var zhipuQuotaRefresh = ForcedRefreshCoalescer()
+    private var zhipuQuotaExpiryTask: Task<Void, Never>?
     private var arkPlanQuotaRefresh = ForcedRefreshCoalescer()
     private var configSyncRefresh = ForcedRefreshCoalescer()
     private var assetSyncTask: Task<Void, Never>?
@@ -112,6 +117,7 @@ final class AppState: ObservableObject {
     private let qwenRefreshCompletion = RefreshCompletionWaiter()
     private let cursorRefreshCompletion = RefreshCompletionWaiter()
     private let kimiQuotaRefreshCompletion = RefreshCompletionWaiter()
+    private let zhipuQuotaRefreshCompletion = RefreshCompletionWaiter()
     private let arkPlanQuotaRefreshCompletion = RefreshCompletionWaiter()
     private let configSyncRefreshCompletion = RefreshCompletionWaiter()
 
@@ -276,6 +282,7 @@ final class AppState: ObservableObject {
         // 订阅配额与 Kimi 本地 usage journal 是独立能力；即使本地
         // Kimi 源关闭，用户明确配置的官方 Key 仍应定时刷新。
         Task { await loadKimiQuota(force: trigger.forceLocalReload) }
+        Task { await loadZhipuQuota(force: trigger.forceLocalReload) }
     }
 
     nonisolated static func enabledRefreshSources(
@@ -741,6 +748,107 @@ final class AppState: ObservableObject {
         }
     }
 
+    func loadZhipuQuota(force: Bool = false) async {
+        if !force, !zhipuQuotaRefresh.isRefreshing, isFresh(zhipuQuota.loadedAt) { return }
+        guard zhipuQuotaRefresh.request(force: force) else {
+            if force { await zhipuQuotaRefreshCompletion.wait() }
+            return
+        }
+        zhipuQuota.loading = true
+        defer {
+            zhipuQuota.loading = false
+            zhipuQuotaRefreshCompletion.resumeAll()
+        }
+
+        while true {
+            let credential = normalizedZhipuKey()
+            let domain = store.zhipuQuotaDomain
+            if let credential {
+                do {
+                    let loaded = try await ZhipuQuotaService().load(
+                        apiKey: credential,
+                        domain: domain
+                    )
+                    if zhipuQuotaRefresh.acceptsResult(
+                        inputIsCurrent: normalizedZhipuKey() == credential
+                            && store.zhipuQuotaDomain == domain
+                    ) {
+                        let now = Date()
+                        cancelZhipuQuotaExpiry()
+                        zhipuQuota.result = loaded
+                        zhipuQuota.error = nil
+                        zhipuQuota.succeededAt = now
+                        zhipuQuota.loadedAt = now
+                    }
+                } catch {
+                    if zhipuQuotaRefresh.acceptsResult(
+                        inputIsCurrent: normalizedZhipuKey() == credential
+                            && store.zhipuQuotaDomain == domain
+                    ) {
+                        let now = Date()
+                        let quotaError = (error as? ZhipuQuotaError) ?? .requestFailed
+                        if !Self.shouldKeepZhipuQuotaLastGood(
+                            error: quotaError,
+                            succeededAt: zhipuQuota.succeededAt,
+                            now: now
+                        ) {
+                            cancelZhipuQuotaExpiry()
+                            zhipuQuota.result = nil
+                            zhipuQuota.succeededAt = nil
+                        } else if let succeededAt = zhipuQuota.succeededAt {
+                            scheduleZhipuQuotaExpiry(succeededAt: succeededAt)
+                        }
+                        zhipuQuota.error = quotaError.errorDescription
+                            ?? "智谱配额暂不可用"
+                        zhipuQuota.loadedAt = now
+                    }
+                }
+            } else {
+                // 未配置 Key 是合法空态：不报错、不请求，只清掉旧快照。
+                cancelZhipuQuotaExpiry()
+                zhipuQuota.result = nil
+                zhipuQuota.succeededAt = nil
+                zhipuQuota.error = nil
+                zhipuQuota.loadedAt = Date()
+            }
+
+            guard zhipuQuotaRefresh.finish() else { break }
+        }
+    }
+
+    nonisolated static func shouldKeepZhipuQuotaLastGood(
+        error: ZhipuQuotaError,
+        succeededAt: Date?,
+        now: Date
+    ) -> Bool {
+        guard error.isTransient, let succeededAt else { return false }
+        let age = now.timeIntervalSince(succeededAt)
+        return age >= 0 && age <= zhipuQuotaLastGoodTTL
+    }
+
+    private func cancelZhipuQuotaExpiry() {
+        zhipuQuotaExpiryTask?.cancel()
+        zhipuQuotaExpiryTask = nil
+    }
+
+    private func scheduleZhipuQuotaExpiry(succeededAt: Date) {
+        cancelZhipuQuotaExpiry()
+        let expiresAt = succeededAt.addingTimeInterval(Self.zhipuQuotaLastGoodTTL)
+        let delay = max(expiresAt.timeIntervalSinceNow, 0)
+        let nanoseconds = UInt64(min(delay, Double(UInt64.max) / 1_000_000_000) * 1_000_000_000)
+        zhipuQuotaExpiryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard !Task.isCancelled, let self else { return }
+            guard self.zhipuQuota.succeededAt == succeededAt,
+                  Date() >= expiresAt,
+                  self.zhipuQuota.error != nil
+            else { return }
+            self.zhipuQuota.result = nil
+            self.zhipuQuota.succeededAt = nil
+            self.zhipuQuotaExpiryTask = nil
+        }
+    }
+
     func loadArkPlanQuota(force: Bool = false) async {
         if !force, !arkPlanQuotaRefresh.isRefreshing, isFresh(arkPlanQuota.loadedAt) { return }
         guard arkPlanQuotaRefresh.request(force: force) else {
@@ -772,6 +880,7 @@ final class AppState: ObservableObject {
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.loadKimiQuota(force: force) }
             group.addTask { await self.loadArkPlanQuota(force: force) }
+            group.addTask { await self.loadZhipuQuota(force: force) }
         }
     }
 
@@ -967,6 +1076,14 @@ final class AppState: ObservableObject {
         kimiQuota.error = nil
     }
 
+    func invalidateZhipuQuota() {
+        cancelZhipuQuotaExpiry()
+        zhipuQuota.result = nil
+        zhipuQuota.loadedAt = nil
+        zhipuQuota.succeededAt = nil
+        zhipuQuota.error = nil
+    }
+
     func setOpenCodeEnabled(_ enabled: Bool) {
         store.opencodeMonitorEnabled = enabled
         opencodeEnabled = enabled
@@ -1020,6 +1137,14 @@ final class AppState: ObservableObject {
 
     private func normalizedKimiCodeKey() -> String? {
         guard let value = store.credKimiCodeKey?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty
+        else { return nil }
+        return value
+    }
+
+    private func normalizedZhipuKey() -> String? {
+        guard let value = store.credZhipuKey?
             .trimmingCharacters(in: .whitespacesAndNewlines),
               !value.isEmpty
         else { return nil }

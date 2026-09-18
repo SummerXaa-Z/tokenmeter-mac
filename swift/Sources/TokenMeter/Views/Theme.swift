@@ -16,6 +16,7 @@ enum Theme {
     static let gemini = Color(hex: 0x4285F4)       // Gemini 蓝
     static let copilot = Color(hex: 0x6E40C9)      // GitHub Copilot 紫
     static let qwen = Color(hex: 0x615CED)          // Qwen 蓝紫
+    static let zhipu = Color(hex: 0x3859FF)         // 智谱品牌蓝
 
     static let panelWidth: CGFloat = 420
     static let panelHeight: CGFloat = 600

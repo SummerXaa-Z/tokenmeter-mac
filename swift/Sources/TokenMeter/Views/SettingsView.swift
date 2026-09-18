@@ -14,6 +14,8 @@ struct SettingsView: View {
     @State private var usageStatus = ""
     @State private var kimiCodeKeyInput = ""
     @State private var kimiCodeKeyStatus = ""
+    @State private var zhipuKeyInput = ""
+    @State private var zhipuKeyStatus = ""
     @State private var showManualPaste = false
     @State private var busy = false
     @State private var syncing = false
@@ -47,10 +49,11 @@ struct SettingsView: View {
 
                     sectionTitle(
                         "平台账户与额度",
-                        hint: "DeepSeek 与 Kimi 需要连接；Codex、方舟读取本机已有登录态"
+                        hint: "DeepSeek、Kimi 与智谱需要连接；Codex、方舟读取本机已有登录态"
                     )
                     deepSeekAccountSection
                     kimiQuotaKeySection
+                    zhipuQuotaKeySection
 
                     sectionTitle(
                         "菜单栏与提醒",
@@ -420,6 +423,55 @@ struct SettingsView: View {
     }
 
     // MARK: - 菜单栏与提醒
+
+    private var zhipuQuotaKeySection: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("智谱 GLM Coding Plan API Key", systemImage: "key.viewfinder")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("仅用于查询 GLM Coding Plan 的 5 小时、每周额度与工具调用次数。Key 只存本机 Keychain，只发往所选域名的官方接口。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Picker(
+                    "接口域名",
+                    selection: Binding(
+                        get: { store.zhipuQuotaDomain },
+                        set: { domain in
+                            guard domain != store.zhipuQuotaDomain else { return }
+                            store.zhipuQuotaDomain = domain
+                            if store.zhipuKeyConfigured {
+                                state.invalidateZhipuQuota()
+                                Task { await state.loadZhipuQuota(force: true) }
+                            }
+                        }
+                    )
+                ) {
+                    Text("国内版").tag(ZhipuQuotaDomain.china)
+                    Text("国际版").tag(ZhipuQuotaDomain.international)
+                }
+                .pickerStyle(.segmented)
+                SecureField("粘贴智谱 API Key", text: $zhipuKeyInput)
+                    .textFieldStyle(.roundedBorder)
+                HStack {
+                    Button("验证并保存") { saveZhipuKey() }
+                        .disabled(
+                            busy || zhipuKeyInput
+                                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        )
+                    Button("清除") { clearZhipuKey() }
+                        .disabled(busy || !store.zhipuKeyConfigured)
+                    Spacer()
+                }
+                if !zhipuKeyStatus.isEmpty {
+                    Text(zhipuKeyStatus)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+            }
+        }
+    }
 
     private var displayAndAlertsSection: some View {
         Card {
@@ -840,6 +892,9 @@ struct SettingsView: View {
         kimiCodeKeyStatus = store.kimiCodeKeyConfigured
             ? "已配置 \(store.kimiCodeKeyPreview() ?? "")，额度走 Kimi 官方接口"
             : "未配置；仅在 standalone kimi web 运行时尝试本机额度接口"
+        zhipuKeyStatus = store.zhipuKeyConfigured
+            ? "已配置 \(store.zhipuKeyPreview() ?? "")（\(store.zhipuQuotaDomain.title)）"
+            : "未配置（\(store.zhipuQuotaDomain.title)）"
         autostartOn = Autostart.isEnabled
         autoUpdateOn = store.autoUpdateCheckEnabled
         notificationsOn = store.notificationsEnabled
@@ -938,6 +993,54 @@ struct SettingsView: View {
                 : "已切换为本机 Kimi Code 配额接口"
             busy = false
         }
+    }
+
+    private func saveZhipuKey() {
+        let key = zhipuKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            zhipuKeyStatus = CredentialStoreError.emptyCredential.errorDescription ?? "请输入 Key"
+            return
+        }
+        busy = true
+        zhipuKeyStatus = "正在验证智谱官方额度…"
+        Task {
+            do {
+                let result = try await ZhipuQuotaService().load(
+                    apiKey: key,
+                    domain: store.zhipuQuotaDomain
+                )
+                try store.saveZhipuKey(key)
+                zhipuKeyInput = ""
+                state.invalidateZhipuQuota()
+                state.zhipuQuota.result = result
+                let now = Date()
+                state.zhipuQuota.loadedAt = now
+                state.zhipuQuota.succeededAt = now
+                state.zhipuQuota.error = nil
+                zhipuKeyStatus = "验证通过，已读取 \(result.windowCount) 个额度窗口"
+            } catch {
+                zhipuKeyStatus = (error as? ZhipuQuotaError)?.errorDescription
+                    ?? (error as? CredentialStoreError)?.errorDescription
+                    ?? "智谱 API Key 验证失败"
+            }
+            busy = false
+        }
+    }
+
+    private func clearZhipuKey() {
+        busy = true
+        do {
+            try store.clearZhipuKey()
+        } catch {
+            zhipuKeyStatus = (error as? CredentialStoreError)?.errorDescription
+                ?? "智谱 API Key 清除失败"
+            busy = false
+            return
+        }
+        zhipuKeyInput = ""
+        state.invalidateZhipuQuota()
+        zhipuKeyStatus = "已清除智谱 API Key"
+        busy = false
     }
 
     private func startSync() {

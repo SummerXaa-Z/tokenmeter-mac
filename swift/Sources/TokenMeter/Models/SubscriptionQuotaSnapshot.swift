@@ -4,6 +4,7 @@ enum SubscriptionQuotaSource: String, Equatable {
     case codex
     case kimiCode
     case ark
+    case zhipu
 }
 
 struct SubscriptionQuotaPeriod: Equatable, Identifiable {
@@ -40,12 +41,14 @@ struct SubscriptionQuotaSnapshot: Equatable {
     init(
         codex: CodexRateLimits? = nil,
         kimi: KimiQuotaResult? = nil,
-        ark: ArkPlanQuotaSnapshot? = nil
+        ark: ArkPlanQuotaSnapshot? = nil,
+        zhipu: ZhipuQuotaResult? = nil
     ) {
         var result: [SubscriptionQuotaGroup] = []
         if let codexGroup = Self.codexGroup(codex) { result.append(codexGroup) }
         if let kimi { result.append(Self.kimiGroup(kimi)) }
         result.append(contentsOf: Self.arkGroups(ark))
+        if let zhipu { result.append(Self.zhipuGroup(zhipu)) }
         groups = result
     }
 
@@ -186,6 +189,75 @@ struct SubscriptionQuotaSnapshot: Equatable {
         guard let used = period.used, let total = period.total else { return nil }
         let base = "已用 \(quantity(used)) / \(quantity(total))"
         return product.hasPrefix("agent-plan") ? "\(base) AFP" : base
+    }
+
+    private static func zhipuGroup(_ result: ZhipuQuotaResult) -> SubscriptionQuotaGroup {
+        var periods: [SubscriptionQuotaPeriod] = []
+        if let fiveHour = result.fiveHour {
+            periods.append(zhipuPeriod(
+                fiveHour,
+                id: "zhipu:subscription:five-hour",
+                label: "5小时",
+                tokenDetail: true
+            ))
+        }
+        if let weekly = result.weekly {
+            periods.append(zhipuPeriod(
+                weekly,
+                id: "zhipu:subscription:weekly",
+                label: "每周",
+                tokenDetail: true
+            ))
+        }
+        if let toolCalls = result.toolCalls {
+            periods.append(zhipuPeriod(
+                toolCalls,
+                id: "zhipu:subscription:tool-calls",
+                label: "工具调用",
+                tokenDetail: false
+            ))
+        }
+        return SubscriptionQuotaGroup(
+            id: "zhipu:subscription",
+            source: .zhipu,
+            title: "智谱 GLM",
+            subtitle: normalizedText(result.level?.uppercased()),
+            periods: periods,
+            extraUsage: nil
+        )
+    }
+
+    // 智谱的 percentage 是已用百分比；token 窗附绝对量（10.3M / 40M），
+    // 工具调用窗是次数（72 / 1000 次），与方舟的 detail 口径一致。
+    private static func zhipuPeriod(
+        _ tier: ZhipuQuotaTier,
+        id: String,
+        label: String,
+        tokenDetail: Bool
+    ) -> SubscriptionQuotaPeriod {
+        var detail: String?
+        if let used = tier.used, let total = tier.total {
+            if tokenDetail, let usedTokens = intTokenCount(used),
+               let totalTokens = intTokenCount(total) {
+                detail = "已用 \(Fmt.tokensShort(usedTokens)) / \(Fmt.tokensShort(totalTokens))"
+            } else {
+                detail = "已用 \(quantity(used)) / \(quantity(total)) 次"
+            }
+        }
+        return SubscriptionQuotaPeriod(
+            id: id,
+            label: label,
+            remainingPercent: remaining(fromUsedPercent: tier.usedPercent),
+            resetAt: tier.resetAt,
+            detail: detail
+        )
+    }
+
+    private static func intTokenCount(_ value: Double) -> Int? {
+        guard value.isFinite,
+              value >= Double(Int.min), value <= Double(Int.max)
+        else { return nil }
+        return Int(value.rounded())
     }
 
     private static func arkTitle(_ product: String) -> String {

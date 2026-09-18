@@ -32,16 +32,29 @@ final class SubscriptionQuotaSnapshotTests: XCTestCase {
           {"product":"agent-plan","subscribed":true,"periods":[]}
         ]
         """#)
+        let zhipu = ZhipuQuotaResult(
+            fiveHour: ZhipuQuotaTier(
+                usedPercent: 25,
+                used: 10_261_098,
+                total: 40_000_000,
+                resetAt: Date(timeIntervalSince1970: 1_767_373_239.187)
+            ),
+            weekly: nil
+        )
 
-        let snapshot = SubscriptionQuotaSnapshot(codex: codex, kimi: kimi, ark: ark)
+        let snapshot = SubscriptionQuotaSnapshot(codex: codex, kimi: kimi, ark: ark, zhipu: zhipu)
 
         XCTAssertEqual(snapshot.groups.map(\.id), [
             "codex:subscription",
             "kimi-code:subscription",
             "ark:agent-plan",
             "ark:coding-plan",
+            "zhipu:subscription",
         ])
-        XCTAssertEqual(snapshot.groups.map(\.source), [.codex, .kimiCode, .ark, .ark])
+        XCTAssertEqual(
+            snapshot.groups.map(\.source),
+            [.codex, .kimiCode, .ark, .ark, .zhipu]
+        )
     }
 
     func testCodexMapsOnlyMainChannelWithCanonicalLabelsAndClampedRemaining() {
@@ -246,6 +259,71 @@ final class SubscriptionQuotaSnapshotTests: XCTestCase {
 
     func testNilSourcesProduceEmptySnapshot() {
         XCTAssertEqual(SubscriptionQuotaSnapshot().groups, [])
+    }
+
+    func testZhipuMapsWindowsLevelAndDetails() {
+        let fiveHourReset = Date(timeIntervalSince1970: 1_767_373_239.187)
+        let weeklyReset = Date(timeIntervalSince1970: 1_767_632_400)
+        let result = ZhipuQuotaResult(
+            fiveHour: ZhipuQuotaTier(
+                usedPercent: 25,
+                used: 10_261_098,
+                total: 40_000_000,
+                resetAt: fiveHourReset
+            ),
+            weekly: ZhipuQuotaTier(
+                usedPercent: 44,
+                used: 53_000_000,
+                total: 120_000_000,
+                resetAt: weeklyReset
+            ),
+            toolCalls: ZhipuQuotaTier(
+                usedPercent: 72,
+                used: 72,
+                total: 100,
+                resetAt: nil
+            ),
+            level: "pro"
+        )
+
+        let group = SubscriptionQuotaSnapshot(zhipu: result).groups[0]
+
+        XCTAssertEqual(group.id, "zhipu:subscription")
+        XCTAssertEqual(group.source, .zhipu)
+        XCTAssertEqual(group.title, "智谱 GLM")
+        XCTAssertEqual(group.subtitle, "PRO")
+        XCTAssertEqual(group.periods.map(\.id), [
+            "zhipu:subscription:five-hour",
+            "zhipu:subscription:weekly",
+            "zhipu:subscription:tool-calls",
+        ])
+        XCTAssertEqual(group.periods.map(\.label), ["5小时", "每周", "工具调用"])
+        XCTAssertEqual(group.periods.map(\.remainingPercent), [75, 56, 28])
+        XCTAssertEqual(group.periods.map(\.resetAt), [fiveHourReset, weeklyReset, nil])
+        XCTAssertEqual(group.periods[0].detail, "已用 10.3M / 40.0M")
+        XCTAssertEqual(group.periods[1].detail, "已用 53.0M / 120M")
+        XCTAssertEqual(group.periods[2].detail, "已用 72 / 100 次")
+    }
+
+    func testZhipuClampsRemainingPercentAndOmitsMissingWindows() {
+        let result = ZhipuQuotaResult(
+            fiveHour: ZhipuQuotaTier(
+                usedPercent: 130,
+                used: nil,
+                total: nil,
+                resetAt: nil
+            ),
+            weekly: nil,
+            toolCalls: nil,
+            level: "  "
+        )
+
+        let group = SubscriptionQuotaSnapshot(zhipu: result).groups[0]
+
+        XCTAssertEqual(group.periods.map(\.id), ["zhipu:subscription:five-hour"])
+        XCTAssertEqual(group.periods[0].remainingPercent, 0)
+        XCTAssertNil(group.periods[0].detail)
+        XCTAssertNil(group.subtitle)
     }
 
     private func arkSnapshot(_ json: String) throws -> ArkPlanQuotaSnapshot {

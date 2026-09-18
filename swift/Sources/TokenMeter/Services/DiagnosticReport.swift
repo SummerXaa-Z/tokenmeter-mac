@@ -125,6 +125,14 @@ enum DiagnosticReport {
                     detail: "usageRecordOnly=yes quotaKeyConfigured=\(yesNo(store.kimiCodeKeyConfigured))"
                 ),
                 SourceStatus(
+                    name: "智谱 GLM",
+                    enabled: true,
+                    available: store.zhipuKeyConfigured,
+                    running: "n/a",
+                    path: nil,
+                    detail: "quotaOnly=yes quotaKeyConfigured=\(yesNo(store.zhipuKeyConfigured)) domain=\(store.zhipuQuotaDomain.rawValue)"
+                ),
+                SourceStatus(
                     name: "OpenCode",
                     enabled: store.opencodeMonitorEnabled,
                     available: OpenCodeUsage.isAvailable,

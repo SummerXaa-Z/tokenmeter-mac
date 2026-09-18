@@ -222,7 +222,8 @@ struct OverviewView: View {
         SubscriptionQuotaSnapshot(
             codex: state.codexEnabled ? state.codex.result?.rateLimits : nil,
             kimi: state.kimiQuota.result,
-            ark: state.arkPlanQuota.result
+            ark: state.arkPlanQuota.result,
+            zhipu: state.zhipuQuota.result
         )
     }
 
@@ -251,6 +252,13 @@ struct OverviewView: View {
                 loading: state.arkPlanQuota.loading,
                 message: state.arkPlanQuota.error ?? "未检测到已订阅的 Agent/Coding Plan"
             ),
+            .init(
+                source: .zhipu,
+                title: "智谱 GLM",
+                loading: state.zhipuQuota.loading,
+                message: state.zhipuQuota.error ?? "未配置 API Key，可在设置中添加",
+                warning: zhipuQuotaWarning
+            ),
         ]
     }
 
@@ -259,6 +267,15 @@ struct OverviewView: View {
             return nil
         }
         guard let succeededAt = state.kimiQuota.succeededAt else { return error }
+        let age = max(Int(Date().timeIntervalSince(succeededAt) / 60), 0)
+        return "\(error) · 上次成功 \(age) 分钟前"
+    }
+
+    private var zhipuQuotaWarning: String? {
+        guard state.zhipuQuota.result != nil, let error = state.zhipuQuota.error else {
+            return nil
+        }
+        guard let succeededAt = state.zhipuQuota.succeededAt else { return error }
         let age = max(Int(Date().timeIntervalSince(succeededAt) / 60), 0)
         return "\(error) · 上次成功 \(age) 分钟前"
     }
