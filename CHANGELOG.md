@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.9.1 — 2026-09-19 — 图表语义配色统一与界面层级降噪
+
+- **图表语义配色统一**：全部 token 图表改用同一语义色板（缓存命中=蓝、未命中/写入/推理=橙、新输入=绿、输出=紫），替换原先按来源品牌色着色造成的双橙、双紫、双蓝撞色；品牌色只保留在图标、标题与页头。同步修复 `chart.bar` SF Symbol 在当前 macOS 渲染为豆腐块的问题，统一换用 `chart.bar.fill`。影响范围：`ClaudeView.swift`、`CodexView.swift`、`KimiView.swift`、`CopilotView.swift`、`OpenCodeView.swift`、`GeminiView.swift`、`QwenCodeView.swift`、`Theme.swift`。
+- **总览视觉层级降噪**：时间范围选中态从实心蓝胶囊改为品牌蓝文字 + 软底色，不再比页面数据更抢眼；用量大数字与 "tokens" 单位分层排版（26pt 数字 + 15pt 基线对齐的半透明单位）；"不计入 Coding 合计" 与个人画像标签（连续创作、多工具协作等）说明性徽章转中性灰。蓝色预算收敛为品牌标识、数据与交互三类。影响范围：`RootView.swift`、`OverviewCards.swift`。
+- **Token 数值格式**：`tokensShort` 去掉尾随 ".0"（75.0M→75M，1000M 边界提升为 1.0B），新增共享 `tokenYAxis` 让所有图表 Y 轴刻度与正文数值保持同一格式；测试断言同步更新。影响范围：`Format.swift`、`Theme.swift`、`FormatTests.swift`、`SubscriptionQuotaSnapshotTests.swift`。
+- **设置页细节**：数据来源行开关统一右对齐成一列；补齐「菜单栏与提醒」卡内 DeepSeek 余额提醒分组前缺失的分隔线。影响范围：`SettingsView.swift`。
+- **调试工具**：Debug `--ui-render` 离屏导出为页面补窗口等价底色（修复部分页面导出全黑），新增设置页全高导出条目用于审计首屏之外的滚动区。影响范围：`AppDelegate.swift`。
+
 ## v3.9.0 — 2026-09-19 — 智谱 GLM 额度接入与配置同步下线
 
 - **智谱 GLM Coding Plan 额度接入**：订阅剩余量总览新增智谱卡片，支持用户主动配置智谱 API Key 查询官方监控接口（国内版 `open.bigmodel.cn` / 国际版 `api.z.ai` 可选），平铺 5 小时、每周 token 额度与工具调用月度次数，并显示套餐档位。窗口识别锚定响应 `unit` 字段并兼容上游 `CREDIT_LIMIT` 改名（不按重置时间排序，避免周期末尾窗口标反）；Key 只存本机 Keychain、只发往所选域名；鉴权失败立即清快照，短暂网络失败最多保留 10 分钟 last-good，响应以流式 128 KiB 上限读取。影响范围：`ZhipuQuotaService.swift`、`Store.swift`、`AppState.swift`、`SubscriptionQuotaSnapshot.swift`、`SettingsView.swift`、`OverviewView.swift`、`OverviewCards.swift`、`Theme.swift` 及测试。
