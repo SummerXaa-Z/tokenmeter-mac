@@ -76,3 +76,8 @@ swift/DerivedData/
 swift/*.xcodeproj/xcuserdata/
 *.xcuserstate
 *.xcodeproj/xcuserdata/
+*.profraw
+
+# ---------- Local tooling artifacts ----------
+.claude/
+.ui-review/
