@@ -458,10 +458,11 @@ struct SettingsView: View {
                         Text("Claude + Codex").tag("total")
                         Text("Claude").tag("claude")
                         Text("Codex 额度").tag("codex")
+                        Text("全部").tag("all")
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
-                    Text("“Claude + Codex”只显示这两个工具的今日合计，不代表首页全部 Coding 来源。")
+                    Text("「Claude + Codex」只计这两个工具的今日合计；「全部」为今日所有已启用 Coding 来源的合计（不含 DeepSeek 平台账户），与首页口径一致。")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
 

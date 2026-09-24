@@ -206,7 +206,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // 后台扫一次 Codex 配额 + Claude 今日用量：告警等级给图标着色，
-    // 同时按设置把核心指标（Claude 今日 token / Codex 配额剩余）写到图标旁。
+    // 同时按设置把核心指标（Claude 今日 token / Codex 配额剩余 /
+    // 「全部」档的全源今日合计）写到图标旁。
     private func performQuotaBadgeRefresh() {
         // 开关与阈值在主线程一次性快照，detached 任务里不再碰共享状态
         let settings = currentStatusRefreshSettings()
@@ -221,6 +222,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let claudeInfoOn = (infoMode == "claude" || infoMode == "total") && claudeUsable
         let codexQuotaInfoOn = infoMode == "codex" && codexOn
         let codexTotalInfoOn = infoMode == "total" && codexOn
+        let allInfoOn = infoMode == "all"
+        // 「全部」档参与源门禁与 refreshEnabledSources 一致（开关 + 本地数据可用），
+        // 但不含 DeepSeek——平台账户不是 Coding Agent，不计入合计。
+        let kimiOn = appState.kimiEnabled && KimiUsage.isAvailable
+        let opencodeOn = appState.opencodeEnabled && OpenCodeUsage.isAvailable
+        let geminiOn = appState.geminiEnabled && GeminiUsage.isAvailable
+        let copilotOn = appState.copilotEnabled && CopilotUsage.isAvailable
+        let qwenOn = appState.qwenEnabled && QwenCodeUsage.isAvailable
+        let cursorOn = appState.cursorEnabled && CursorUsage.isAvailable
 
         // 用户明确关闭来源/阈值等同于重新布防；以后重新开启时应允许立即提醒。
         if balanceThreshold <= 0 { alertLatch.reset(key: "deepseek.balance.low") }
@@ -239,7 +249,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 body: "当前余额 \(bal.symbol)\(bal.totalBalance)，低于 \(balanceThreshold) 预警线")
         }
 
-        guard codexOn || claudeAlertOn || claudeInfoOn else {
+        guard codexOn || claudeAlertOn || claudeInfoOn || allInfoOn else {
             setStatusIcon(tint: nil, text: nil)
             finishQuotaBadgeRefresh()
             return
@@ -250,8 +260,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if codexOn {
                     group.addTask { await self.appState.loadCodex() }
                 }
-                if claudeAlertOn || claudeInfoOn {
+                if claudeAlertOn || claudeInfoOn || (allInfoOn && claudeUsable) {
                     group.addTask { await self.appState.loadClaude() }
+                }
+                if allInfoOn {
+                    // 各 load* 自带 60s TTL 与 in-flight 门禁，缓存新鲜时早退
+                    // 且不重发刷新通知，这里多挂来源不会造成循环刷新。
+                    if kimiOn { group.addTask { await self.appState.loadKimi() } }
+                    if opencodeOn { group.addTask { await self.appState.loadOpenCode() } }
+                    if geminiOn { group.addTask { await self.appState.loadGemini() } }
+                    if copilotOn { group.addTask { await self.appState.loadCopilot() } }
+                    if qwenOn { group.addTask { await self.appState.loadQwen() } }
+                    if cursorOn { group.addTask { await self.appState.loadCursor() } }
                 }
             }
 
@@ -301,7 +321,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     infoTokens += todayTokens
                 }
             }
-            if infoText == nil, claudeInfoOn || codexTotalInfoOn {
+            if allInfoOn {
+                // 「全部」档合计与总览页今日口径一致：live 优先、历史兜底。
+                // 跨天旧缓存里的"今日"其实是昨天，不算 live，交给当日历史兜底。
+                let recordedToday = HistoryStore.all()
+                    .first { $0.date == DateUtil.today() }?.bySource ?? [:]
+                var participants: Set<HistorySource> = []
+                var live: [HistorySource: Int] = [:]
+                func collect(
+                    _ on: Bool, _ source: HistorySource,
+                    _ loadedAt: Date?, _ tokens: Int?
+                ) {
+                    guard on else { return }
+                    participants.insert(source)
+                    if let loadedAt,
+                       Calendar.current.isDate(loadedAt, inSameDayAs: Date()) {
+                        live[source] = tokens
+                    }
+                }
+                collect(claudeUsable, .claude, self.appState.claude.loadedAt,
+                        self.appState.claude.result?.today?.totalTokens)
+                collect(codexOn, .codex, self.appState.codex.loadedAt,
+                        self.appState.codex.result?.today?.totalTokens)
+                collect(kimiOn, .kimi, self.appState.kimi.loadedAt,
+                        self.appState.kimi.result?.today?.totalTokens)
+                collect(opencodeOn, .opencode, self.appState.opencode.loadedAt,
+                        self.appState.opencode.result?.today?.totalTokens)
+                collect(geminiOn, .gemini, self.appState.gemini.loadedAt,
+                        self.appState.gemini.result?.today?.totalTokens)
+                collect(copilotOn, .copilot, self.appState.copilot.loadedAt,
+                        self.appState.copilot.result?.today?.totalTokens)
+                collect(qwenOn, .qwen, self.appState.qwen.loadedAt,
+                        self.appState.qwen.result?.today?.totalTokens)
+                collect(cursorOn, .cursor, self.appState.cursor.loadedAt,
+                        self.appState.cursor.result?.todayTokens)
+                infoTokens = MenubarTodayTotal.compute(
+                    participants: participants,
+                    live: live,
+                    recordedToday: recordedToday
+                )
+            }
+            if infoText == nil, claudeInfoOn || codexTotalInfoOn || allInfoOn {
                 infoText = Fmt.tokensShort(infoTokens)
             }
 

@@ -38,6 +38,7 @@
 		60DDF014BFB9C779F7FF049D /* CopilotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D88FBE440263BB448540F2F /* CopilotView.swift */; };
 		63DC91CEE9B98A82A1BF81D6 /* APICostEstimatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16D70EA46997CAB980C3483E /* APICostEstimatorTests.swift */; };
 		64F8105551189C91BE2A9409 /* KimiUsageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC942E758B5C67CFA1D9F55A /* KimiUsageTests.swift */; };
+		650C8ED95E7695637B0F8F08 /* MenubarTodayTotal.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7B29B6ED6B08B1BE7855470 /* MenubarTodayTotal.swift */; };
 		652CB7783E44E227E2183D40 /* QwenCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4BC3BA51DB70892C2FB9608 /* QwenCodeView.swift */; };
 		65F9084B1F38342FEC7F0578 /* PersonalUsageProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD11D2DC6163A46FA5BD2D91 /* PersonalUsageProfile.swift */; };
 		67D5735C581522C8F25A472A /* GeminiUsageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DFC07D8517606EDB9E692DC /* GeminiUsageTests.swift */; };
@@ -79,6 +80,7 @@
 		CAA966D817D227B166F34170 /* PersonalSkillRankings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8AE7EE0A89ED056CF4918F1 /* PersonalSkillRankings.swift */; };
 		CB77A283981A98A0B46A693F /* APICostEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D2915C7233A87D1969A2E15 /* APICostEstimator.swift */; };
 		D06AC40534617E8E13B1E9FA /* ClaudeUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = F66A254AEF8B3AA97E410E2F /* ClaudeUsage.swift */; };
+		D2BDF1C3A7257F943C8DEAB9 /* MenubarTodayTotalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 951968B35E5CD5AD3814C04C /* MenubarTodayTotalTests.swift */; };
 		D6D751967A78B4D68A0BAE5A /* PersonalSkillRankingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E0277D82C8B231C115599EB /* PersonalSkillRankingsTests.swift */; };
 		D6F5BA21904C57DC0B1FC419 /* AppStateRefreshTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066AB6165D30EBC039D73A14 /* AppStateRefreshTests.swift */; };
 		DBEC88D240DE2913C456DDB1 /* AlertLatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 038A081C9252EA71AFE3376F /* AlertLatch.swift */; };
@@ -151,6 +153,7 @@
 		8F3143113E09EDC5443D060F /* LoginSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginSync.swift; sourceTree = "<group>"; };
 		9224BE2374E1ADD0C0ABF8FB /* KimiQuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimiQuotaService.swift; sourceTree = "<group>"; };
 		925ECE5B69FE0A6F93DD9ECD /* ZhipuQuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZhipuQuotaService.swift; sourceTree = "<group>"; };
+		951968B35E5CD5AD3814C04C /* MenubarTodayTotalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenubarTodayTotalTests.swift; sourceTree = "<group>"; };
 		967FFAA53C071E7B5A4CC8ED /* CodexView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexView.swift; sourceTree = "<group>"; };
 		96B332F068C8D6A1265701DD /* ArkPlanQuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkPlanQuotaService.swift; sourceTree = "<group>"; };
 		984396E82E950E7EFB0A1977 /* ArkPlanQuotaServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkPlanQuotaServiceTests.swift; sourceTree = "<group>"; };
@@ -191,6 +194,7 @@
 		E8AE7EE0A89ED056CF4918F1 /* PersonalSkillRankings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalSkillRankings.swift; sourceTree = "<group>"; };
 		F1B86D6C533AB2687E46CD0D /* DashboardComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardComponents.swift; sourceTree = "<group>"; };
 		F66A254AEF8B3AA97E410E2F /* ClaudeUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeUsage.swift; sourceTree = "<group>"; };
+		F7B29B6ED6B08B1BE7855470 /* MenubarTodayTotal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenubarTodayTotal.swift; sourceTree = "<group>"; };
 		F7BFCCAFFA3D5DA745FF32C7 /* KimiQuotaServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimiQuotaServiceTests.swift; sourceTree = "<group>"; };
 		FA37E4BF9FE22735FA8ACF68 /* OverviewSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewSnapshot.swift; sourceTree = "<group>"; };
 		FB0108201849DF5FC34BB50A /* Notifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Notifier.swift; sourceTree = "<group>"; };
@@ -284,6 +288,7 @@
 				5DFC07D8517606EDB9E692DC /* GeminiUsageTests.swift */,
 				F7BFCCAFFA3D5DA745FF32C7 /* KimiQuotaServiceTests.swift */,
 				CC942E758B5C67CFA1D9F55A /* KimiUsageTests.swift */,
+				951968B35E5CD5AD3814C04C /* MenubarTodayTotalTests.swift */,
 				22064562B364186A960DC06C /* NotifierTests.swift */,
 				10C5D68C952CC99005CB4E46 /* OpenCodeUsageTests.swift */,
 				27C0AE619FF776948DDE5842 /* OverviewSnapshotTests.swift */,
@@ -336,6 +341,7 @@
 				3D2915C7233A87D1969A2E15 /* APICostEstimator.swift */,
 				8E998735A139325388C73D70 /* AppState.swift */,
 				6BE2676BB49AC73AF2BA8531 /* Format.swift */,
+				F7B29B6ED6B08B1BE7855470 /* MenubarTodayTotal.swift */,
 				BBAA57F5DE3E12AB2E6EC2F4 /* Models.swift */,
 				FA37E4BF9FE22735FA8ACF68 /* OverviewSnapshot.swift */,
 				C82107C1666FA3E1EBD6FADB /* OverviewSourceSelection.swift */,
@@ -479,6 +485,7 @@
 				67D5735C581522C8F25A472A /* GeminiUsageTests.swift in Sources */,
 				44E5E9E651933589C14D6311 /* KimiQuotaServiceTests.swift in Sources */,
 				64F8105551189C91BE2A9409 /* KimiUsageTests.swift in Sources */,
+				D2BDF1C3A7257F943C8DEAB9 /* MenubarTodayTotalTests.swift in Sources */,
 				4C3AA3A1071617E1A4CC41CB /* NotifierTests.swift in Sources */,
 				9C4B3B44EC1921CAE309E26E /* OpenCodeUsageTests.swift in Sources */,
 				855D9BB3F251125EA61B18CE /* OverviewSnapshotTests.swift in Sources */,
@@ -528,6 +535,7 @@
 				9D36C76D986B393BB51BE38C /* KimiView.swift in Sources */,
 				E52D9816D2595E775C811A13 /* LocalUsageCollectorRegistry.swift in Sources */,
 				20E57E9E36733543BD7864AE /* LoginSync.swift in Sources */,
+				650C8ED95E7695637B0F8F08 /* MenubarTodayTotal.swift in Sources */,
 				9E32529492F2279C8A84BC5A /* ModelDetailView.swift in Sources */,
 				B9CB4C72284892743435585C /* Models.swift in Sources */,
 				75BC978308318F6F92DB408A /* Notifier.swift in Sources */,
