@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.9.2 — 2026-09-24 — 菜单栏「全部」来源合计
+
+- **菜单栏「全部」显示档**：菜单栏显示新增第五档「全部」，直接显示今日所有已启用 Coding 来源（Claude、Codex、Kimi、OpenCode、Gemini、Copilot、Qwen、Cursor）的 Token 合计，口径与首页总览一致——各源实时值优先、加载失败回退当日历史记录、跨天旧缓存不算今日、DeepSeek 平台账户不计入。状态栏刷新在「全部」档下会拉起全部已启用来源的加载（各加载器自带的 60s TTL 与 in-flight 门禁防止循环刷新）；同时修复只启用非 Claude/Codex 来源时菜单栏文字会被误清空的问题。设置页选择器增加第五段，脚注说明「Claude + Codex」与「全部」两档口径；既有档位与默认值不变。影响范围：`MenubarTodayTotal.swift`（新增）、`AppDelegate.swift`、`SettingsView.swift`、`MenubarTodayTotalTests.swift`（新增）。
+
 ## v3.9.1 — 2026-09-19 — 图表语义配色统一与界面层级降噪
 
 - **图表语义配色统一**：全部 token 图表改用同一语义色板（缓存命中=蓝、未命中/写入/推理=橙、新输入=绿、输出=紫），替换原先按来源品牌色着色造成的双橙、双紫、双蓝撞色；品牌色只保留在图标、标题与页头。同步修复 `chart.bar` SF Symbol 在当前 macOS 渲染为豆腐块的问题，统一换用 `chart.bar.fill`。影响范围：`ClaudeView.swift`、`CodexView.swift`、`KimiView.swift`、`CopilotView.swift`、`OpenCodeView.swift`、`GeminiView.swift`、`QwenCodeView.swift`、`Theme.swift`。
