@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.9.9 — 2026-09-25 — 今日参照与周内节律
+
+- **今日 vs 近 7 天日均**：总览大数字卡在 1D 档补一行参照——「近 7 天日均 X」加环比徽标（今日 vs 日均，涨红降绿），打开面板第一眼就能回答"今天算多吗"；日均取滚动 7 天窗口合计除以 7（复用 PeriodCompare），无历史时该行隐藏。影响范围：`OverviewCards.swift`、`OverviewView.swift`。
+- **热力图周内节律**：热力图卡新增「周内节律」小柱图——13 周窗口内各星期几的日均（分母为出现次数而非有量天数，休整天计入，反映"这一天通常用多少"），峰值柱实色品牌蓝、其余半透明；说明行与其他图表同款悬停查值，未悬停时显示峰值日。影响范围：`UsageHeatmap.swift`、`OverviewCards.swift`、`UsageHeatmapTests.swift`。
+- **调试工具**：`--ui-render` 新增 `overview-day-full`（1D 档长视口总览页；hero 的日均参照行只在 1D 出现，此前离屏审计看不到）。影响范围：`AppDelegate.swift`。
+
 ## v3.9.8 — 2026-09-25 — 每周一用量周报通知
 
 - **每周一用量周报**：新增每周一条的「上周用量摘要」系统通知——上周全部已启用 Coding 来源的 Token 合计、环比（上周 vs 上上周）与主力来源占比，数据与总览环比卡同源（ISO 周口径）、纯本地计算；周一至周三上午 9 点后触发（App 周一没开机则周二/周三补发，更晚等下一周），按 ISO 周键去重、每周至多一条，上周没有用量则跳过，受「系统通知」总开关约束。实现上按周键直接分桶而不走 DateInterval 边界判断——Darwin 的 `contains` 把区间终点视作闭端，回退一周复用区间会把边界日误计进上周。设置页「系统通知」下新增周报开关（默认开）与「预览」按钮（立即推一条当前内容，方便不等周一先看效果）。影响范围：`WeeklyDigest.swift`（新增）、`Store.swift`、`AppDelegate.swift`、`SettingsView.swift`、`WeeklyDigestTests.swift`（新增）。
