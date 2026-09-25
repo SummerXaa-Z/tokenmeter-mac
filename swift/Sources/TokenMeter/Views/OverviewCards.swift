@@ -967,11 +967,12 @@ struct OverviewCompareCard: View {
                     Spacer()
                     Picker("周期", selection: $period) {
                         Text("周").tag(PeriodCompare.Period.week)
+                        Text("近7天").tag(PeriodCompare.Period.rolling7)
                         Text("月").tag(PeriodCompare.Period.month)
                     }
                     .pickerStyle(.segmented)
                     .controlSize(.mini)
-                    .frame(width: 64)
+                    .frame(width: 104)
                 }
                 if rows.isEmpty {
                     Text("本周期与上一周期暂无 Coding 用量记录")
@@ -1035,6 +1036,7 @@ struct OverviewHeatmapCard: View {
 
     var body: some View {
         let columns = UsageHeatmap.window(history, participants: participants)
+        let streak = UsageHeatmap.currentStreak(history, participants: participants)
         let hasUsage = columns.flatMap(\.cells).contains { $0.level > 0 }
         return Card {
             VStack(alignment: .leading, spacing: 8) {
@@ -1045,8 +1047,24 @@ struct OverviewHeatmapCard: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 } else {
                     grid(columns)
-                    Text("近 \(UsageHeatmap.windowWeeks) 周每日合计，颜色越深用量越大；悬停查看当日数值。")
-                        .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                    HStack(spacing: 4) {
+                        Text("少")
+                            .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                        ForEach(1...4, id: \.self) { level in
+                            RoundedRectangle(cornerRadius: 1.5)
+                                .fill(Self.levelFills[level])
+                                .frame(width: 7, height: 7)
+                        }
+                        Text("多")
+                            .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                        if streak >= 2 {
+                            Text("· 当前连续 \(streak) 天")
+                                .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                        }
+                        Spacer(minLength: 0)
+                        Text("近 \(UsageHeatmap.windowWeeks) 周 · 悬停查值 · 描边为今天")
+                            .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                    }
                 }
             }
         }
@@ -1103,6 +1121,12 @@ struct OverviewHeatmapCard: View {
             if let match {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(Self.levelFills[match.level])
+                    .overlay {
+                        if match.date == DateUtil.today() {
+                            RoundedRectangle(cornerRadius: 2)
+                                .stroke(Color.primary.opacity(0.55), lineWidth: 1)
+                        }
+                    }
                     .help("\(Fmt.mmdd(match.date)) · \(Fmt.tokensShort(match.total))")
                     .accessibilityLabel("\(Fmt.mmdd(match.date)) \(Fmt.tokensShort(match.total))")
             } else {

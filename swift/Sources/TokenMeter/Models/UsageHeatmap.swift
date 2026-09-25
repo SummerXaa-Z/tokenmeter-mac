@@ -72,6 +72,36 @@ enum UsageHeatmap {
         return columns
     }
 
+    /// 当前连续使用天数,与个人画像同口径:从今天倒着数逐日累计;
+    /// 今天尚未开始使用时容忍一次空白、从昨天起算,再遇空白即断。
+    static func currentStreak(
+        _ days: [HistoryStore.DayPoint],
+        participants: some Sequence<HistorySource>,
+        today: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Int {
+        let allowed = Set(participants)
+        var used: Set<String> = []
+        for day in days {
+            let total = day.bySource.reduce(0) { sum, entry in
+                allowed.contains(entry.key) ? sum + max(entry.value, 0) : sum
+            }
+            if total > 0 { used.insert(day.date) }
+        }
+        let start = calendar.startOfDay(for: today)
+        var streak = 0
+        for offset in 0...365 {
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: start),
+                  used.contains(DateUtil.key(date))
+            else {
+                if offset == 0 { continue }   // 今天还没开始用不算断
+                break
+            }
+            streak += 1
+        }
+        return streak
+    }
+
     /// 非零日升序的 1/4、2/4、3/4 分位值;不足 4 天时仍给出可用阈值。
     private static func quantileThresholds(_ values: [Int]) -> [Int]? {
         let sorted = values.filter { $0 > 0 }.sorted()

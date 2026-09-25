@@ -63,6 +63,38 @@ final class PeriodCompareTests: XCTestCase {
         XCTAssertTrue(result.last.isEmpty)
     }
 
+    func testRolling7SplitsTwoConsecutiveWindows() {
+        // 今天 9/25:本窗 9/19-9/25,上窗 9/12-9/18,窗外不计
+        let result = compare([
+            day("2026-09-25", bySource: [.claude: 100]),
+            day("2026-09-19", bySource: [.claude: 40]),
+            day("2026-09-18", bySource: [.claude: 30]),
+            day("2026-09-12", bySource: [.claude: 20]),
+            day("2026-09-11", bySource: [.claude: 999]),
+        ], period: .rolling7)
+        XCTAssertEqual(result.this, [.claude: 140])
+        XCTAssertEqual(result.last, [.claude: 50])
+    }
+
+    func testRolling7CrossesMonthBoundary() {
+        // 今天 3/3:本窗 2/25-3/3,上窗 2/18-2/24,更早不计(2026 年 2 月 28 天)
+        let result = PeriodCompare.bySource(
+            [
+                day("2026-03-01", bySource: [.claude: 10]),
+                day("2026-02-25", bySource: [.claude: 15]),
+                day("2026-02-24", bySource: [.claude: 70]),
+                day("2026-02-18", bySource: [.claude: 30]),
+                day("2026-02-17", bySource: [.claude: 999]),
+            ],
+            period: .rolling7,
+            participants: [.claude, .codex],
+            today: DateUtil.date(from: "2026-03-03")!,
+            calendar: calendar
+        )
+        XCTAssertEqual(result.this, [.claude: 25])
+        XCTAssertEqual(result.last, [.claude: 100])
+    }
+
     func testRowsOnlyKeepSourcesWithAnyUsageSortedByMaxSide() {
         let rows = PeriodCompare.rows(
             this: [.claude: 100, .codex: 5, .kimi: 0],

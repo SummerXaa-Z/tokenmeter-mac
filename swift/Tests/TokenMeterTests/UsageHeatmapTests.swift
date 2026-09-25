@@ -89,4 +89,49 @@ final class UsageHeatmapTests: XCTestCase {
         let cell = columns.flatMap(\.cells).first { $0.date == "2026-09-25" }
         XCTAssertEqual(cell?.total, 5)
     }
+
+    // MARK: - 当前连续使用天数(与个人画像同口径)
+
+    private func streak(
+        _ days: [HistoryStore.DayPoint],
+        today: String = "2026-09-25"
+    ) -> Int {
+        UsageHeatmap.currentStreak(
+            days,
+            participants: [.claude, .codex],
+            today: DateUtil.date(from: today)!
+        )
+    }
+
+    func testCurrentStreakCountsConsecutiveDaysFromToday() {
+        XCTAssertEqual(streak([
+            day("2026-09-23", claude: 10),
+            day("2026-09-24", claude: 10),
+            day("2026-09-25", claude: 10),
+        ]), 3)
+    }
+
+    func testCurrentStreakSkipsUnusedToday() {
+        // 今天尚未开始用:容忍一次空白,从昨天起算
+        XCTAssertEqual(streak([
+            day("2026-09-23", claude: 10),
+            day("2026-09-24", claude: 10),
+        ]), 2)
+    }
+
+    func testCurrentStreakBreaksAfterSecondEmptyDay() {
+        // 今天与昨天都空白:即使前天有量也为 0
+        XCTAssertEqual(streak([
+            day("2026-09-23", claude: 10),
+        ]), 0)
+    }
+
+    func testCurrentStreakIgnoresPlatformOnlyDays() {
+        // 只有平台账户的日期不算使用,连续即断
+        XCTAssertEqual(streak([
+            day("2026-09-25", claude: 5),
+            day("2026-09-24", deepseek: 999),
+            day("2026-09-23", claude: 5),
+        ]), 1)
+    }
 }

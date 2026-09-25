@@ -1,15 +1,18 @@
 import Foundation
 
-// 全来源日历周期环比:本周 vs 上周、本月 vs 上月,各 Coding 来源 Token 合计。
-// 与 Claude 页"周趋势"同语义——日历周期口径,本期为截至今天的部分周期。
+// 全来源周期环比:本周 vs 上周、近 7 天 vs 前 7 天、本月 vs 上月,
+// 各 Coding 来源 Token 合计。日历周期为截至今天的部分周期,
+// 近 7 天为滚动窗口——周初看日历周环比会因样本过短虚低,滚动口径更稳。
 enum PeriodCompare {
     enum Period: Hashable {
         case week
+        case rolling7
         case month
 
         var title: String {
             switch self {
             case .week: return "本周 vs 上周"
+            case .rolling7: return "近 7 天 vs 前 7 天"
             case .month: return "本月 vs 上月"
             }
         }
@@ -17,6 +20,7 @@ enum PeriodCompare {
         var footnote: String {
             switch self {
             case .week: return "日历周口径，本周截至今天"
+            case .rolling7: return "滚动 7 天窗口，截至今天"
             case .month: return "日历月口径，本月截至今天"
             }
         }
@@ -28,13 +32,23 @@ enum PeriodCompare {
         let last: Int
     }
 
-    /// 本期与上期的日历区间。周用 ISO 周一(与趋势图周桶一致),月用自然月 1 日。
+    /// 本期与上期的统计区间,终点为排他边界。周用 ISO 周一(与趋势图周桶一致),
+    /// 月用自然月 1 日;近 7 天为滚动窗口,两期各 7 天且不重叠。
     static func intervals(
         of period: Period,
         today: Date = Date(),
         calendar: Calendar = .current
     ) -> (this: DateInterval, last: DateInterval)? {
-        let component: Calendar.Component = period == .week ? .weekOfYear : .month
+        if period == .rolling7 {
+            let day = calendar.startOfDay(for: today)
+            guard let lastStart = calendar.date(byAdding: .day, value: -13, to: day),
+                  let thisStart = calendar.date(byAdding: .day, value: -6, to: day),
+                  let nextDay = calendar.date(byAdding: .day, value: 1, to: day)
+            else { return nil }
+            return (DateInterval(start: thisStart, end: nextDay),
+                    DateInterval(start: lastStart, end: thisStart))
+        }
+        let component: Calendar.Component = period == .month ? .month : .weekOfYear
         guard let thisInterval = calendar.dateInterval(of: component, for: today),
               let lastStart = calendar.date(
                   byAdding: component, value: -1, to: thisInterval.start),
