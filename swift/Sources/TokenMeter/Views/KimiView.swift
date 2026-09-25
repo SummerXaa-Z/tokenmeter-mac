@@ -26,6 +26,7 @@ struct KimiView: View {
                 } else {
                     SourceStateView(message: "未找到 Kimi Code 本地数据")
                 }
+                SourceWeekCompareCard(source: .kimi)
                 Spacer(minLength: 0)
             }
             .padding(14)

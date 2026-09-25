@@ -23,6 +23,7 @@ struct GeminiView: View {
                 } else {
                     SourceStateView(message: "未找到 Gemini CLI 本地数据")
                 }
+                SourceWeekCompareCard(source: .gemini)
                 Spacer(minLength: 0)
             }
             .padding(14)

@@ -24,6 +24,7 @@ struct OpenCodeView: View {
                 } else {
                     SourceStateView(message: "未找到 OpenCode 本地数据")
                 }
+                SourceWeekCompareCard(source: .opencode)
                 Spacer(minLength: 0)
             }
             .padding(14)

@@ -25,6 +25,8 @@ struct CursorView: View {
                 } else {
                     SourceStateView(message: "未读取到 Cursor 账户用量")
                 }
+                SourceHistoryTrendCard(source: .cursor, color: Theme.cursor)
+                SourceWeekCompareCard(source: .cursor)
                 Spacer(minLength: 0)
             }
             .padding(14)

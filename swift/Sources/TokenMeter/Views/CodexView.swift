@@ -29,6 +29,7 @@ struct CodexView: View {
                 } else {
                     SourceStateView(message: "未找到 Codex 本地数据（~/.codex/sessions）")
                 }
+                SourceWeekCompareCard(source: .codex)
                 Spacer(minLength: 0)
             }
             .padding(14)

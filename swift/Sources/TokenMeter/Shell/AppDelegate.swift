@@ -122,6 +122,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("claude", hosting(ClaudeView(onBack: {}, onSettings: {}))),
             ("codex", hosting(CodexView(onBack: {}, onSettings: {}))),
             ("kimi", hosting(KimiView(onBack: {}, onSettings: {}))),
+            ("gemini", hosting(GeminiView(onBack: {}, onSettings: {}))),
+            ("opencode", hosting(OpenCodeView(onBack: {}, onSettings: {}))),
+            ("copilot", hosting(CopilotView(onBack: {}, onSettings: {}))),
             ("qwen", hosting(QwenCodeView(onBack: {}, onSettings: {}))),
             ("cursor", hosting(CursorView(onBack: {}, onSettings: {}))),
             ("settings", hosting(SettingsView(onBack: {}))),
@@ -139,6 +142,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     range: .day, sources: Provider.allCases,
                     onOpenSource: { _ in }, onSettings: {}),
                 height: 1600)),
+            // 来源页整页高度导出:600pt 视口下滚动区折叠线以下的内容
+            // (如历史环比卡)在普通页面渲染里永远看不到
+            ("claude-full", hosting(
+                ClaudeView(onBack: {}, onSettings: {}), height: 2400)),
+            ("codex-full", hosting(
+                CodexView(onBack: {}, onSettings: {}), height: 2400)),
+            ("kimi-full", hosting(
+                KimiView(onBack: {}, onSettings: {}), height: 2200)),
+            ("gemini-full", hosting(
+                GeminiView(onBack: {}, onSettings: {}), height: 1800)),
+            ("opencode-full", hosting(
+                OpenCodeView(onBack: {}, onSettings: {}), height: 1800)),
+            ("copilot-full", hosting(
+                CopilotView(onBack: {}, onSettings: {}), height: 2000)),
+            ("qwen-full", hosting(
+                QwenCodeView(onBack: {}, onSettings: {}), height: 1800)),
+            ("cursor-full", hosting(
+                CursorView(onBack: {}, onSettings: {}), height: 2200)),
         ]
 
         var windows: [NSWindow] = []

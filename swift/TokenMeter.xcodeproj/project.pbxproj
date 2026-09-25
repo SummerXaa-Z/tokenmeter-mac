@@ -34,6 +34,7 @@
 		44E5E9E651933589C14D6311 /* KimiQuotaServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7BFCCAFFA3D5DA745FF32C7 /* KimiQuotaServiceTests.swift */; };
 		4B5BEFE4E1B263A81F7F55BE /* KimiUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99EA86C17A2CC62772DFE1A5 /* KimiUsage.swift */; };
 		4B67CEFB5A42F8C8D086DC30 /* ChartHoverPartsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7546D54798D07DFF4CEB314F /* ChartHoverPartsTests.swift */; };
+		4B6B9318EEE0DAAC502C5496 /* SourceHistoryCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0D90EC446183887EFACB93 /* SourceHistoryCards.swift */; };
 		4C3AA3A1071617E1A4CC41CB /* NotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22064562B364186A960DC06C /* NotifierTests.swift */; };
 		516E50273A26D4CBA68435B6 /* CopilotUsageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0D30F5E2C9FCBF8F7230764 /* CopilotUsageTests.swift */; };
 		53EC51D7DF39A698FE903177 /* FormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61AF1344992FFFE169DB4857 /* FormatTests.swift */; };
@@ -162,6 +163,7 @@
 		6FC438DB603405FFCE72770E /* QwenCodeUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QwenCodeUsage.swift; sourceTree = "<group>"; };
 		7546D54798D07DFF4CEB314F /* ChartHoverPartsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartHoverPartsTests.swift; sourceTree = "<group>"; };
 		776AA6C25BBA738D14FADBAF /* Updater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updater.swift; sourceTree = "<group>"; };
+		7B0D90EC446183887EFACB93 /* SourceHistoryCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceHistoryCards.swift; sourceTree = "<group>"; };
 		7FF0EE60FD4468E9768B8562 /* OpenCodeUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeUsage.swift; sourceTree = "<group>"; };
 		847F5B5A0A9B9ECF7B3C10D1 /* DiagnosticReportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticReportTests.swift; sourceTree = "<group>"; };
 		8834DFDCCF5EAD81A03BD730 /* QwenCodeUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QwenCodeUsageTests.swift; sourceTree = "<group>"; };
@@ -412,6 +414,7 @@
 				BF85AA1A761C40D0E1F07633 /* RootView.swift */,
 				C5D564596B6873D239FB7F78 /* SettingsView.swift */,
 				BE348B8A6F5BBC274C411539 /* SourceDashboardComponents.swift */,
+				7B0D90EC446183887EFACB93 /* SourceHistoryCards.swift */,
 				C58B1ACBAB5C28E4D83047B6 /* Theme.swift */,
 			);
 			path = Views;
@@ -603,6 +606,7 @@
 				099AF48C316A4AEAA44557B0 /* RootView.swift in Sources */,
 				6F61B832C0A969BE3C20F6DC /* SettingsView.swift in Sources */,
 				9F762C6D7503AD31ACDB354E /* SourceDashboardComponents.swift in Sources */,
+				4B6B9318EEE0DAAC502C5496 /* SourceHistoryCards.swift in Sources */,
 				3FD289641C11563D94585020 /* StatusRefreshCoalescer.swift in Sources */,
 				BE507A0D2FF38D14503086DB /* StatusRefreshSettings.swift in Sources */,
 				83527A7C0F23657A419997A0 /* Store.swift in Sources */,
