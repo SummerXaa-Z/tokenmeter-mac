@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.9.5 — 2026-09-25 — 总览周环比与趋势来源筛选
+
+- **全来源周环比卡**：总览新增「本周 vs 上周（全部 Coding 来源）」卡——合计行加各来源行（来源色点、本周值粗体、上周值灰、行尾环比徽标：涨红降绿，上周为 0 无基期显示 —），日历周口径（本周截至今天）、数据来自本机按天历史，DeepSeek 平台账户不计入；与 Claude 页「周趋势」同语义但覆盖全部来源。环比徽标抽为共享 `ChangeBadge`，Claude 页同步换用。影响范围：`WeekCompare.swift`（新增）、`OverviewCards.swift`、`OverviewView.swift`、`SourceDashboardComponents.swift`、`ClaudeView.swift`、`WeekCompareTests.swift`（新增）。
+- **趋势图来源点选筛选**：总览趋势图（小时与日/周/月两个分支）的内置图例换成可点选的来源 chips——按范围内合计降序排列，点按即从柱形与悬停说明行中隐藏该来源（chips 变暗提示），再点恢复；chips 恒从全量趋势计算，已隐藏来源始终有 chip 可恢复。只影响图表展示，合计文案仍为全量口径。影响范围：`TrendSeriesFilter.swift`（新增）、`OverviewCards.swift`。
+
 ## v3.9.4 — 2026-09-25 — 图表悬停查值
 
 - **全部图表悬停查值**：所有 token 图表（总览趋势的小时与日/周/月两个粒度分支、Claude/Codex/Kimi/Qwen 共用的今日分时图、七个来源各自的最近 7 天堆叠图、DeepSeek 缓存命中明细、模型详情趋势）接入指针悬停交互——悬停出现竖直虚线参考线，图表上方固定高度的说明行实时显示该桶的日期、合计与前三大分量（色点 + 数值，更多分量折叠为「+N 项」）；未悬停时说明行默认显示最新有量的桶，版面不跳动。周/月桶按 `TrendPoint.date` 桶键聚合（label 跨年可能重名）；各来源 7 天图的分量拆解与其柱形堆叠一一对应（如 Codex 新输入按非缓存输入、OpenCode/Copilot 输出含推理）。影响范围：`ChartHover.swift`（新增）、`SourceDashboardComponents.swift`、`OverviewCards.swift`、七个来源视图、`DashboardComponents.swift`、`ModelDetailView.swift`、`ChartHoverPartsTests.swift`（新增）。
