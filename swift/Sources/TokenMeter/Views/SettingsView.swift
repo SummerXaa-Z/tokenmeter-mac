@@ -488,6 +488,34 @@ struct SettingsView: View {
                 }
 
                 Divider()
+                let digestPreview = WeeklyDigest.message(
+                    HistoryStore.all(),
+                    participants: WeeklyDigest.participants(store))
+                Toggle(isOn: Binding(
+                    get: { store.weeklyDigestEnabled },
+                    set: { store.weeklyDigestEnabled = $0 }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("每周一用量周报").font(.system(size: 12, weight: .semibold))
+                        Text("周一至周三上午 9 点后推一条上周摘要：合计、环比与主力来源；上周没有用量则跳过")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                }
+                HStack {
+                    Text("受上方「系统通知」总开关控制；预览立即推一条当前内容。")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("预览") {
+                        guard let digestPreview else { return }
+                        Notifier.send(
+                            id: "weekly.digest.preview",
+                            title: digestPreview.title, body: digestPreview.body)
+                    }
+                    .controlSize(.small)
+                    .disabled(digestPreview == nil)
+                }
+
+                Divider()
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Claude 日用量阈值")
                         .font(.system(size: 12, weight: .semibold))

@@ -59,10 +59,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Updater.shared.autoCheckIfDue()
         }
 
-        // 配额/用量预警 + 菜单栏信息文字，统一 15 分钟刷新
+        // 配额/用量预警 + 菜单栏信息文字，统一 15 分钟刷新；
+        // 周报摘要的触发检查顺路搭同一节奏(自身按周去重,开销只是一次日期判断)
         requestQuotaBadgeRefresh()
+        maybeSendWeeklyDigest()
         quotaTimer = Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.requestQuotaBadgeRefresh() }
+            Task { @MainActor in
+                self?.requestQuotaBadgeRefresh()
+                self?.maybeSendWeeklyDigest()
+            }
         }
         // 设置或余额状态变化后立刻生效，不等 15 分钟定时周期
         NotificationCenter.default.addObserver(forName: .statusRefreshRequested, object: nil,
@@ -203,6 +208,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func requestQuotaBadgeRefresh() {
         guard statusRefreshCoalescer.request() else { return }
         performQuotaBadgeRefresh()
+    }
+
+    // 每周一用量周报:周一至周三上午 9 点后、本周未发过时推一条上周摘要。
+    // 无周报开关、不到时机直接返回;到时机但上周没用量也记下本周键,
+    // 避免之后每个刷新周期重复读历史计算。
+    private func maybeSendWeeklyDigest() {
+        let store = ConfigStore.shared
+        guard store.weeklyDigestEnabled,
+              WeeklyDigest.isDue(lastSentWeek: store.lastWeeklyDigestWeek)
+        else { return }
+        store.lastWeeklyDigestWeek = WeeklyDigest.weekKey(Date())
+        guard let message = WeeklyDigest.message(
+            HistoryStore.all(), participants: WeeklyDigest.participants(store))
+        else { return }
+        Notifier.send(id: "weekly.digest", title: message.title, body: message.body)
     }
 
     private func finishQuotaBadgeRefresh() {

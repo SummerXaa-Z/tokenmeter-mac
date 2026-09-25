@@ -123,6 +123,8 @@ final class ConfigStore {
         static let autoUpdateCheck = "autoUpdateCheckEnabled"
         static let lastUpdateCheck = "lastUpdateCheckAt"
         static let notifications = "notificationsEnabled"
+        static let weeklyDigest = "weeklyDigestEnabled"
+        static let lastWeeklyDigest = "lastWeeklyDigestWeek"
         static let deepseekBalanceAlert = "deepseekBalanceAlertThreshold"
         static let overviewHistoryRange = "overviewHistoryRangeDays"
     }
@@ -315,6 +317,19 @@ final class ConfigStore {
     var notificationsEnabled: Bool {
         get { defaults.object(forKey: DKey.notifications) as? Bool ?? true }
         set { defaults.set(newValue, forKey: DKey.notifications) }
+    }
+
+    // 每周一用量周报：默认开。周一至周三上午 9 点后各推一条上周摘要
+    // (见 WeeklyDigest),受上面"系统通知"总开关约束。
+    var weeklyDigestEnabled: Bool {
+        get { defaults.object(forKey: DKey.weeklyDigest) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: DKey.weeklyDigest) }
+    }
+
+    // 上次已发周报的 ISO 周键(WeeklyDigest.weekKey),用于每周去重
+    var lastWeeklyDigestWeek: String? {
+        get { defaults.string(forKey: DKey.lastWeeklyDigest) }
+        set { defaults.set(newValue, forKey: DKey.lastWeeklyDigest) }
     }
 
     // DeepSeek 余额预警阈值（与余额同单位，元）：余额低于此值推通知。

@@ -75,6 +75,7 @@
 		9D36C76D986B393BB51BE38C /* KimiView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3A6CC9B0D4EEEB3CFAD389D /* KimiView.swift */; };
 		9E32529492F2279C8A84BC5A /* ModelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE4C8E58EADDC75850B46AE4 /* ModelDetailView.swift */; };
 		9F762C6D7503AD31ACDB354E /* SourceDashboardComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE348B8A6F5BBC274C411539 /* SourceDashboardComponents.swift */; };
+		A5D75D459E59FAF73A9CF0D6 /* WeeklyDigestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1ACFF688BA4F5257F82E5A5 /* WeeklyDigestTests.swift */; };
 		A8AF06E58EBAACC576CDE4F8 /* ZhipuQuotaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 925ECE5B69FE0A6F93DD9ECD /* ZhipuQuotaService.swift */; };
 		AA655C6530EBC0F60C9696C9 /* Autostart.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20DB2AD765D26DD9D4D7062 /* Autostart.swift */; };
 		B0DE429B6BADDAF0624A2775 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C81AF5E2F02C971202E2FC15 /* Assets.xcassets */; };
@@ -89,6 +90,7 @@
 		CA56AC0FD7836540E304C0FE /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DA229440BE85C4E2C15FA8F /* main.swift */; };
 		CAA966D817D227B166F34170 /* PersonalSkillRankings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8AE7EE0A89ED056CF4918F1 /* PersonalSkillRankings.swift */; };
 		CB77A283981A98A0B46A693F /* APICostEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D2915C7233A87D1969A2E15 /* APICostEstimator.swift */; };
+		CCD081D54CBBAA710C5D06C9 /* WeeklyDigest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C3DA452FCD5757E0F3121FF /* WeeklyDigest.swift */; };
 		D06AC40534617E8E13B1E9FA /* ClaudeUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = F66A254AEF8B3AA97E410E2F /* ClaudeUsage.swift */; };
 		D2BDF1C3A7257F943C8DEAB9 /* MenubarTodayTotalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 951968B35E5CD5AD3814C04C /* MenubarTodayTotalTests.swift */; };
 		D6D751967A78B4D68A0BAE5A /* PersonalSkillRankingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E0277D82C8B231C115599EB /* PersonalSkillRankingsTests.swift */; };
@@ -134,6 +136,7 @@
 		22064562B364186A960DC06C /* NotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotifierTests.swift; sourceTree = "<group>"; };
 		27C0AE619FF776948DDE5842 /* OverviewSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewSnapshotTests.swift; sourceTree = "<group>"; };
 		2B59876F53BE2581617A36DA /* TokenMeterTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TokenMeterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		2C3DA452FCD5757E0F3121FF /* WeeklyDigest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyDigest.swift; sourceTree = "<group>"; };
 		2C9B4C3D49A91E30309B5D63 /* OpenCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeView.swift; sourceTree = "<group>"; };
 		2EFB577C0D476CA6A97A5BCB /* ConfigStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigStoreTests.swift; sourceTree = "<group>"; };
 		3D2915C7233A87D1969A2E15 /* APICostEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APICostEstimator.swift; sourceTree = "<group>"; };
@@ -201,6 +204,7 @@
 		C81AF5E2F02C971202E2FC15 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C82107C1666FA3E1EBD6FADB /* OverviewSourceSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewSourceSelection.swift; sourceTree = "<group>"; };
 		CC942E758B5C67CFA1D9F55A /* KimiUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimiUsageTests.swift; sourceTree = "<group>"; };
+		D1ACFF688BA4F5257F82E5A5 /* WeeklyDigestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyDigestTests.swift; sourceTree = "<group>"; };
 		D1CE424B83212151670BD6C9 /* TokenMeter.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TokenMeter.entitlements; sourceTree = "<group>"; };
 		DD11D2DC6163A46FA5BD2D91 /* PersonalUsageProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalUsageProfile.swift; sourceTree = "<group>"; };
 		DD6D37D83D01D150228735F5 /* CodexUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexUsage.swift; sourceTree = "<group>"; };
@@ -329,6 +333,7 @@
 				A469D7B74DB4BE364D6EE182 /* UsageHeatmapTests.swift */,
 				4932B96A06DCA921753A07DD /* UsageHistoryRangeTests.swift */,
 				62890B90C6F6A2E390BE13C8 /* UsageWindowTests.swift */,
+				D1ACFF688BA4F5257F82E5A5 /* WeeklyDigestTests.swift */,
 				080188017FF759CF86F06172 /* ZhipuQuotaServiceTests.swift */,
 			);
 			path = TokenMeterTests;
@@ -382,6 +387,7 @@
 				AAB36F0702D0D3C9556B6FD8 /* UsageCSVExport.swift */,
 				005010A27E1DCBED40A6FCF8 /* UsageHeatmap.swift */,
 				E7CC34673E7679C77153F2F4 /* UsageHistoryRange.swift */,
+				2C3DA452FCD5757E0F3121FF /* WeeklyDigest.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -537,6 +543,7 @@
 				5E0A66E0AF6105689EE8E977 /* UsageHeatmapTests.swift in Sources */,
 				2B8677054F6C2550061477DE /* UsageHistoryRangeTests.swift in Sources */,
 				2343BAD53DB56CD403D15ED5 /* UsageWindowTests.swift in Sources */,
+				A5D75D459E59FAF73A9CF0D6 /* WeeklyDigestTests.swift in Sources */,
 				8F0C6B1D77FB3247BF010F05 /* ZhipuQuotaServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -607,6 +614,7 @@
 				FDB2F7A0E3271979E1128210 /* UsageCSVExport.swift in Sources */,
 				3FA4F30FF15DD5E6A92FE55D /* UsageHeatmap.swift in Sources */,
 				44C3E429D2C0A08C74D6A3E3 /* UsageHistoryRange.swift in Sources */,
+				CCD081D54CBBAA710C5D06C9 /* WeeklyDigest.swift in Sources */,
 				A8AF06E58EBAACC576CDE4F8 /* ZhipuQuotaService.swift in Sources */,
 				CA56AC0FD7836540E304C0FE /* main.swift in Sources */,
 			);
