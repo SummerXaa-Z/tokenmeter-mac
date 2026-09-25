@@ -16,6 +16,18 @@ enum UsageHeatmap {
         let monthLabel: String?  // 与前一列月份不同时给出,如 "9月"
     }
 
+    // 周内节律:窗口内该星期几的日均。分母是出现次数而非有量天数——
+    // 休整天计入分母,反映"这一天通常用多少"而不是"用的时候有多猛"。
+    struct WeekdayStat: Equatable {
+        let weekday: Int    // Calendar weekday,1=周日 ... 7=周六
+        let average: Int
+        let days: Int       // 窗口内该星期几出现的天数(含今天,不含未来)
+
+        var label: String {
+            ["日", "一", "二", "三", "四", "五", "六"][weekday - 1]
+        }
+    }
+
     static let windowWeeks = 13
 
     static func window(
@@ -100,6 +112,45 @@ enum UsageHeatmap {
             streak += 1
         }
         return streak
+    }
+
+    /// 窗口内按星期几聚合的日均,按周一...周日排序返回 7 项。
+    static func weekdayAverages(
+        _ days: [HistoryStore.DayPoint],
+        participants: some Sequence<HistorySource>,
+        today: Date = Date(),
+        windowWeeks: Int = UsageHeatmap.windowWeeks,
+        calendar: Calendar = .current
+    ) -> [WeekdayStat] {
+        let allowed = Set(participants)
+        var totals: [String: Int] = [:]
+        for day in days {
+            let total = day.bySource.reduce(0) { sum, entry in
+                allowed.contains(entry.key) ? sum + max(entry.value, 0) : sum
+            }
+            guard total > 0 else { continue }
+            totals[day.date, default: 0] += total
+        }
+
+        var sums = [Int: Int]()
+        var counts = [Int: Int]()
+        let start = calendar.date(
+            byAdding: .day, value: -(windowWeeks * 7 - 1), to: calendar.startOfDay(for: today)
+        ) ?? today
+        var cursor = start
+        while cursor <= today {
+            let weekday = calendar.component(.weekday, from: cursor)
+            sums[weekday, default: 0] += totals[DateUtil.key(cursor)] ?? 0
+            counts[weekday, default: 0] += 1
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+        return (2...8).map { slot in          // 2=周一 ... 7=周六, 8→周日(1)
+            let weekday = slot == 8 ? 1 : slot
+            let days = counts[weekday] ?? 0
+            let sum = sums[weekday] ?? 0
+            return WeekdayStat(weekday: weekday, average: days > 0 ? sum / days : 0, days: days)
+        }
     }
 
     /// 非零日升序的 1/4、2/4、3/4 分位值;不足 4 天时仍给出可用阈值。

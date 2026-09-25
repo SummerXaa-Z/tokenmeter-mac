@@ -133,6 +133,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     range: .month, sources: Provider.allCases,
                     onOpenSource: { _ in }, onSettings: {}),
                 height: 1600)),
+            // 1D 档总览:hero 的"今日 vs 近 7 天日均"等只在 1D 出现
+            ("overview-day-full", hosting(
+                OverviewView(
+                    range: .day, sources: Provider.allCases,
+                    onOpenSource: { _ in }, onSettings: {}),
+                height: 1600)),
         ]
 
         var windows: [NSWindow] = []

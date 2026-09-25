@@ -40,6 +40,16 @@ struct OverviewUsageCard: View {
     let range: UsageHistoryRange
     let entries: [OverviewToolEntry]
     let onOpen: (Provider) -> Void
+    // 近 7 天日均上下文只用本机历史;总览未加载完时为空数组,行自动隐藏
+    var history: [HistoryStore.DayPoint] = []
+    var participants: Set<HistorySource> = []
+
+    /// 近 7 天日均(滚动窗口整除 7);无历史时为 0,上下文行随之隐藏
+    private var weekDailyAverage: Int {
+        let rolling = PeriodCompare.bySource(
+            history, period: .rolling7, participants: participants)
+        return rolling.this.values.reduce(0, +) / 7
+    }
 
     var body: some View {
         Card {
@@ -56,6 +66,18 @@ struct OverviewUsageCard: View {
                         .foregroundStyle(Theme.brand.opacity(0.55))
                 }
                 .padding(.top, 5)
+                // 1D 档下补一行参照:今天 vs 近 7 天日均,回答"今天算多吗"
+                if range == .day, weekDailyAverage > 0 {
+                    HStack(spacing: 5) {
+                        Text("近 7 天日均 \(Fmt.tokensShort(weekDailyAverage))")
+                            .font(Theme.detailFont)
+                            .foregroundStyle(.secondary)
+                        ChangeBadge(
+                            change: PeriodCompare.change(
+                                this: snapshot.periodTotal, last: weekDailyAverage))
+                    }
+                    .padding(.top, 2)
+                }
                 if let coverage = range.localCoverageText(
                     historyStartDate: snapshot.historyStartDate,
                     availableDays: snapshot.availableHistoryDays
@@ -1022,6 +1044,7 @@ struct OverviewCompareCard: View {
 struct OverviewHeatmapCard: View {
     let history: [HistoryStore.DayPoint]
     let participants: Set<HistorySource>
+    @State private var hoverWeekday: String?
 
     // 索引 = UsageHeatmap.DayCell.level(0...4)
     private static let levelFills: [Color] = [
@@ -1047,6 +1070,7 @@ struct OverviewHeatmapCard: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 } else {
                     grid(columns)
+                    rhythmChart
                     HStack(spacing: 4) {
                         Text("少")
                             .font(Theme.footnoteFont).foregroundStyle(.tertiary)
@@ -1093,6 +1117,45 @@ struct OverviewHeatmapCard: View {
                 }
             }
         }
+    }
+
+    // 周内节律小柱图:窗口内各星期几的日均,峰值柱实色、其余半透明;
+    // 说明行与其他图表同款悬停查值,未悬停时显示峰值日
+    private var rhythmChart: some View {
+        let stats = UsageHeatmap.weekdayAverages(history, participants: participants)
+        let peak = stats.map(\.average).max() ?? 0
+        let active = stats.first { $0.label == hoverWeekday }
+            ?? stats.max { $0.average < $1.average }
+            ?? UsageHeatmap.WeekdayStat(weekday: 2, average: 0, days: 0)
+        return VStack(alignment: .leading, spacing: 2) {
+            ChartHoverCaption(
+                label: "周内节律 · 周\(active.label)", total: active.average, parts: [])
+            Chart {
+                ForEach(stats, id: \.weekday) { stat in
+                    BarMark(
+                        x: .value("星期", stat.label),
+                        y: .value("日均", stat.average),
+                        width: 10
+                    )
+                    .cornerRadius(1.5)
+                    .foregroundStyle(
+                        stat.average == peak && peak > 0
+                            ? Theme.brand : Theme.brand.opacity(0.35))
+                }
+                HoverDateRule(date: hoverWeekday)
+            }
+            .chartXSelection(value: $hoverWeekday)
+            .chartYAxis(.hidden)
+            .chartXAxis {
+                AxisMarks { _ in
+                    AxisValueLabel()
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .frame(height: 38)
+        }
+        .accessibilityLabel("周内节律")
     }
 
     // 行标签只标周一与周四，其余留空保持与格子同节拍

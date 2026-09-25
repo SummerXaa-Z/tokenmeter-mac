@@ -21,7 +21,9 @@ struct OverviewView: View {
                     snapshot: data,
                     range: range,
                     entries: entries,
-                    onOpen: onOpenSource
+                    onOpen: onOpenSource,
+                    history: history,
+                    participants: Set(sourceSelection.sources)
                 )
                 if sources.contains(.deepseek) {
                     OverviewDeepSeekPlatformCard(

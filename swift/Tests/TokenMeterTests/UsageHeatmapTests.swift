@@ -134,4 +134,43 @@ final class UsageHeatmapTests: XCTestCase {
             day("2026-09-23", claude: 5),
         ]), 1)
     }
+
+    // MARK: - 周内节律
+
+    private func averages(
+        _ days: [HistoryStore.DayPoint],
+        windowWeeks: Int = 13
+    ) -> [UsageHeatmap.WeekdayStat] {
+        UsageHeatmap.weekdayAverages(
+            days,
+            participants: [.claude, .codex],
+            today: DateUtil.date(from: "2026-09-25")!,
+            windowWeeks: windowWeeks
+        )
+    }
+
+    func testWeekdayAveragesSumAndCountPerWeekday() {
+        // 窗口 2 周 = 09-12(周六)...09-25(周五),共 14 天
+        let stats = averages([
+            day("2026-09-12", claude: 10),   // 周六
+            day("2026-09-13", claude: 30),   // 周日(另一周日 09-20 为零天)
+            day("2026-09-19", claude: 30),   // 周六 → (10+30)/2 = 20
+            day("2026-09-25", claude: 40, deepseek: 9999),   // 周五,平台不计
+        ], windowWeeks: 2)
+        XCTAssertEqual(stats.map(\.label), ["一", "二", "三", "四", "五", "六", "日"])
+        // 休整日计入分母:周五 (0+40)/2=20、周日 (30+0)/2=15
+        XCTAssertEqual(stats.map(\.average), [0, 0, 0, 0, 20, 20, 15])
+        XCTAssertEqual(stats.map(\.days), [2, 2, 2, 2, 2, 2, 2])
+    }
+
+    func testWeekdayAveragesExcludesDaysOutsideWindow() {
+        // 窗口外的同星期几不计:09-05(周六)在 2 周窗口之前
+        let stats = averages([
+            day("2026-09-05", claude: 999),
+            day("2026-09-19", claude: 30),
+        ], windowWeeks: 2)
+        let saturday = stats.first { $0.label == "六" }
+        XCTAssertEqual(saturday?.average, 15)   // 30 / 2(09-12 为零天)
+        XCTAssertEqual(saturday?.days, 2)
+    }
 }
