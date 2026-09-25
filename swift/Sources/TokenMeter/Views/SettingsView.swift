@@ -23,6 +23,7 @@ struct SettingsView: View {
     @State private var notificationsOn = true
     @State private var balanceAlert = 0
     @State private var diagnosticStatus = ""
+    @State private var usageExportStatus = ""
     // 连接行的展开态：未配置的默认展开引导输入，已配置的收起成一行；
     // 验证保存成功后自动收起，清除后保持展开方便重输。
     @State private var expandBalanceKey = false
@@ -481,7 +482,7 @@ struct SettingsView: View {
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("系统通知").font(.system(size: 12, weight: .semibold))
-                        Text("Codex 配额 ≤10%、Claude 超阈值或 DeepSeek 余额过低时，仅在越线时提醒一次")
+                        Text("Codex / Kimi / 智谱 / 方舟额度 ≤10%、Claude 超阈值或 DeepSeek 余额过低时，仅在越线时提醒一次")
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }
@@ -607,6 +608,24 @@ struct SettingsView: View {
 
                 Divider()
                 VStack(alignment: .leading, spacing: 7) {
+                    Label("用量导出", systemImage: "square.and.arrow.up")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("按天导出本机已积累的全部来源 Token 与平台费用（CSV，纯本地生成）。")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    HStack {
+                        Button("导出用量 CSV") { exportUsageCSV() }
+                        Spacer()
+                    }
+                    if !usageExportStatus.isEmpty {
+                        Text(usageExportStatus)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+
+                Divider()
+                VStack(alignment: .leading, spacing: 7) {
                     Label("脱敏诊断", systemImage: "stethoscope")
                         .font(.system(size: 12, weight: .semibold))
                     Text("导出版本、系统、签名、数据源与工具状态；不包含凭据或会话内容。")
@@ -657,6 +676,25 @@ struct SettingsView: View {
             Task { await updater.downloadAndInstall() }
         } else {
             Task { await updater.check() }
+        }
+    }
+
+    private func exportUsageCSV() {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSSavePanel()
+        panel.title = "导出用量 CSV"
+        panel.nameFieldStringValue = UsageCSVExport.suggestedFilename()
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowedContentTypes = [.commaSeparatedText]
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try UsageCSVExport.makeCSV(HistoryStore.all()).write(
+                to: url, atomically: true, encoding: .utf8)
+            usageExportStatus = "已导出：\(url.lastPathComponent)"
+        } catch {
+            usageExportStatus = "导出失败：\(error.localizedDescription)"
         }
     }
 

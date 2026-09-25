@@ -236,6 +236,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if balanceThreshold <= 0 { alertLatch.reset(key: "deepseek.balance.low") }
         if !codexOn { alertLatch.reset(key: "codex.quota.low") }
         if !claudeAlertOn { alertLatch.reset(key: "claude.daily.over") }
+        // 配额数据消失（清除 Key 等）同样重新布防，避免下次仍越线时被旧状态吞掉
+        if appState.kimiQuota.result == nil { alertLatch.reset(key: "kimi.quota.low") }
+        if appState.zhipuQuota.result == nil { alertLatch.reset(key: "zhipu.quota.low") }
+        if appState.arkPlanQuota.result == nil { alertLatch.reset(key: "ark.quota.low") }
 
         // 余额预警独立于 detached 扫描：balance 已在 appState（主线程，无 I/O）。
         // 放在 guard 前，避免"只开余额预警"时被提前 return 跳过。
@@ -247,6 +251,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 key: "deepseek.balance.low", crossed: value < Double(balanceThreshold),
                 title: "DeepSeek 余额不足",
                 body: "当前余额 \(bal.symbol)\(bal.totalBalance)，低于 \(balanceThreshold) 预警线")
+        }
+
+        // 订阅额度预警同样与 Coding 源开关无关（只依赖配额缓存），照余额预警
+        // 在 guard 前评估；配额缓存的刷新在下方 task group 里，加载完成后
+        // 会自动再触发一轮状态栏刷新重新评估。
+        if let kimiResult = appState.kimiQuota.result {
+            let worst = SubscriptionQuotaAlert.kimiWorstRemainingPercent(kimiResult)
+            evaluateAlert(
+                key: "kimi.quota.low",
+                crossed: SubscriptionQuotaAlert.shouldNotify(remainingPercent: worst),
+                title: "Kimi Code 额度告急",
+                body: "订阅额度仅剩 \(worst.map { Int($0).description } ?? "0")%，留意用量")
+        }
+        if let zhipuResult = appState.zhipuQuota.result {
+            let worst = SubscriptionQuotaAlert.zhipuWorstRemainingPercent(zhipuResult)
+            evaluateAlert(
+                key: "zhipu.quota.low",
+                crossed: SubscriptionQuotaAlert.shouldNotify(remainingPercent: worst),
+                title: "智谱 GLM 额度告急",
+                body: "订阅额度仅剩 \(worst.map { Int($0).description } ?? "0")%，留意用量")
+        }
+        if let arkResult = appState.arkPlanQuota.result {
+            let worst = SubscriptionQuotaAlert.arkWorstRemainingPercent(arkResult)
+            evaluateAlert(
+                key: "ark.quota.low",
+                crossed: SubscriptionQuotaAlert.shouldNotify(remainingPercent: worst),
+                title: "火山方舟额度告急",
+                body: "订阅额度仅剩 \(worst.map { Int($0).description } ?? "0")%，留意用量")
         }
 
         guard codexOn || claudeAlertOn || claudeInfoOn || allInfoOn else {
@@ -273,6 +305,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     if qwenOn { group.addTask { await self.appState.loadQwen() } }
                     if cursorOn { group.addTask { await self.appState.loadCursor() } }
                 }
+                // 订阅配额缓存参与额度预警：60s TTL + 无 Key/未安装早退，成本
+                // 可忽略；加载完成后自动 post 刷新通知，触发上面的预警重新评估。
+                group.addTask { await self.appState.loadKimiQuota() }
+                group.addTask { await self.appState.loadZhipuQuota() }
+                group.addTask { await self.appState.loadArkPlanQuota() }
             }
 
             var level = AlertLevel.normal
@@ -361,6 +398,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     recordedToday: recordedToday
                 )
             }
+            // 订阅额度告警只染图标不发通知（通知在 guard 前已按边沿触发过），
+            // 阈值线与 Codex 配额一致：≤30% 橙、≤10% 红。
+            let kimiWorst = self.appState.kimiQuota.result
+                .flatMap(SubscriptionQuotaAlert.kimiWorstRemainingPercent)
+            let zhipuWorst = self.appState.zhipuQuota.result
+                .flatMap(SubscriptionQuotaAlert.zhipuWorstRemainingPercent)
+            let arkWorst = self.appState.arkPlanQuota.result
+                .flatMap(SubscriptionQuotaAlert.arkWorstRemainingPercent)
+            for worst in [kimiWorst, zhipuWorst, arkWorst].compactMap({ $0 }) {
+                if SubscriptionQuotaAlert.isCritical(worst) { level = max(level, .critical) }
+                else if SubscriptionQuotaAlert.isWarn(worst) { level = max(level, .warn) }
+            }
+
             if infoText == nil, claudeInfoOn || codexTotalInfoOn || allInfoOn {
                 infoText = Fmt.tokensShort(infoTokens)
             }
