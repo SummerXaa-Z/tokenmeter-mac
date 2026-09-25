@@ -35,6 +35,7 @@ struct OverviewView: View {
                         usageState: state.usageState,
                         historyStartDate: data.deepSeekPlatformHistoryStartDate,
                         availableHistoryDays: data.deepSeekPlatformAvailableHistoryDays,
+                        runway: state.balance.flatMap { BalanceRunway.estimate($0, history: history) },
                         onOpen: { onOpenSource(.deepseek) }
                     )
                 }

@@ -21,6 +21,7 @@ struct SettingsView: View {
     @State private var autostartOn = false
     @State private var autoUpdateOn = true
     @State private var notificationsOn = true
+    @State private var quotaPaceAlertOn = true
     @State private var balanceAlert = 0
     @State private var diagnosticStatus = ""
     @State private var usageExportStatus = ""
@@ -488,6 +489,25 @@ struct SettingsView: View {
                 }
 
                 Divider()
+                Toggle(isOn: Binding(
+                    get: { quotaPaceAlertOn },
+                    set: { value in
+                        store.quotaPaceAlertEnabled = value
+                        quotaPaceAlertOn = value
+                        NotificationCenter.default.post(
+                            name: .statusRefreshRequested,
+                            object: nil
+                        )
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("额度提前耗尽预测").font(.system(size: 12, weight: .semibold))
+                        Text("周、月等长窗口按当前速度会在重置前用完时提醒一次，窗口过 20% 后才判断；5 小时窗不提醒")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                }
+
+                Divider()
                 let digestPreview = WeeklyDigest.message(
                     HistoryStore.all(),
                     participants: WeeklyDigest.participants(store))
@@ -767,6 +787,7 @@ struct SettingsView: View {
         autostartOn = Autostart.isEnabled
         autoUpdateOn = store.autoUpdateCheckEnabled
         notificationsOn = store.notificationsEnabled
+        quotaPaceAlertOn = store.quotaPaceAlertEnabled
         balanceAlert = store.deepseekBalanceAlertThreshold
     }
 

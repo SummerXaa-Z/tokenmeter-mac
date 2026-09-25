@@ -13,6 +13,12 @@ struct SubscriptionQuotaPeriod: Equatable, Identifiable {
     let remainingPercent: Double?
     let resetAt: Date?
     let detail: String?
+    // 窗口起点：由窗口时长从重置时间回推，供额度节奏预测；时长未知时为 nil
+    var windowStart: Date? = nil
+
+    var pace: QuotaPace? {
+        QuotaPace.compute(remainingPercent: remainingPercent, windowStart: windowStart, resetAt: resetAt)
+    }
 }
 
 struct SubscriptionQuotaExtraUsage: Equatable {
@@ -62,7 +68,10 @@ struct SubscriptionQuotaSnapshot: Equatable {
                 label: label(windowMinutes: primary.windowMinutes),
                 remainingPercent: remaining(fromUsedPercent: primary.usedPercent),
                 resetAt: validResetDate(primary.resetsAt),
-                detail: nil
+                detail: nil,
+                windowStart: QuotaPace.windowStart(
+                    resetAt: validResetDate(primary.resetsAt),
+                    seconds: TimeInterval(primary.windowMinutes) * 60)
             ))
         }
         if let secondary = limits.secondary {
@@ -71,7 +80,10 @@ struct SubscriptionQuotaSnapshot: Equatable {
                 label: label(windowMinutes: secondary.windowMinutes),
                 remainingPercent: remaining(fromUsedPercent: secondary.usedPercent),
                 resetAt: validResetDate(secondary.resetsAt),
-                detail: nil
+                detail: nil,
+                windowStart: QuotaPace.windowStart(
+                    resetAt: validResetDate(secondary.resetsAt),
+                    seconds: TimeInterval(secondary.windowMinutes) * 60)
             ))
         }
         return SubscriptionQuotaGroup(
@@ -145,14 +157,18 @@ struct SubscriptionQuotaSnapshot: Equatable {
         id: String,
         fallbackLabel: String
     ) -> SubscriptionQuotaPeriod {
-        SubscriptionQuotaPeriod(
+        let resetAt = parseISO8601(row.resetAt)
+        return SubscriptionQuotaPeriod(
             id: id,
             label: row.window.map(label(kimiWindow:)) ?? fallbackLabel,
             remainingPercent: clampPercent(row.remainingPercent),
-            resetAt: parseISO8601(row.resetAt),
+            resetAt: resetAt,
             // Kimi 没有公开这组整数的稳定业务单位；只展示百分比与重置时间，
             // 避免被误解成 Token 数或请求数。
-            detail: nil
+            detail: nil,
+            windowStart: QuotaPace.windowStart(
+                resetAt: resetAt,
+                seconds: row.window.map { TimeInterval(kimiSortKeyMinutes($0)) * 60 })
         )
     }
 
@@ -166,12 +182,14 @@ struct SubscriptionQuotaSnapshot: Equatable {
                 let periods = item.periods.sorted(by: arkPeriodOrder).map { period in
                     let occurrence = occurrences[period.label, default: 0]
                     occurrences[period.label] = occurrence + 1
+                    let resetAt = parseISO8601(period.resetAt)
                     return SubscriptionQuotaPeriod(
                         id: "ark:\(item.product):\(period.label):\(occurrence)",
                         label: label(arkPeriod: period.label),
                         remainingPercent: clampPercent(period.remainingPercent),
-                        resetAt: parseISO8601(period.resetAt),
-                        detail: arkDetail(period, product: item.product)
+                        resetAt: resetAt,
+                        detail: arkDetail(period, product: item.product),
+                        windowStart: arkWindowStart(period.label, resetAt: resetAt)
                     )
                 }
                 return SubscriptionQuotaGroup(
@@ -183,6 +201,16 @@ struct SubscriptionQuotaSnapshot: Equatable {
                     extraUsage: nil
                 )
             }
+    }
+
+    // session 窗口时长不固定，不回推起点
+    private static func arkWindowStart(_ label: String, resetAt: Date?) -> Date? {
+        switch label.lowercased() {
+        case "5h": return QuotaPace.windowStart(resetAt: resetAt, seconds: 5 * 3600)
+        case "weekly": return QuotaPace.windowStart(resetAt: resetAt, seconds: 7 * 86_400)
+        case "monthly": return QuotaPace.monthWindowStart(resetAt: resetAt)
+        default: return nil
+        }
     }
 
     private static func arkDetail(_ period: ArkPlanQuotaPeriod, product: String) -> String? {
@@ -198,7 +226,8 @@ struct SubscriptionQuotaSnapshot: Equatable {
                 fiveHour,
                 id: "zhipu:subscription:five-hour",
                 label: "5小时",
-                tokenDetail: true
+                tokenDetail: true,
+                windowStart: QuotaPace.windowStart(resetAt: fiveHour.resetAt, seconds: 5 * 3600)
             ))
         }
         if let weekly = result.weekly {
@@ -206,7 +235,8 @@ struct SubscriptionQuotaSnapshot: Equatable {
                 weekly,
                 id: "zhipu:subscription:weekly",
                 label: "每周",
-                tokenDetail: true
+                tokenDetail: true,
+                windowStart: QuotaPace.windowStart(resetAt: weekly.resetAt, seconds: 7 * 86_400)
             ))
         }
         if let toolCalls = result.toolCalls {
@@ -214,7 +244,8 @@ struct SubscriptionQuotaSnapshot: Equatable {
                 toolCalls,
                 id: "zhipu:subscription:tool-calls",
                 label: "工具调用",
-                tokenDetail: false
+                tokenDetail: false,
+                windowStart: QuotaPace.monthWindowStart(resetAt: toolCalls.resetAt)
             ))
         }
         return SubscriptionQuotaGroup(
@@ -233,7 +264,8 @@ struct SubscriptionQuotaSnapshot: Equatable {
         _ tier: ZhipuQuotaTier,
         id: String,
         label: String,
-        tokenDetail: Bool
+        tokenDetail: Bool,
+        windowStart: Date?
     ) -> SubscriptionQuotaPeriod {
         var detail: String?
         if let used = tier.used, let total = tier.total {
@@ -249,7 +281,8 @@ struct SubscriptionQuotaSnapshot: Equatable {
             label: label,
             remainingPercent: remaining(fromUsedPercent: tier.usedPercent),
             resetAt: tier.resetAt,
-            detail: detail
+            detail: detail,
+            windowStart: windowStart
         )
     }
 
@@ -360,6 +393,10 @@ struct SubscriptionQuotaSnapshot: Equatable {
 
     private static func kimiSortKey(_ row: KimiQuotaRow) -> Int {
         guard let window = row.window else { return Int.max }
+        return kimiSortKeyMinutes(window)
+    }
+
+    private static func kimiSortKeyMinutes(_ window: KimiQuotaWindow) -> Int {
         let minutes: Int
         switch window.unit {
         case .minute: minutes = window.duration

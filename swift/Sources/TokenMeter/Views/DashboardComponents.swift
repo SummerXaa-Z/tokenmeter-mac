@@ -38,6 +38,10 @@ struct BalanceCard: View {
                         if let m = monthCost { metric("本月", Fmt.money(m)) }
                     }
                 }
+                if case .ok = state, let balance,
+                   let runway = BalanceRunway.estimate(balance, history: HistoryStore.all()) {
+                    BalanceRunwayLine(runway: runway)
+                }
             }
         }
     }

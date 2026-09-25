@@ -157,6 +157,7 @@ struct OverviewDeepSeekPlatformCard: View {
     let usageState: LoadState
     let historyStartDate: String?
     let availableHistoryDays: Int
+    var runway: BalanceRunway.Estimate? = nil
     let onOpen: () -> Void
 
     var body: some View {
@@ -182,6 +183,9 @@ struct OverviewDeepSeekPlatformCard: View {
                         metric(Fmt.tokensShort(tokens), "\(range.scopeTitle) API Token")
                         metric(cost.map { Fmt.money($0) } ?? "—", "平台实际费用")
                         metric(balanceText, "当前余额")
+                    }
+                    if let runway {
+                        BalanceRunwayLine(runway: runway)
                     }
 
                     Text(statusText)
@@ -252,6 +256,43 @@ struct OverviewDeepSeekPlatformCard: View {
     }
 }
 
+// 余额可用天数一行：不足 7 天橙色提醒充值，其余次要灰。
+struct BalanceRunwayLine: View {
+    let runway: BalanceRunway.Estimate
+
+    var body: some View {
+        let low = runway.days < 7
+        HStack(spacing: 4) {
+            Image(systemName: low ? "exclamationmark.triangle.fill" : "hourglass")
+                .font(.system(size: 9, weight: .semibold))
+            Text("余额预计可用\(runway.days >= 1 && runway.days < 365 ? " " : "")\(BalanceRunway.daysText(runway.days)) · 按近 \(runway.sampleDays) 天日均 \(Fmt.money(runway.dailyAverage))")
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+        }
+        .font(Theme.footnoteFont)
+        .foregroundStyle(low ? Color.orange : Color.secondary)
+    }
+}
+
+// 额度会提前用完时的橙色提示行；撑得到重置时不占独立行，
+// 由调用方把 summary 并进灰色明细行。
+struct QuotaPaceLine: View {
+    let pace: QuotaPace
+    var text: String? = nil
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 9, weight: .semibold))
+            Text(text ?? pace.summary())
+                .lineLimit(1)
+        }
+        .font(Theme.footnoteFont)
+        .foregroundStyle(Color.orange)
+        .help("窗口时间已过 \(QuotaPace.percent(pace.elapsedFraction))，额度已用 \(QuotaPace.percent(pace.usedFraction))")
+    }
+}
+
 // 订阅额度与 Token 历史是两种口径：这里单独平铺展示各服务自己的窗口，
 // 不把 5 小时、周、月或 AFP 强行合成一个“总剩余量”。
 struct OverviewSubscriptionQuotaCard: View {
@@ -284,6 +325,11 @@ struct OverviewSubscriptionQuotaCard: View {
                     }
                 }
 
+                if hasPace {
+                    Text("刻度线为匀速消耗此刻应剩的位置；节奏按窗口内已用比例线性外推，仅供参考。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
                 Divider().opacity(0.35)
                 Text("额度只读：Codex 查询官方配额；Kimi 使用用户主动配置的 Key 查询官方接口，未配置时仅访问本机 127.0.0.1；方舟只调用本机已登录 arkcli；智谱使用用户配置的 Key 查询所选域名的官方监控接口。TokenMeter 不会上报本地会话或统计结果。")
                     .font(.system(size: 10))
@@ -291,6 +337,10 @@ struct OverviewSubscriptionQuotaCard: View {
             }
         }
         .accessibilityIdentifier("TokenMeter.SubscriptionQuota")
+    }
+
+    private var hasPace: Bool {
+        snapshot.groups.contains { $0.periods.contains { $0.pace != nil } }
     }
 
     @ViewBuilder
@@ -375,10 +425,19 @@ struct OverviewSubscriptionQuotaCard: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 42, alignment: .leading)
             VStack(alignment: .leading, spacing: 3) {
+                let pace = period.pace
                 if let remaining = period.remainingPercent {
-                    QuotaBar(progress: remaining / 100, tint: quotaColor(remaining, fallback: color(for: source)))
+                    QuotaBar(
+                        progress: remaining / 100,
+                        tint: quotaColor(remaining, fallback: color(for: source)),
+                        marker: pace?.evenPaceRemaining)
                 }
-                let details = [period.detail, period.resetAt.map(resetText)].compactMap { $0 }
+                if let pace, pace.isAhead {
+                    QuotaPaceLine(pace: pace)
+                }
+                // 撑得到重置时接在重置时间后面:"… 重置 · 届时约剩 30%"
+                let calm = pace.flatMap { $0.isAhead ? nil : "届时约剩 \(QuotaPace.percent($0.projectedRemainingAtReset))" }
+                let details = [period.detail, period.resetAt.map(resetText), calm].compactMap { $0 }
                 if !details.isEmpty {
                     Text(details.joined(separator: " · "))
                         .font(.system(size: 10))

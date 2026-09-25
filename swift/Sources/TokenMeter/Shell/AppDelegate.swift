@@ -98,6 +98,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    private static func paceFixture() -> some View {
+        let now = Date()
+        let hour: TimeInterval = 3600
+        let codex = CodexRateLimits(
+            limitId: "codex", limitName: nil,
+            // 5 小时窗过去 40% 已用 62%:会提前用完
+            primary: CodexRateWindow(
+                usedPercent: 62, windowMinutes: 300, resetsAt: now.addingTimeInterval(3 * hour)),
+            // 周窗过去 3/7 已用 30%:撑得到重置
+            secondary: CodexRateWindow(
+                usedPercent: 30, windowMinutes: 10_080, resetsAt: now.addingTimeInterval(96 * hour)),
+            planType: "pro", asOf: now)
+        let zhipu = ZhipuQuotaResult(
+            fiveHour: ZhipuQuotaTier(
+                usedPercent: 10, used: 4_000_000, total: 40_000_000,
+                resetAt: now.addingTimeInterval(4 * hour)),
+            weekly: ZhipuQuotaTier(
+                usedPercent: 70, used: 280_000_000, total: 400_000_000,
+                resetAt: now.addingTimeInterval(72 * hour)),
+            level: "pro")
+        let balance = Balance(
+            isAvailable: true, currency: "CNY", totalBalance: "48.20",
+            grantedBalance: "0.00", toppedUpBalance: "48.20")
+        return ScrollView {
+            VStack(spacing: 10) {
+                OverviewSubscriptionQuotaCard(
+                    snapshot: SubscriptionQuotaSnapshot(codex: codex, zhipu: zhipu),
+                    statuses: [
+                        .init(source: .codex, title: "Codex", loading: false, message: ""),
+                        .init(source: .zhipu, title: "智谱 GLM", loading: false, message: ""),
+                    ])
+                OverviewDeepSeekPlatformCard(
+                    range: .week, tokens: 12_300_000, cost: 21.5, balance: balance,
+                    balanceState: .ok, usageState: .ok, historyStartDate: nil,
+                    availableHistoryDays: 30,
+                    runway: BalanceRunway.Estimate(dailyAverage: 3.07, days: 15.7, sampleDays: 7),
+                    onOpen: {})
+                Card {
+                    VStack(alignment: .leading, spacing: 6) {
+                        BalanceRunwayLine(
+                            runway: BalanceRunway.Estimate(dailyAverage: 11.4, days: 4.2, sampleDays: 3))
+                        QuotaBar(progress: 0.38, tint: .orange, marker: 0.6)
+                    }
+                }
+            }
+            .padding(14)
+        }
+    }
+
     // 用法：TokenMeter --ui-render=<dir>。为每个页面在亮/暗两种外观下
     // 生成 <page>-<appearance>.png 后退出。窗口放在屏幕外，用户无感。
     private func runUIRender(outputPath: String) {
@@ -160,6 +209,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 QwenCodeView(onBack: {}, onSettings: {}), height: 1800)),
             ("cursor-full", hosting(
                 CursorView(onBack: {}, onSettings: {}), height: 2200)),
+            // 额度节奏/余额可用天数的合成数据页:本机未必有实时配额与平台消费,
+            // 用固定快照覆盖"会提前用完 / 撑得到重置 / 余额偏低"各分支
+            ("pace-fixture", hosting(Self.paceFixture(), height: 1100)),
         ]
 
         var windows: [NSWindow] = []
@@ -203,9 +255,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 #endif
 
     private var alertLatch = AlertLatch()
+    // 本轮窗口内已提醒过的节奏预警 key(含窗口重置时刻)
+    private var paceAlertedWindows: Set<String> = []
     private var statusRefreshCoalescer = StatusRefreshCoalescer()
 
     // 根据"当前是否越线"决定推/撤。crossed=true 且未推过 → 推；crossed=false → 清除记录
+    // 额度节奏预警按窗口去重：同一窗口提醒过就不再提醒，即使节奏回落后
+    // 又越线；窗口滚动、关源、清 Key 或关闭开关后 key 消失，重新布防。
+    // 通知总开关关闭时不记已提醒，重新开启后当前越线窗口仍可提醒一次。
+    private func evaluateQuotaPaceAlerts(codexOn: Bool) {
+        let config = ConfigStore.shared
+        let snapshot = SubscriptionQuotaSnapshot(
+            codex: codexOn ? appState.codex.result?.rateLimits : nil,
+            kimi: appState.kimiQuota.result,
+            ark: appState.arkPlanQuota.result,
+            zhipu: appState.zhipuQuota.result
+        )
+        let items = config.quotaPaceAlertEnabled ? QuotaPaceAlert.items(snapshot) : []
+        paceAlertedWindows.formIntersection(items.map(\.key))
+        guard config.notificationsEnabled else { return }
+        for item in items where item.crossed && !paceAlertedWindows.contains(item.key) {
+            paceAlertedWindows.insert(item.key)
+            Notifier.send(id: item.key, title: item.title, body: item.body)
+        }
+    }
+
     private func evaluateAlert(key: String, crossed: Bool, title: String, body: String) {
         if alertLatch.shouldFire(
             key: key,
@@ -333,6 +407,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 title: "火山方舟额度告急",
                 body: "订阅额度仅剩 \(worst.map { Int($0).description } ?? "0")%，留意用量")
         }
+
+        evaluateQuotaPaceAlerts(codexOn: codexOn)
 
         guard codexOn || claudeAlertOn || claudeInfoOn || allInfoOn else {
             setStatusIcon(tint: nil, text: nil)

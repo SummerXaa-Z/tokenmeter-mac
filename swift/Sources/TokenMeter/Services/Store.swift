@@ -125,6 +125,7 @@ final class ConfigStore {
         static let notifications = "notificationsEnabled"
         static let weeklyDigest = "weeklyDigestEnabled"
         static let lastWeeklyDigest = "lastWeeklyDigestWeek"
+        static let quotaPaceAlert = "quotaPaceAlertEnabled"
         static let deepseekBalanceAlert = "deepseekBalanceAlertThreshold"
         static let overviewHistoryRange = "overviewHistoryRangeDays"
     }
@@ -324,6 +325,13 @@ final class ConfigStore {
     var weeklyDigestEnabled: Bool {
         get { defaults.object(forKey: DKey.weeklyDigest) as? Bool ?? true }
         set { defaults.set(newValue, forKey: DKey.weeklyDigest) }
+    }
+
+    // 额度提前耗尽预测提醒：默认开。长窗口（周/月）按当前速度会在重置前
+    // 用完时提醒一次（见 QuotaPaceAlert），受"系统通知"总开关约束。
+    var quotaPaceAlertEnabled: Bool {
+        get { defaults.object(forKey: DKey.quotaPaceAlert) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: DKey.quotaPaceAlert) }
     }
 
     // 上次已发周报的 ISO 周键(WeeklyDigest.weekKey),用于每周去重

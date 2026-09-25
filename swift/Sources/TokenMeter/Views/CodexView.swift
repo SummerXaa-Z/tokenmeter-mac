@@ -102,7 +102,24 @@ struct CodexView: View {
                 Text("· \(Fmt.countdown(to: w.resetsAt))重置")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
-            QuotaBar(progress: remaining / 100, tint: Self.remainingColor(remaining))
+            let pace = QuotaPace.compute(
+                remainingPercent: remaining,
+                windowStart: QuotaPace.windowStart(
+                    resetAt: w.resetsAt.timeIntervalSince1970 > 0 ? w.resetsAt : nil,
+                    seconds: TimeInterval(w.windowMinutes) * 60),
+                resetAt: w.resetsAt)
+            QuotaBar(
+                progress: remaining / 100,
+                tint: Self.remainingColor(remaining),
+                marker: pace?.evenPaceRemaining)
+            if let pace {
+                if pace.isAhead {
+                    QuotaPaceLine(pace: pace)
+                } else {
+                    Text(pace.summary())
+                        .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                }
+            }
         }
     }
 

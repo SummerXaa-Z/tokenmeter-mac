@@ -86,19 +86,29 @@ struct Card<Content: View>: View {
 struct QuotaBar: View {
     let progress: Double   // 任意比例值，内部收敛到 0...1
     var tint: Color = Theme.brand
+    // 可选参照刻度（0...1）：额度条上标"匀速消耗此刻应剩多少"，
+    // 填充短于刻度即用得比匀速快
+    var marker: Double? = nil
 
     var body: some View {
         let fraction = min(max(progress, 0), 1)
         return GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(.quaternary)
+                Capsule().fill(.quaternary).frame(height: 4)
                 if fraction > 0 {
                     Capsule().fill(tint)
-                        .frame(width: max(4, fraction * geo.size.width))
+                        .frame(width: max(4, fraction * geo.size.width), height: 4)
+                }
+                if let marker {
+                    let x = min(max(marker, 0), 1) * geo.size.width
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.55))
+                        .frame(width: 1.5, height: 8)
+                        .offset(x: min(max(x - 0.75, 0), geo.size.width - 1.5))
                 }
             }
         }
-        .frame(height: 4)
+        .frame(height: marker == nil ? 4 : 8)
     }
 }
 

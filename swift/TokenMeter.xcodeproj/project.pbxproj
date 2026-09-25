@@ -80,10 +80,12 @@
 		A8AF06E58EBAACC576CDE4F8 /* ZhipuQuotaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 925ECE5B69FE0A6F93DD9ECD /* ZhipuQuotaService.swift */; };
 		AA655C6530EBC0F60C9696C9 /* Autostart.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20DB2AD765D26DD9D4D7062 /* Autostart.swift */; };
 		B0DE429B6BADDAF0624A2775 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C81AF5E2F02C971202E2FC15 /* Assets.xcassets */; };
+		B1BFAC8778A5944E6638B71D /* QuotaPace.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF3C50BBEA971A783811E602 /* QuotaPace.swift */; };
 		B61E64735BB2BEE6B578F867 /* AppDelegateAccessibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4197880F50B58B1A1AB3B160 /* AppDelegateAccessibilityTests.swift */; };
 		B63D44977613F2D847C5B5D2 /* PlatformPortal.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD11782594C3D8969BDFFA5B /* PlatformPortal.swift */; };
 		B9145247667D76CAE51DE2BA /* SubscriptionQuotaAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = E681D77D51281BCE0A4CADA2 /* SubscriptionQuotaAlert.swift */; };
 		B9CB4C72284892743435585C /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBAA57F5DE3E12AB2E6EC2F4 /* Models.swift */; };
+		BA0F9E5B4851F8D2EFB2E494 /* QuotaPaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E17B42B074FE9B38451148 /* QuotaPaceTests.swift */; };
 		BAB81B11D18E043BB953B5AD /* ProcessStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56793DA64ED1628C4958EEB6 /* ProcessStatus.swift */; };
 		BE507A0D2FF38D14503086DB /* StatusRefreshSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB8945BB9A323DCBBB819D5 /* StatusRefreshSettings.swift */; };
 		C28415C1D1CB8BC9927415E1 /* ProcessPipeReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = E693AA9630D3CF6DB70BF5BD /* ProcessPipeReader.swift */; };
@@ -208,8 +210,10 @@
 		CC942E758B5C67CFA1D9F55A /* KimiUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimiUsageTests.swift; sourceTree = "<group>"; };
 		D1ACFF688BA4F5257F82E5A5 /* WeeklyDigestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyDigestTests.swift; sourceTree = "<group>"; };
 		D1CE424B83212151670BD6C9 /* TokenMeter.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TokenMeter.entitlements; sourceTree = "<group>"; };
+		D4E17B42B074FE9B38451148 /* QuotaPaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaPaceTests.swift; sourceTree = "<group>"; };
 		DD11D2DC6163A46FA5BD2D91 /* PersonalUsageProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalUsageProfile.swift; sourceTree = "<group>"; };
 		DD6D37D83D01D150228735F5 /* CodexUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexUsage.swift; sourceTree = "<group>"; };
+		DF3C50BBEA971A783811E602 /* QuotaPace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaPace.swift; sourceTree = "<group>"; };
 		E13A57349BE9B8FC76B5A9D2 /* PersonalUsageRankings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalUsageRankings.swift; sourceTree = "<group>"; };
 		E3A6CC9B0D4EEEB3CFAD389D /* KimiView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimiView.swift; sourceTree = "<group>"; };
 		E62090FB1C9B0F5D758AE75E /* GeminiUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiUsage.swift; sourceTree = "<group>"; };
@@ -326,6 +330,7 @@
 				1E0277D82C8B231C115599EB /* PersonalSkillRankingsTests.swift */,
 				984790852EF2D78035CC739A /* PersonalUsageProfileTests.swift */,
 				01E1C8CE16535C1B08838F35 /* PersonalUsageRankingsTests.swift */,
+				D4E17B42B074FE9B38451148 /* QuotaPaceTests.swift */,
 				8834DFDCCF5EAD81A03BD730 /* QwenCodeUsageTests.swift */,
 				402EF2FB25FC3A7F1B1FA9F2 /* StatusRefreshCoalescerTests.swift */,
 				1CD680EDC59AF40606AAC1E7 /* StatusRefreshSettingsTests.swift */,
@@ -383,6 +388,7 @@
 				E8AE7EE0A89ED056CF4918F1 /* PersonalSkillRankings.swift */,
 				DD11D2DC6163A46FA5BD2D91 /* PersonalUsageProfile.swift */,
 				E13A57349BE9B8FC76B5A9D2 /* PersonalUsageRankings.swift */,
+				DF3C50BBEA971A783811E602 /* QuotaPace.swift */,
 				E681D77D51281BCE0A4CADA2 /* SubscriptionQuotaAlert.swift */,
 				ADDB0373895B8FC7D526719A /* SubscriptionQuotaSnapshot.swift */,
 				9BA08A1766B4DFB2AC3C1980 /* TrendSeriesFilter.swift */,
@@ -537,6 +543,7 @@
 				D6D751967A78B4D68A0BAE5A /* PersonalSkillRankingsTests.swift in Sources */,
 				34BE61A10E54CB99B04C584D /* PersonalUsageProfileTests.swift in Sources */,
 				F4DCDEC3A4741D264315F53A /* PersonalUsageRankingsTests.swift in Sources */,
+				BA0F9E5B4851F8D2EFB2E494 /* QuotaPaceTests.swift in Sources */,
 				0529AE6F8025E874DBE31CA6 /* QwenCodeUsageTests.swift in Sources */,
 				913B395D4F4569C45D7FDD70 /* StatusRefreshCoalescerTests.swift in Sources */,
 				7FC26DEF67EDD2E756D49FB4 /* StatusRefreshSettingsTests.swift in Sources */,
@@ -601,6 +608,7 @@
 				B63D44977613F2D847C5B5D2 /* PlatformPortal.swift in Sources */,
 				C28415C1D1CB8BC9927415E1 /* ProcessPipeReader.swift in Sources */,
 				BAB81B11D18E043BB953B5AD /* ProcessStatus.swift in Sources */,
+				B1BFAC8778A5944E6638B71D /* QuotaPace.swift in Sources */,
 				82F78034E7939F17B303689C /* QwenCodeUsage.swift in Sources */,
 				652CB7783E44E227E2183D40 /* QwenCodeView.swift in Sources */,
 				099AF48C316A4AEAA44557B0 /* RootView.swift in Sources */,

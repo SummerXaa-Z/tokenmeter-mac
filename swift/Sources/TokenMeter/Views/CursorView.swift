@@ -105,9 +105,25 @@ struct CursorView: View {
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                     let ratio = spent / sub.hardLimitDollars
+                    // 与订阅额度同一套节奏外推：已花比例对比周期已过比例
+                    let pace = spent > 0 ? QuotaPace.compute(
+                        remainingPercent: (1 - ratio) * 100,
+                        windowStart: sub.periodStart,
+                        resetAt: sub.periodEnd) : nil
                     QuotaBar(
                         progress: min(spent, sub.hardLimitDollars) / sub.hardLimitDollars,
-                        tint: ratio >= 0.9 ? .red : ratio >= 0.7 ? .orange : Theme.cursor)
+                        tint: ratio >= 0.9 ? .red : ratio >= 0.7 ? .orange : Theme.cursor,
+                        marker: pace?.elapsedFraction)
+                    if let pace {
+                        if case .ahead(let exhaustAt) = pace.status {
+                            QuotaPaceLine(
+                                pace: pace,
+                                text: "按当前速度\(QuotaPace.countdown(from: Date(), to: exhaustAt))触及上限，早于续订")
+                        } else {
+                            Text("按当前速度，续订时约花掉上限的 \(QuotaPace.percent(1 - pace.projectedRemainingAtReset))")
+                                .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                        }
+                    }
                 }
             }
         }
