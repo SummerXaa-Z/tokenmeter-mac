@@ -4,6 +4,7 @@ import SwiftUI
 // Qwen Code 只读取官方本地聚合文件，不打开 chats 对话记录。
 struct QwenCodeView: View {
     @EnvironmentObject var state: AppState
+    @State private var weekHover: String?
     var onBack: () -> Void
     var onSettings: () -> Void
 
@@ -97,16 +98,33 @@ struct QwenCodeView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("最近 7 天 Token", systemImage: "chart.bar.fill")
                     .font(.system(size: 12, weight: .semibold))
-                Chart(result.days) { day in
-                    BarMark(x: .value("日期", Fmt.mmdd(day.date)), y: .value("缓存读取", day.cachedInputTokens))
-                        .foregroundStyle(by: .value("类型", "缓存读取"))
-                    BarMark(x: .value("日期", Fmt.mmdd(day.date)), y: .value("新输入", day.inputTokens))
-                        .foregroundStyle(by: .value("类型", "新输入"))
-                    BarMark(x: .value("日期", Fmt.mmdd(day.date)), y: .value("输出", day.outputTokens))
-                        .foregroundStyle(by: .value("类型", "输出"))
-                    BarMark(x: .value("日期", Fmt.mmdd(day.date)), y: .value("推理", day.reasoningTokens))
-                        .foregroundStyle(by: .value("类型", "推理"))
+                ChartHover.caption(hover: weekHover, buckets: result.days.map { day in
+                    (
+                        label: Fmt.mmdd(day.date),
+                        total: day.cachedInputTokens + day.inputTokens
+                            + day.outputTokens + day.reasoningTokens,
+                        parts: [
+                            ("缓存读取", day.cachedInputTokens, Theme.hit),
+                            ("新输入", day.inputTokens, Theme.input),
+                            ("输出", day.outputTokens, Theme.response),
+                            ("推理", day.reasoningTokens, Theme.miss),
+                        ]
+                    )
+                })
+                Chart {
+                    ForEach(result.days) { day in
+                        BarMark(x: .value("日期", Fmt.mmdd(day.date)), y: .value("缓存读取", day.cachedInputTokens))
+                            .foregroundStyle(by: .value("类型", "缓存读取"))
+                        BarMark(x: .value("日期", Fmt.mmdd(day.date)), y: .value("新输入", day.inputTokens))
+                            .foregroundStyle(by: .value("类型", "新输入"))
+                        BarMark(x: .value("日期", Fmt.mmdd(day.date)), y: .value("输出", day.outputTokens))
+                            .foregroundStyle(by: .value("类型", "输出"))
+                        BarMark(x: .value("日期", Fmt.mmdd(day.date)), y: .value("推理", day.reasoningTokens))
+                            .foregroundStyle(by: .value("类型", "推理"))
+                    }
+                    HoverDateRule(date: weekHover)
                 }
+                .chartXSelection(value: $weekHover)
                 .chartForegroundStyleScale([
                     "缓存读取": Theme.hit,
                     "新输入": Theme.input,

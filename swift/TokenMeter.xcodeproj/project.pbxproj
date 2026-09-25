@@ -30,6 +30,7 @@
 		44C3E429D2C0A08C74D6A3E3 /* UsageHistoryRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7CC34673E7679C77153F2F4 /* UsageHistoryRange.swift */; };
 		44E5E9E651933589C14D6311 /* KimiQuotaServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7BFCCAFFA3D5DA745FF32C7 /* KimiQuotaServiceTests.swift */; };
 		4B5BEFE4E1B263A81F7F55BE /* KimiUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99EA86C17A2CC62772DFE1A5 /* KimiUsage.swift */; };
+		4B67CEFB5A42F8C8D086DC30 /* ChartHoverPartsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7546D54798D07DFF4CEB314F /* ChartHoverPartsTests.swift */; };
 		4C3AA3A1071617E1A4CC41CB /* NotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22064562B364186A960DC06C /* NotifierTests.swift */; };
 		516E50273A26D4CBA68435B6 /* CopilotUsageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0D30F5E2C9FCBF8F7230764 /* CopilotUsageTests.swift */; };
 		53EC51D7DF39A698FE903177 /* FormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61AF1344992FFFE169DB4857 /* FormatTests.swift */; };
@@ -56,6 +57,7 @@
 		83527A7C0F23657A419997A0 /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = 668CBEB88A68B4145FD4F660 /* Store.swift */; };
 		855D9BB3F251125EA61B18CE /* OverviewSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27C0AE619FF776948DDE5842 /* OverviewSnapshotTests.swift */; };
 		85E3701A3E68F2AC251DE64F /* Updater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 776AA6C25BBA738D14FADBAF /* Updater.swift */; };
+		864ACCE9B37BB21017E8830B /* ChartHover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A96A717B32EC8A930DC3947 /* ChartHover.swift */; };
 		87C9A2CFDC42A7DD9139EB1B /* OverviewSourceSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82107C1666FA3E1EBD6FADB /* OverviewSourceSelection.swift */; };
 		8F0C6B1D77FB3247BF010F05 /* ZhipuQuotaServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 080188017FF759CF86F06172 /* ZhipuQuotaServiceTests.swift */; };
 		9130F93DD0C058FA7B74774F /* CursorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB5C8B4A29701DC68C925D9 /* CursorView.swift */; };
@@ -116,6 +118,7 @@
 		061B7355FA469C3D6652B6B1 /* OverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewView.swift; sourceTree = "<group>"; };
 		066AB6165D30EBC039D73A14 /* AppStateRefreshTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateRefreshTests.swift; sourceTree = "<group>"; };
 		080188017FF759CF86F06172 /* ZhipuQuotaServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZhipuQuotaServiceTests.swift; sourceTree = "<group>"; };
+		0A96A717B32EC8A930DC3947 /* ChartHover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartHover.swift; sourceTree = "<group>"; };
 		0AB5C8B4A29701DC68C925D9 /* CursorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorView.swift; sourceTree = "<group>"; };
 		10C5D68C952CC99005CB4E46 /* OpenCodeUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeUsageTests.swift; sourceTree = "<group>"; };
 		16D70EA46997CAB980C3483E /* APICostEstimatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APICostEstimatorTests.swift; sourceTree = "<group>"; };
@@ -147,6 +150,7 @@
 		6BE2676BB49AC73AF2BA8531 /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
 		6C075D0390F0D1124F63A4D3 /* OverviewSourceSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewSourceSelectionTests.swift; sourceTree = "<group>"; };
 		6FC438DB603405FFCE72770E /* QwenCodeUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QwenCodeUsage.swift; sourceTree = "<group>"; };
+		7546D54798D07DFF4CEB314F /* ChartHoverPartsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartHoverPartsTests.swift; sourceTree = "<group>"; };
 		776AA6C25BBA738D14FADBAF /* Updater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updater.swift; sourceTree = "<group>"; };
 		7FF0EE60FD4468E9768B8562 /* OpenCodeUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeUsage.swift; sourceTree = "<group>"; };
 		847F5B5A0A9B9ECF7B3C10D1 /* DiagnosticReportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticReportTests.swift; sourceTree = "<group>"; };
@@ -288,6 +292,7 @@
 				4197880F50B58B1A1AB3B160 /* AppDelegateAccessibilityTests.swift */,
 				066AB6165D30EBC039D73A14 /* AppStateRefreshTests.swift */,
 				984396E82E950E7EFB0A1977 /* ArkPlanQuotaServiceTests.swift */,
+				7546D54798D07DFF4CEB314F /* ChartHoverPartsTests.swift */,
 				2EFB577C0D476CA6A97A5BCB /* ConfigStoreTests.swift */,
 				A0D30F5E2C9FCBF8F7230764 /* CopilotUsageTests.swift */,
 				847F5B5A0A9B9ECF7B3C10D1 /* DiagnosticReportTests.swift */,
@@ -369,6 +374,7 @@
 		F7BD67415C926FF1F9D8B3B3 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				0A96A717B32EC8A930DC3947 /* ChartHover.swift */,
 				8CFB858EB03D6FCC2B3563D3 /* ClaudeView.swift */,
 				967FFAA53C071E7B5A4CC8ED /* CodexView.swift */,
 				9D88FBE440263BB448540F2F /* CopilotView.swift */,
@@ -489,6 +495,7 @@
 				B61E64735BB2BEE6B578F867 /* AppDelegateAccessibilityTests.swift in Sources */,
 				D6F5BA21904C57DC0B1FC419 /* AppStateRefreshTests.swift in Sources */,
 				259D400B2FAE84619F116E35 /* ArkPlanQuotaServiceTests.swift in Sources */,
+				4B67CEFB5A42F8C8D086DC30 /* ChartHoverPartsTests.swift in Sources */,
 				FA481456C6EA4B00B754850A /* ConfigStoreTests.swift in Sources */,
 				516E50273A26D4CBA68435B6 /* CopilotUsageTests.swift in Sources */,
 				2CF639B933D9E249A7AC60D5 /* DiagnosticReportTests.swift in Sources */,
@@ -527,6 +534,7 @@
 				22D4D1D709942E5042582BC9 /* AppState.swift in Sources */,
 				68DC204BA8F8A4EB2A4D53DE /* ArkPlanQuotaService.swift in Sources */,
 				AA655C6530EBC0F60C9696C9 /* Autostart.swift in Sources */,
+				864ACCE9B37BB21017E8830B /* ChartHover.swift in Sources */,
 				D06AC40534617E8E13B1E9FA /* ClaudeUsage.swift in Sources */,
 				80AFF21F181F2E58925781DB /* ClaudeView.swift in Sources */,
 				FA53D44363DFE6554598222B /* CodexUsage.swift in Sources */,

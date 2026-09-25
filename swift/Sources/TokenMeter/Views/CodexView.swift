@@ -5,6 +5,7 @@ import Charts
 // 数据全部来自本地 ~/.codex/sessions，刷新即重扫。
 struct CodexView: View {
     @EnvironmentObject var state: AppState
+    @State private var weekHover: String?
     var onBack: () -> Void
     var onSettings: () -> Void
 
@@ -136,20 +137,36 @@ struct CodexView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("最近 7 天 Token", systemImage: "chart.bar.fill")
                     .font(.system(size: 12, weight: .semibold))
-                Chart(r.days) { day in
-                    BarMark(
-                        x: .value("日期", Fmt.mmdd(day.date)),
-                        y: .value("缓存", day.cachedInputTokens))
-                    .foregroundStyle(by: .value("类型", "缓存输入"))
-                    BarMark(
-                        x: .value("日期", Fmt.mmdd(day.date)),
-                        y: .value("非缓存", max(day.inputTokens - day.cachedInputTokens, 0)))
-                    .foregroundStyle(by: .value("类型", "新输入"))
-                    BarMark(
-                        x: .value("日期", Fmt.mmdd(day.date)),
-                        y: .value("输出", day.outputTokens))
-                    .foregroundStyle(by: .value("类型", "输出"))
+                ChartHover.caption(hover: weekHover, buckets: r.days.map { day in
+                    let fresh = max(day.inputTokens - day.cachedInputTokens, 0)
+                    return (
+                        label: Fmt.mmdd(day.date),
+                        total: day.cachedInputTokens + fresh + day.outputTokens,
+                        parts: [
+                            ("缓存输入", day.cachedInputTokens, Theme.hit),
+                            ("新输入", fresh, Theme.input),
+                            ("输出", day.outputTokens, Theme.response),
+                        ]
+                    )
+                })
+                Chart {
+                    ForEach(r.days) { day in
+                        BarMark(
+                            x: .value("日期", Fmt.mmdd(day.date)),
+                            y: .value("缓存", day.cachedInputTokens))
+                        .foregroundStyle(by: .value("类型", "缓存输入"))
+                        BarMark(
+                            x: .value("日期", Fmt.mmdd(day.date)),
+                            y: .value("非缓存", max(day.inputTokens - day.cachedInputTokens, 0)))
+                        .foregroundStyle(by: .value("类型", "新输入"))
+                        BarMark(
+                            x: .value("日期", Fmt.mmdd(day.date)),
+                            y: .value("输出", day.outputTokens))
+                        .foregroundStyle(by: .value("类型", "输出"))
+                    }
+                    HoverDateRule(date: weekHover)
                 }
+                .chartXSelection(value: $weekHover)
                 .chartForegroundStyleScale([
                     "缓存输入": Theme.hit, "新输入": Theme.input, "输出": Theme.response,
                 ])

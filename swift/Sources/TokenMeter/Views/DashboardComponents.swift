@@ -131,6 +131,7 @@ struct UsageRow: View {
 struct UsageChartCard: View {
     let usage: UsageResult?
     let state: LoadState
+    @State private var hoverDate: String?
 
     private struct Seg: Identifiable {
         let id = UUID()
@@ -154,6 +155,23 @@ struct UsageChartCard: View {
         }
     }
 
+    private var hoverBuckets: [(label: String, total: Int, parts: [(name: String, value: Int, color: Color)])] {
+        days.map { d in
+            let hit = d.flashCacheHit + d.proCacheHit
+            let miss = d.flashCacheMiss + d.proCacheMiss
+            let resp = d.flashResponse + d.proResponse
+            return (
+                label: Fmt.mmdd(d.date),
+                total: hit + miss + resp,
+                parts: [
+                    ("命中", hit, Theme.hit),
+                    ("未命中", miss, Theme.miss),
+                    ("输出", resp, Theme.response),
+                ]
+            )
+        }
+    }
+
     private var summary: String {
         let hit = days.reduce(0) { $0 + $1.flashCacheHit + $1.proCacheHit }
         let miss = days.reduce(0) { $0 + $1.flashCacheMiss + $1.proCacheMiss }
@@ -174,6 +192,7 @@ struct UsageChartCard: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 if state == .ok {
+                    ChartHover.caption(hover: hoverDate, buckets: hoverBuckets)
                     chart
                 } else {
                     Text(placeholder).font(.callout).foregroundStyle(.secondary)
@@ -193,13 +212,17 @@ struct UsageChartCard: View {
     }
 
     @ViewBuilder private var chart: some View {
-        Chart(segments) { seg in
-            BarMark(
-                x: .value("日期", seg.date),
-                y: .value("Tokens", seg.value))
-            .foregroundStyle(by: .value("类型", seg.kind))
-            .cornerRadius(2)
+        Chart {
+            ForEach(segments) { seg in
+                BarMark(
+                    x: .value("日期", seg.date),
+                    y: .value("Tokens", seg.value))
+                .foregroundStyle(by: .value("类型", seg.kind))
+                .cornerRadius(2)
+            }
+            HoverDateRule(date: hoverDate)
         }
+        .chartXSelection(value: $hoverDate)
         .chartForegroundStyleScale([
             "命中": Theme.hit, "未命中": Theme.miss, "输出": Theme.response,
         ])

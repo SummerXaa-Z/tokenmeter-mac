@@ -6,6 +6,7 @@ struct ModelDetailView: View {
     @EnvironmentObject var state: AppState
     let modelKey: String
     var onBack: () -> Void
+    @State private var hoverDate: String?
 
     private var isFlash: Bool { modelKey == "flash" }
     private var accent: Color { isFlash ? Theme.flash : Theme.pro }
@@ -47,11 +48,19 @@ struct ModelDetailView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("近 7 天 Token").font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.secondary)
-                        Chart(points) { p in
-                            BarMark(x: .value("日期", p.date), y: .value("Tokens", p.tokens))
-                                .foregroundStyle(accent)
-                                .cornerRadius(3)
+                        ChartHover.caption(
+                            hover: hoverDate,
+                            buckets: points.map { ($0.date, $0.tokens, []) }
+                        )
+                        Chart {
+                            ForEach(points) { p in
+                                BarMark(x: .value("日期", p.date), y: .value("Tokens", p.tokens))
+                                    .foregroundStyle(accent)
+                                    .cornerRadius(3)
+                            }
+                            HoverDateRule(date: hoverDate)
                         }
+                        .chartXSelection(value: $hoverDate)
                         .tokenYAxis()
                         .frame(height: 160)
                     }

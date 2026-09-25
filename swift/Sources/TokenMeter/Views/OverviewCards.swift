@@ -729,6 +729,8 @@ struct OverviewAPICostCard: View {
 struct OverviewTrendCard: View {
     let snapshot: OverviewSnapshot
     let range: UsageHistoryRange
+    @State private var hoverHour: Int?
+    @State private var hoverLabel: String?
 
     // 两个粒度分支共用的来源配色，避免两份字典各自漂移
     private static let sourceScale: KeyValuePairs<String, Color> = [
@@ -757,16 +759,21 @@ struct OverviewTrendCard: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, minHeight: 120)
                 } else if snapshot.trendGranularity == .hour {
-                    Chart(snapshot.trend) { point in
-                        if let hour = point.hour {
-                            BarMark(
-                                x: .value("小时", hour),
-                                y: .value("Token", point.tokens)
-                            )
-                            .foregroundStyle(by: .value("源", point.source.overviewChartName))
-                            .cornerRadius(1)
+                    hourlyCaption
+                    Chart {
+                        ForEach(snapshot.trend) { point in
+                            if let hour = point.hour {
+                                BarMark(
+                                    x: .value("小时", hour),
+                                    y: .value("Token", point.tokens)
+                                )
+                                .foregroundStyle(by: .value("源", point.source.overviewChartName))
+                                .cornerRadius(1)
+                            }
                         }
+                        HoverHourRule(hour: hoverHour)
                     }
+                    .chartXSelection(value: $hoverHour)
                     .chartForegroundStyleScale(Self.sourceScale)
                     .chartLegend(position: .bottom, spacing: 4)
                     .chartXScale(domain: 0...23)
@@ -781,14 +788,19 @@ struct OverviewTrendCard: View {
                     .tokenYAxis()
                     .frame(height: 160)
                 } else {
-                    Chart(snapshot.trend) { point in
-                        BarMark(
-                            x: .value("日期", point.label),
-                            y: .value("Token", point.tokens)
-                        )
-                        .foregroundStyle(by: .value("源", point.source.overviewChartName))
-                        .cornerRadius(1)
+                    bucketCaption
+                    Chart {
+                        ForEach(snapshot.trend) { point in
+                            BarMark(
+                                x: .value("日期", point.label),
+                                y: .value("Token", point.tokens)
+                            )
+                            .foregroundStyle(by: .value("源", point.source.overviewChartName))
+                            .cornerRadius(1)
+                        }
+                        HoverDateRule(date: hoverLabel)
                     }
+                    .chartXSelection(value: $hoverLabel)
                     .chartForegroundStyleScale(Self.sourceScale)
                     .chartLegend(position: .bottom, spacing: 4)
                     .chartXAxis {
@@ -821,6 +833,40 @@ struct OverviewTrendCard: View {
         }
         if snapshot.trendGranularity == .hour { return "今日暂无小时用量" }
         return "暂无历史数据（每次刷新后逐日累积）"
+    }
+
+    // 小时粒度：全部点共享今日一个桶键，直接按钟点分桶；
+    // 默认落到最后一个有量的钟点（趋势点覆盖全天 24 个钟点）
+    @ViewBuilder private var hourlyCaption: some View {
+        let hourly = snapshot.trend.filter { $0.hour != nil }
+        if let activeHour = hoverHour
+            ?? hourly.last(where: { $0.tokens > 0 })?.hour
+            ?? hourly.last?.hour {
+            let bucket = hourly.filter { $0.hour == activeHour }
+            ChartHoverCaption(
+                label: "\(activeHour)时",
+                total: bucket.reduce(0) { $0 + $1.tokens },
+                parts: bucket.map { ($0.source.overviewChartName, $0.tokens, sourceColor($0.source)) }
+            )
+        }
+    }
+
+    // 日/周/月粒度：按 date 桶键聚合（label 跨年可能重名，不能当桶键）
+    @ViewBuilder private var bucketCaption: some View {
+        if let active = snapshot.trend.first(where: { $0.label == hoverLabel })
+            ?? snapshot.trend.last {
+            let bucket = snapshot.trend.filter { $0.date == active.date }
+            ChartHoverCaption(
+                label: active.label,
+                total: bucket.reduce(0) { $0 + $1.tokens },
+                parts: bucket.map { ($0.source.overviewChartName, $0.tokens, sourceColor($0.source)) }
+            )
+        }
+    }
+
+    private func sourceColor(_ source: HistorySource) -> Color {
+        let name = source.overviewChartName
+        return Self.sourceScale.first { $0.key == name }?.value ?? Theme.brand
     }
 }
 

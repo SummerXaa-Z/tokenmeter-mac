@@ -115,6 +115,7 @@ struct SourceStateView: View {
 
 // 今日分时柱图：24 小时单序列、空小时变暗，四个本地来源页共用，
 // 保证高度、刻度与空柱处理一致（此前 70/76/125 三种高度、三种 X 轴写法）。
+// 悬停可查值：说明行跟随指针下的钟点，未悬停显示最新有量的钟点。
 struct SourceHourChart: View {
     struct Bar: Identifiable {
         let hour: Int
@@ -123,25 +124,36 @@ struct SourceHourChart: View {
     }
     let bars: [Bar]
     let color: Color
+    @State private var hoverHour: Int?
 
     var body: some View {
-        Chart(bars) { bar in
-            BarMark(
-                x: .value("小时", bar.hour),
-                y: .value("Token", bar.tokens)
-            )
-            .foregroundStyle(color.opacity(bar.tokens > 0 ? 0.9 : 0.2))
-        }
-        .chartXScale(domain: 0...23)
-        .chartXAxis {
-            AxisMarks(values: [0, 6, 12, 18, 23]) { value in
-                AxisValueLabel {
-                    if let hour = value.as(Int.self) { Text("\(hour)时") }
+        VStack(alignment: .leading, spacing: 4) {
+            if let active = bars.first(where: { $0.hour == hoverHour })
+                ?? bars.last(where: { $0.tokens > 0 }) ?? bars.last {
+                ChartHoverCaption(label: "\(active.hour)时", total: active.tokens, parts: [])
+            }
+            Chart {
+                ForEach(bars) { bar in
+                    BarMark(
+                        x: .value("小时", bar.hour),
+                        y: .value("Token", bar.tokens)
+                    )
+                    .foregroundStyle(color.opacity(bar.tokens > 0 ? 0.9 : 0.2))
+                }
+                HoverHourRule(hour: hoverHour)
+            }
+            .chartXSelection(value: $hoverHour)
+            .chartXScale(domain: 0...23)
+            .chartXAxis {
+                AxisMarks(values: [0, 6, 12, 18, 23]) { value in
+                    AxisValueLabel {
+                        if let hour = value.as(Int.self) { Text("\(hour)时") }
+                    }
                 }
             }
+            .tokenYAxis()
+            .frame(height: 100)
         }
-        .tokenYAxis()
-        .frame(height: 100)
     }
 }
 

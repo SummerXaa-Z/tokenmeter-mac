@@ -122,6 +122,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("settings", hosting(SettingsView(onBack: {}))),
             // 长滚动页审计：整页高度导出设置页，覆盖首屏之外的滚动区
             ("settings-full", hosting(SettingsView(onBack: {}), height: 3200)),
+            // RootView 自钉 420×600，长视口需直接 host 总览页本体
+            ("overview-full", hosting(
+                OverviewView(
+                    range: .month, sources: Provider.allCases,
+                    onOpenSource: { _ in }, onSettings: {}),
+                height: 1600)),
         ]
 
         var windows: [NSWindow] = []
