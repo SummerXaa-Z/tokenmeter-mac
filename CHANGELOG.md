@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.10.0 — 2026-09-25 — 来源页对齐：历史环比下沉到每个工具
+
+- **各来源页统一历史环比卡**：新增自包含的「周|近7天|月」单来源环比卡，铺到 Codex、Kimi、Qwen、Gemini、OpenCode、Copilot、Cursor 七个来源页——与总览环比卡同口径同组件（PeriodCompare + ChangeBadge），卡内附带「今日 vs 近 7 天日均」滚动参照行。卡片放在实时采集分支之外：工具未运行、本地数据暂时缺失时历史对比依然可见（与"数据路径消失不抹掉已积累历史"的既有承诺一致）；从未有过记录的来源整卡隐藏；所选两期皆零时显示提示文案而非 "0 vs 0"。Claude 页保留更细的缓存拆解周趋势不动。历史在 body 内直接读取（按天 JSON 毫秒级），不依赖 `.task` 的 appear 时序。影响范围：`SourceHistoryCards.swift`（新增）、七个来源视图。
+- **Cursor 页补 token 趋势**：Cursor 页此前只有订阅与周期信息，新增「近 7 天 Token」历史柱图（单系列、悬停查值同款、零日浅色柱），与其他来源页看齐。影响范围：`SourceHistoryCards.swift`、`CursorView.swift`。
+- **调试工具**：`--ui-render` 补齐 gemini/opencode/copilot 页面，并为全部来源页新增 `-full` 长视口导出——600pt 视口下滚动区折叠线以下的内容（如页尾的历史环比卡）在普通页面渲染里永远不可见。影响范围：`AppDelegate.swift`。
+
 ## v3.9.9 — 2026-09-25 — 今日参照与周内节律
 
 - **今日 vs 近 7 天日均**：总览大数字卡在 1D 档补一行参照——「近 7 天日均 X」加环比徽标（今日 vs 日均，涨红降绿），打开面板第一眼就能回答"今天算多吗"；日均取滚动 7 天窗口合计除以 7（复用 PeriodCompare），无历史时该行隐藏。影响范围：`OverviewCards.swift`、`OverviewView.swift`。
