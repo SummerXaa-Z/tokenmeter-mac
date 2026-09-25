@@ -1,5 +1,15 @@
 # Changelog
 
+## v3.11.0 — 2026-09-25 — 额度节奏预测：会不会提前用完
+
+- **订阅额度节奏预测**：订阅剩余量此前只有「剩余 % + 重置时间」，看不出按当前速度撑不撑得到重置。新增 `QuotaPace` 线性外推——已用比例对比窗口时间已过比例：撑得到重置的窗口在明细行末尾给出「届时约剩 X%」，用得比匀速快的窗口多一行橙色「按当前速度约 N 小时后用完，早于重置」；窗口刚开始（已过 < 5%）样本太少不外推，已用尽的窗口交给进度条本身。进度条新增匀速参照刻度（此刻按匀速应剩的位置），填充短于刻度即用得偏快。覆盖总览订阅剩余量卡（Codex / Kimi Code / 智谱 GLM / 火山方舟）与 Codex 页配额卡。影响范围：`QuotaPace.swift`（新增）、`SubscriptionQuotaSnapshot.swift`、`Theme.swift`、`OverviewCards.swift`、`CodexView.swift`。
+- **窗口起点回推**：`SubscriptionQuotaPeriod` 新增 `windowStart`，按各家窗口时长从重置时间回推——Codex 用 `window_minutes`，Kimi 用窗口 duration/unit，智谱 5 小时/每周固定时长、工具调用按日历月，方舟 5h/weekly/monthly；方舟 session 窗时长不固定、Kimi 无窗口描述的行不回推、也就不预测。影响范围：`SubscriptionQuotaSnapshot.swift`。
+- **Cursor 超额上限节奏**：开通 usage-based 的账户，超额消费上限进度条同样加周期匀速刻度，并给出「续订时约花掉上限的 X%」或「约 N 天后触及上限，早于续订」。影响范围：`CursorView.swift`。
+- **DeepSeek 余额可用天数**：总览 DeepSeek 平台卡与 DeepSeek 详情页余额卡新增「余额预计可用 N 天 · 按近 7 天日均 ¥X」——取近 7 个完整日（不含未过完的今天）的日均平台费用；记录不足 7 天时只从首笔消费日起算，避免补零天拉低日均、把天数估虚高；不足 7 天橙色提示；美元余额与人民币记账的平台费用口径不一致，不估算。影响范围：`QuotaPace.swift`、`OverviewCards.swift`、`OverviewView.swift`、`DashboardComponents.swift`。
+- **额度提前耗尽预测提醒**：周、月等 ≥1 天的长窗口，窗口过 20% 后若按当前速度会在重置前 6 小时以上就用完，推一条系统通知（含已用比例、已过时间与预计耗尽时刻）；5 小时窗波动大、很快重置，不提醒。按窗口去重——同一窗口节奏来回摆动也只提醒一次，窗口滚动后重新布防。设置页「系统通知」下新增开关（默认开），受通知总开关约束。影响范围：`QuotaPace.swift`、`AppDelegate.swift`、`Store.swift`、`SettingsView.swift`。
+- **调试工具**：`--ui-render` 新增 `pace-fixture` 合成数据页（Debug 构建），覆盖「会提前用完 / 撑得到重置 / 余额偏低」各分支——本机未必有实时配额与平台消费。影响范围：`AppDelegate.swift`。
+- 新增 18 个测试（合计 236）：节奏外推与边界、各来源窗口起点回推、提醒阈值与窗口去重 key、余额可用天数口径。
+
 ## v3.10.0 — 2026-09-25 — 来源页对齐：历史环比下沉到每个工具
 
 - **各来源页统一历史环比卡**：新增自包含的「周|近7天|月」单来源环比卡，铺到 Codex、Kimi、Qwen、Gemini、OpenCode、Copilot、Cursor 七个来源页——与总览环比卡同口径同组件（PeriodCompare + ChangeBadge），卡内附带「今日 vs 近 7 天日均」滚动参照行。卡片放在实时采集分支之外：工具未运行、本地数据暂时缺失时历史对比依然可见（与"数据路径消失不抹掉已积累历史"的既有承诺一致）；从未有过记录的来源整卡隐藏；所选两期皆零时显示提示文案而非 "0 vs 0"。Claude 页保留更细的缓存拆解周趋势不动。历史在 body 内直接读取（按天 JSON 毫秒级），不依赖 `.task` 的 appear 时序。影响范围：`SourceHistoryCards.swift`（新增）、七个来源视图。
