@@ -25,6 +25,7 @@
 		346128E68388D5AC4CAFD3EF /* GeminiUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62090FB1C9B0F5D758AE75E /* GeminiUsage.swift */; };
 		34BE61A10E54CB99B04C584D /* PersonalUsageProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 984790852EF2D78035CC739A /* PersonalUsageProfileTests.swift */; };
 		380E1932488B00F5B37808D3 /* SubscriptionQuotaSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3C05CAC010721BF04FF4B7B /* SubscriptionQuotaSnapshotTests.swift */; };
+		3A1163A05CF6C19A410DD42A /* WeekCompareTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374CA4666DABF8E5E6CC69B2 /* WeekCompareTests.swift */; };
 		3F60A655CE88CB5A4CC13645 /* CopilotUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A004CCA5D38A68E443402F7F /* CopilotUsage.swift */; };
 		3FD289641C11563D94585020 /* StatusRefreshCoalescer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D90920C473540BCB20FA68 /* StatusRefreshCoalescer.swift */; };
 		44C3E429D2C0A08C74D6A3E3 /* UsageHistoryRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7CC34673E7679C77153F2F4 /* UsageHistoryRange.swift */; };
@@ -58,6 +59,7 @@
 		855D9BB3F251125EA61B18CE /* OverviewSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27C0AE619FF776948DDE5842 /* OverviewSnapshotTests.swift */; };
 		85E3701A3E68F2AC251DE64F /* Updater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 776AA6C25BBA738D14FADBAF /* Updater.swift */; };
 		864ACCE9B37BB21017E8830B /* ChartHover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A96A717B32EC8A930DC3947 /* ChartHover.swift */; };
+		870C36A98D492D4EA893DC70 /* TrendSeriesFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BA08A1766B4DFB2AC3C1980 /* TrendSeriesFilter.swift */; };
 		87C9A2CFDC42A7DD9139EB1B /* OverviewSourceSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82107C1666FA3E1EBD6FADB /* OverviewSourceSelection.swift */; };
 		8F0C6B1D77FB3247BF010F05 /* ZhipuQuotaServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 080188017FF759CF86F06172 /* ZhipuQuotaServiceTests.swift */; };
 		9130F93DD0C058FA7B74774F /* CursorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB5C8B4A29701DC68C925D9 /* CursorView.swift */; };
@@ -93,6 +95,7 @@
 		E11D3FA4C68C809E0CF7292D /* GeminiView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD8D457FECE03878E165D226 /* GeminiView.swift */; };
 		E3EF0BE1ABE9261F5D24B25A /* ForcedRefreshCoalescer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B70D5ABA4FC903971AB118 /* ForcedRefreshCoalescer.swift */; };
 		E52D9816D2595E775C811A13 /* LocalUsageCollectorRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68782D91DB1A9776445C9CB3 /* LocalUsageCollectorRegistry.swift */; };
+		E9C519CF9D3C876141C61C53 /* WeekCompare.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB3D0944FC2B53C2094BDDD7 /* WeekCompare.swift */; };
 		F03A6DFB698DDB9EB432364A /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A670A6857DFC3EF8E8F2B737 /* AppDelegate.swift */; };
 		F4DCDEC3A4741D264315F53A /* PersonalUsageRankingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E1C8CE16535C1B08838F35 /* PersonalUsageRankingsTests.swift */; };
 		F84883619AE7B540591CDA2A /* KimiQuotaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9224BE2374E1ADD0C0ABF8FB /* KimiQuotaService.swift */; };
@@ -130,6 +133,7 @@
 		2B59876F53BE2581617A36DA /* TokenMeterTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TokenMeterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2C9B4C3D49A91E30309B5D63 /* OpenCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeView.swift; sourceTree = "<group>"; };
 		2EFB577C0D476CA6A97A5BCB /* ConfigStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigStoreTests.swift; sourceTree = "<group>"; };
+		374CA4666DABF8E5E6CC69B2 /* WeekCompareTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekCompareTests.swift; sourceTree = "<group>"; };
 		3D2915C7233A87D1969A2E15 /* APICostEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APICostEstimator.swift; sourceTree = "<group>"; };
 		402EF2FB25FC3A7F1B1FA9F2 /* StatusRefreshCoalescerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusRefreshCoalescerTests.swift; sourceTree = "<group>"; };
 		4197880F50B58B1A1AB3B160 /* AppDelegateAccessibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegateAccessibilityTests.swift; sourceTree = "<group>"; };
@@ -167,6 +171,7 @@
 		984396E82E950E7EFB0A1977 /* ArkPlanQuotaServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkPlanQuotaServiceTests.swift; sourceTree = "<group>"; };
 		984790852EF2D78035CC739A /* PersonalUsageProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalUsageProfileTests.swift; sourceTree = "<group>"; };
 		99EA86C17A2CC62772DFE1A5 /* KimiUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimiUsage.swift; sourceTree = "<group>"; };
+		9BA08A1766B4DFB2AC3C1980 /* TrendSeriesFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendSeriesFilter.swift; sourceTree = "<group>"; };
 		9D88FBE440263BB448540F2F /* CopilotView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotView.swift; sourceTree = "<group>"; };
 		A004CCA5D38A68E443402F7F /* CopilotUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotUsage.swift; sourceTree = "<group>"; };
 		A0D30F5E2C9FCBF8F7230764 /* CopilotUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotUsageTests.swift; sourceTree = "<group>"; };
@@ -190,6 +195,7 @@
 		C5D564596B6873D239FB7F78 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		C81AF5E2F02C971202E2FC15 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C82107C1666FA3E1EBD6FADB /* OverviewSourceSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewSourceSelection.swift; sourceTree = "<group>"; };
+		CB3D0944FC2B53C2094BDDD7 /* WeekCompare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekCompare.swift; sourceTree = "<group>"; };
 		CC942E758B5C67CFA1D9F55A /* KimiUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimiUsageTests.swift; sourceTree = "<group>"; };
 		D1CE424B83212151670BD6C9 /* TokenMeter.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TokenMeter.entitlements; sourceTree = "<group>"; };
 		DD11D2DC6163A46FA5BD2D91 /* PersonalUsageProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalUsageProfile.swift; sourceTree = "<group>"; };
@@ -317,6 +323,7 @@
 				EDD6318A133F765FB00F63D7 /* UsageCSVExportTests.swift */,
 				4932B96A06DCA921753A07DD /* UsageHistoryRangeTests.swift */,
 				62890B90C6F6A2E390BE13C8 /* UsageWindowTests.swift */,
+				374CA4666DABF8E5E6CC69B2 /* WeekCompareTests.swift */,
 				080188017FF759CF86F06172 /* ZhipuQuotaServiceTests.swift */,
 			);
 			path = TokenMeterTests;
@@ -365,8 +372,10 @@
 				E13A57349BE9B8FC76B5A9D2 /* PersonalUsageRankings.swift */,
 				E681D77D51281BCE0A4CADA2 /* SubscriptionQuotaAlert.swift */,
 				ADDB0373895B8FC7D526719A /* SubscriptionQuotaSnapshot.swift */,
+				9BA08A1766B4DFB2AC3C1980 /* TrendSeriesFilter.swift */,
 				AAB36F0702D0D3C9556B6FD8 /* UsageCSVExport.swift */,
 				E7CC34673E7679C77153F2F4 /* UsageHistoryRange.swift */,
+				CB3D0944FC2B53C2094BDDD7 /* WeekCompare.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -520,6 +529,7 @@
 				18C273CE68171DDDBA1A8B81 /* UsageCSVExportTests.swift in Sources */,
 				2B8677054F6C2550061477DE /* UsageHistoryRangeTests.swift in Sources */,
 				2343BAD53DB56CD403D15ED5 /* UsageWindowTests.swift in Sources */,
+				3A1163A05CF6C19A410DD42A /* WeekCompareTests.swift in Sources */,
 				8F0C6B1D77FB3247BF010F05 /* ZhipuQuotaServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -584,9 +594,11 @@
 				B9145247667D76CAE51DE2BA /* SubscriptionQuotaAlert.swift in Sources */,
 				08147C52D77F2CD0B3131AEA /* SubscriptionQuotaSnapshot.swift in Sources */,
 				C5275D6A5BFA7DD2B9A4453E /* Theme.swift in Sources */,
+				870C36A98D492D4EA893DC70 /* TrendSeriesFilter.swift in Sources */,
 				85E3701A3E68F2AC251DE64F /* Updater.swift in Sources */,
 				FDB2F7A0E3271979E1128210 /* UsageCSVExport.swift in Sources */,
 				44C3E429D2C0A08C74D6A3E3 /* UsageHistoryRange.swift in Sources */,
+				E9C519CF9D3C876141C61C53 /* WeekCompare.swift in Sources */,
 				A8AF06E58EBAACC576CDE4F8 /* ZhipuQuotaService.swift in Sources */,
 				CA56AC0FD7836540E304C0FE /* main.swift in Sources */,
 			);

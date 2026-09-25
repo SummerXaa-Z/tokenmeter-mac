@@ -169,21 +169,7 @@ struct ClaudeView: View {
             Text("上周 \(prev)")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
             Spacer()
-            changeBadge(change)
-        }
-    }
-
-    // 用量涨=花钱多标红，降=省钱标绿；无基期显示 —
-    private func changeBadge(_ change: Double?) -> some View {
-        Group {
-            if let change {
-                Text("\(change >= 0 ? "↑" : "↓") \(Fmt.percent(abs(change)))")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(change >= 0 ? .red : .green)
-            } else {
-                Text("—")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-            }
+            ChangeBadge(change: change)
         }
     }
 

@@ -40,6 +40,12 @@ struct OverviewView: View {
                     snapshot: subscriptionQuotaSnapshot,
                     statuses: subscriptionQuotaStatuses
                 )
+                if !history.isEmpty {
+                    OverviewWeekCompareCard(
+                        history: history,
+                        participants: Set(sourceSelection.sources)
+                    )
+                }
                 if data.periodTotal > 0 {
                     OverviewTrendCard(snapshot: data, range: range)
                     OverviewProfileCard(profile: data.profile, range: range)

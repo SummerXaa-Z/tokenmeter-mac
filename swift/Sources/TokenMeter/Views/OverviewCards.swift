@@ -731,6 +731,12 @@ struct OverviewTrendCard: View {
     let range: UsageHistoryRange
     @State private var hoverHour: Int?
     @State private var hoverLabel: String?
+    // 图例 chips 点选隐藏的来源(图表名口径);chips 恒从全量趋势计算,可随时恢复
+    @State private var hiddenSources: Set<String> = []
+
+    private var visibleTrend: [OverviewSnapshot.TrendPoint] {
+        TrendSeriesFilter.visible(snapshot.trend, hidden: hiddenSources)
+    }
 
     // 两个粒度分支共用的来源配色，避免两份字典各自漂移
     private static let sourceScale: KeyValuePairs<String, Color> = [
@@ -761,7 +767,7 @@ struct OverviewTrendCard: View {
                 } else if snapshot.trendGranularity == .hour {
                     hourlyCaption
                     Chart {
-                        ForEach(snapshot.trend) { point in
+                        ForEach(visibleTrend) { point in
                             if let hour = point.hour {
                                 BarMark(
                                     x: .value("小时", hour),
@@ -775,7 +781,6 @@ struct OverviewTrendCard: View {
                     }
                     .chartXSelection(value: $hoverHour)
                     .chartForegroundStyleScale(Self.sourceScale)
-                    .chartLegend(position: .bottom, spacing: 4)
                     .chartXScale(domain: 0...23)
                     .chartXAxis {
                         AxisMarks(values: [0, 6, 12, 18, 23]) { value in
@@ -790,7 +795,7 @@ struct OverviewTrendCard: View {
                 } else {
                     bucketCaption
                     Chart {
-                        ForEach(snapshot.trend) { point in
+                        ForEach(visibleTrend) { point in
                             BarMark(
                                 x: .value("日期", point.label),
                                 y: .value("Token", point.tokens)
@@ -802,7 +807,6 @@ struct OverviewTrendCard: View {
                     }
                     .chartXSelection(value: $hoverLabel)
                     .chartForegroundStyleScale(Self.sourceScale)
-                    .chartLegend(position: .bottom, spacing: 4)
                     .chartXAxis {
                         AxisMarks(values: .automatic(desiredCount: 6)) { _ in
                             AxisGridLine(); AxisTick(); AxisValueLabel()
@@ -811,6 +815,7 @@ struct OverviewTrendCard: View {
                     .tokenYAxis()
                     .frame(height: 160)
                 }
+                seriesChips
                 if snapshot.trendGranularity == .hour,
                    !snapshot.hourlyUnattributedSources.isEmpty {
                     Text("\(snapshot.hourlyUnattributedSources.map(\.overviewName).joined(separator: "、")) 仅有今日汇总或小时明细未完整加载，未在小时图中平均摊分。")
@@ -838,7 +843,7 @@ struct OverviewTrendCard: View {
     // 小时粒度：全部点共享今日一个桶键，直接按钟点分桶；
     // 默认落到最后一个有量的钟点（趋势点覆盖全天 24 个钟点）
     @ViewBuilder private var hourlyCaption: some View {
-        let hourly = snapshot.trend.filter { $0.hour != nil }
+        let hourly = visibleTrend.filter { $0.hour != nil }
         if let activeHour = hoverHour
             ?? hourly.last(where: { $0.tokens > 0 })?.hour
             ?? hourly.last?.hour {
@@ -853,9 +858,9 @@ struct OverviewTrendCard: View {
 
     // 日/周/月粒度：按 date 桶键聚合（label 跨年可能重名，不能当桶键）
     @ViewBuilder private var bucketCaption: some View {
-        if let active = snapshot.trend.first(where: { $0.label == hoverLabel })
-            ?? snapshot.trend.last {
-            let bucket = snapshot.trend.filter { $0.date == active.date }
+        if let active = visibleTrend.first(where: { $0.label == hoverLabel })
+            ?? visibleTrend.last {
+            let bucket = visibleTrend.filter { $0.date == active.date }
             ChartHoverCaption(
                 label: active.label,
                 total: bucket.reduce(0) { $0 + $1.tokens },
@@ -865,8 +870,52 @@ struct OverviewTrendCard: View {
     }
 
     private func sourceColor(_ source: HistorySource) -> Color {
-        let name = source.overviewChartName
-        return Self.sourceScale.first { $0.key == name }?.value ?? Theme.brand
+        color(forChartName: source.overviewChartName)
+    }
+
+    private func color(forChartName name: String) -> Color {
+        Self.sourceScale.first { $0.key == name }?.value ?? Theme.brand
+    }
+
+    // 来源点选 chips：替代内置图例,点暗即从图中隐藏该系列
+    @ViewBuilder private var seriesChips: some View {
+        let series = TrendSeriesFilter.seriesTotals(snapshot.trend)
+        if !series.isEmpty {
+            HStack(spacing: 4) {
+                ForEach(series, id: \.name) { entry in
+                    seriesChip(entry.name)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private func seriesChip(_ name: String) -> some View {
+        let isOn = !hiddenSources.contains(name)
+        return Button {
+            if isOn {
+                hiddenSources.insert(name)
+            } else {
+                hiddenSources.remove(name)
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Circle().fill(color(forChartName: name))
+                    .frame(width: 5, height: 5)
+                    .opacity(isOn ? 1 : 0.25)
+                Text(name)
+                    .font(Theme.detailFont)
+                    .foregroundStyle(.primary)
+                    .opacity(isOn ? 1 : 0.4)
+            }
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .hoverHighlight()
+        .help(isOn ? "点按在图表中隐藏 \(name)" : "点按在图表中显示 \(name)")
+        .accessibilityLabel(isOn ? "隐藏 \(name) 系列" : "显示 \(name) 系列")
     }
 }
 
@@ -893,6 +942,64 @@ extension HistorySource {
         case .copilot: return Theme.copilot
         case .qwen: return Theme.qwen
         case .cursor: return Theme.cursor
+        }
+    }
+}
+
+// 全来源日历周环比：合计行 + 各来源行，数据来自本机按天历史。
+// 与 Claude 页「周趋势」同语义（本周截至今天 vs 完整上周），口径为全部 Coding 来源。
+struct OverviewWeekCompareCard: View {
+    let history: [HistoryStore.DayPoint]
+    let participants: Set<HistorySource>
+
+    var body: some View {
+        let compare = WeekCompare.bySource(history, participants: participants)
+        let rows = WeekCompare.rows(thisWeek: compare.thisWeek, lastWeek: compare.lastWeek)
+        let thisTotal = compare.thisWeek.values.reduce(0, +)
+        let lastTotal = compare.lastWeek.values.reduce(0, +)
+        return Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("本周 vs 上周（全部 Coding 来源）", systemImage: "arrow.up.arrow.down")
+                    .font(.system(size: 12, weight: .semibold))
+                if rows.isEmpty {
+                    Text("本周与上周暂无 Coding 用量记录")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                } else {
+                    compareRow(
+                        name: "合计", color: nil,
+                        this: thisTotal, last: lastTotal, emphasized: true)
+                    ForEach(rows, id: \.source) { row in
+                        compareRow(
+                            name: row.source.overviewName,
+                            color: row.source.overviewColor,
+                            this: row.this, last: row.last, emphasized: false)
+                    }
+                    Text("日历周口径，本周截至今天；DeepSeek 平台账户不计入。")
+                        .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    // 来源名列定宽让各行对齐；本周值粗体、上周值灰、行尾环比徽标
+    private func compareRow(
+        name: String, color: Color?, this: Int, last: Int, emphasized: Bool
+    ) -> some View {
+        HStack(spacing: 6) {
+            if let color {
+                Circle().fill(color).frame(width: 5, height: 5)
+            }
+            Text(name)
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: emphasized ? 70 : 64, alignment: .leading)
+            Text(Fmt.tokensShort(this))
+                .font(.system(
+                    size: 11, weight: emphasized ? .semibold : .medium, design: .rounded))
+                .frame(width: emphasized ? 58 : 56, alignment: .leading)
+            Text("上周 \(Fmt.tokensShort(last))")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+            Spacer()
+            ChangeBadge(change: WeekCompare.change(this: this, last: last))
         }
     }
 }

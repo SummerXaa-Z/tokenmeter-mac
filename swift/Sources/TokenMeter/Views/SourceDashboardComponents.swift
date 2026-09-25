@@ -170,6 +170,25 @@ struct SourceMetric: View {
     }
 }
 
+// 环比变化徽标：用量涨=花钱多标红、降=省钱标绿；无基期显示 —。
+// Claude 周趋势卡与总览周环比卡共用同一语义。
+struct ChangeBadge: View {
+    let change: Double?
+
+    var body: some View {
+        Group {
+            if let change {
+                Text("\(change >= 0 ? "↑" : "↓") \(Fmt.percent(abs(change)))")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(change >= 0 ? .red : .green)
+            } else {
+                Text("—")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
 struct SourcePrivacyCard: View {
     let text: String
 
