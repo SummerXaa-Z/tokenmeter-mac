@@ -946,23 +946,35 @@ extension HistorySource {
     }
 }
 
-// 全来源日历周环比：合计行 + 各来源行，数据来自本机按天历史。
-// 与 Claude 页「周趋势」同语义（本周截至今天 vs 完整上周），口径为全部 Coding 来源。
-struct OverviewWeekCompareCard: View {
+// 全来源周期环比：周/月切换，合计行 + 各来源行，数据来自本机按天历史。
+// 与 Claude 页「周趋势」同语义（本期截至今天 vs 完整上期），口径为全部 Coding 来源。
+struct OverviewCompareCard: View {
     let history: [HistoryStore.DayPoint]
     let participants: Set<HistorySource>
+    @State private var period: PeriodCompare.Period = .week
 
     var body: some View {
-        let compare = WeekCompare.bySource(history, participants: participants)
-        let rows = WeekCompare.rows(thisWeek: compare.thisWeek, lastWeek: compare.lastWeek)
-        let thisTotal = compare.thisWeek.values.reduce(0, +)
-        let lastTotal = compare.lastWeek.values.reduce(0, +)
+        let compare = PeriodCompare.bySource(
+            history, period: period, participants: participants)
+        let rows = PeriodCompare.rows(this: compare.this, last: compare.last)
+        let thisTotal = compare.this.values.reduce(0, +)
+        let lastTotal = compare.last.values.reduce(0, +)
         return Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("本周 vs 上周（全部 Coding 来源）", systemImage: "arrow.up.arrow.down")
-                    .font(.system(size: 12, weight: .semibold))
+                HStack {
+                    Label("\(period.title)（全部 Coding 来源）", systemImage: "arrow.up.arrow.down")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Picker("周期", selection: $period) {
+                        Text("周").tag(PeriodCompare.Period.week)
+                        Text("月").tag(PeriodCompare.Period.month)
+                    }
+                    .pickerStyle(.segmented)
+                    .controlSize(.mini)
+                    .frame(width: 64)
+                }
                 if rows.isEmpty {
-                    Text("本周与上周暂无 Coding 用量记录")
+                    Text("本周期与上一周期暂无 Coding 用量记录")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 } else {
                     compareRow(
@@ -974,14 +986,14 @@ struct OverviewWeekCompareCard: View {
                             color: row.source.overviewColor,
                             this: row.this, last: row.last, emphasized: false)
                     }
-                    Text("日历周口径，本周截至今天；DeepSeek 平台账户不计入。")
+                    Text("\(period.footnote)；DeepSeek 平台账户不计入。")
                         .font(Theme.footnoteFont).foregroundStyle(.tertiary)
                 }
             }
         }
     }
 
-    // 来源名列定宽让各行对齐；本周值粗体、上周值灰、行尾环比徽标
+    // 来源名列定宽让各行对齐；本期值粗体、上期值灰、行尾环比徽标
     private func compareRow(
         name: String, color: Color?, this: Int, last: Int, emphasized: Bool
     ) -> some View {
@@ -996,10 +1008,107 @@ struct OverviewWeekCompareCard: View {
                 .font(.system(
                     size: 11, weight: emphasized ? .semibold : .medium, design: .rounded))
                 .frame(width: emphasized ? 58 : 56, alignment: .leading)
-            Text("上周 \(Fmt.tokensShort(last))")
+            Text("上期 \(Fmt.tokensShort(last))")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
             Spacer()
-            ChangeBadge(change: WeekCompare.change(this: this, last: last))
+            ChangeBadge(change: PeriodCompare.change(this: this, last: last))
         }
+    }
+}
+
+// 近 13 周用量热力图：周为列、周一到周日为行，颜色越深当日合计越大。
+// 纯本机按天历史渲染，悬停查看当日数值。
+struct OverviewHeatmapCard: View {
+    let history: [HistoryStore.DayPoint]
+    let participants: Set<HistorySource>
+
+    // 索引 = UsageHeatmap.DayCell.level(0...4)
+    private static let levelFills: [Color] = [
+        Color.primary.opacity(0.06),
+        Theme.brand.opacity(0.25),
+        Theme.brand.opacity(0.45),
+        Theme.brand.opacity(0.65),
+        Theme.brand,
+    ]
+    private static let cellWidth: CGFloat = 13
+    private static let cellHeight: CGFloat = 11
+
+    var body: some View {
+        let columns = UsageHeatmap.window(history, participants: participants)
+        let hasUsage = columns.flatMap(\.cells).contains { $0.level > 0 }
+        return Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("用量热力图", systemImage: "square.grid.3x3")
+                    .font(.system(size: 12, weight: .semibold))
+                if !hasUsage {
+                    Text("近 \(UsageHeatmap.windowWeeks) 周暂无 Coding 用量记录")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                } else {
+                    grid(columns)
+                    Text("近 \(UsageHeatmap.windowWeeks) 周每日合计，颜色越深用量越大；悬停查看当日数值。")
+                        .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    private func grid(_ columns: [UsageHeatmap.WeekColumn]) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            weekdayLabels
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 2) {
+                    ForEach(columns, id: \.weekOf) { column in
+                        Text(column.monthLabel ?? " ")
+                            .font(.system(size: 9)).foregroundStyle(.tertiary)
+                            .frame(width: Self.cellWidth, height: 10, alignment: .leading)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+                HStack(spacing: 2) {
+                    ForEach(columns, id: \.weekOf) { column in
+                        VStack(spacing: 2) {
+                            ForEach(0..<7, id: \.self) { row in
+                                cell(column, row)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 行标签只标周一与周四，其余留空保持与格子同节拍
+    private var weekdayLabels: some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            Color.clear.frame(width: 1, height: 12)
+            ForEach(0..<7, id: \.self) { row in
+                Group {
+                    switch row {
+                    case 0: Text("一")
+                    case 3: Text("四")
+                    default: Text(" ")
+                    }
+                }
+                .font(.system(size: 9)).foregroundStyle(.tertiary)
+                .frame(width: 12, height: Self.cellHeight, alignment: .trailing)
+            }
+        }
+    }
+
+    // 行号 0...6 对应周一...周日;首尾周不满格时留空占位
+    private func cell(_ column: UsageHeatmap.WeekColumn, _ row: Int) -> some View {
+        let weekday = row == 6 ? 1 : row + 2
+        let match = column.cells.first { $0.weekday == weekday }
+        return Group {
+            if let match {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Self.levelFills[match.level])
+                    .help("\(Fmt.mmdd(match.date)) · \(Fmt.tokensShort(match.total))")
+                    .accessibilityLabel("\(Fmt.mmdd(match.date)) \(Fmt.tokensShort(match.total))")
+            } else {
+                Color.clear
+            }
+        }
+        .frame(width: Self.cellWidth, height: Self.cellHeight)
     }
 }

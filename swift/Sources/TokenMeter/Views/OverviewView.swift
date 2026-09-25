@@ -41,7 +41,11 @@ struct OverviewView: View {
                     statuses: subscriptionQuotaStatuses
                 )
                 if !history.isEmpty {
-                    OverviewWeekCompareCard(
+                    OverviewCompareCard(
+                        history: history,
+                        participants: Set(sourceSelection.sources)
+                    )
+                    OverviewHeatmapCard(
                         history: history,
                         participants: Set(sourceSelection.sources)
                     )
