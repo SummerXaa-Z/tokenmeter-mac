@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.9.6 — 2026-09-25 — 用量热力图与周/月环比切换
+
+- **用量热力图**：总览新增「近 13 周」GitHub 式日历热力图——周为列、周一到周日为行，每格代表当日全部 Coding 来源 Token 合计，颜色越深用量越大；深浅按非零日的四分位分档（单一极值日不会把其余天压成最浅档），悬停格子显示日期与数值，月份在首现列标记。纯本机按天历史渲染，平台账户不计入。影响范围：`UsageHeatmap.swift`（新增）、`OverviewCards.swift`、`OverviewView.swift`、`UsageHeatmapTests.swift`（新增）。
+- **环比卡周/月切换**：原「本周 vs 上周」卡升级为 周|月 分段切换——本月 vs 上月（日历月口径，本期截至今天）与周环比同卡共存，行文案「上周」改「上期」适配两档；`WeekCompare` 泛化为 `PeriodCompare`（周区间与趋势图周桶同用 ISO 周一）。影响范围：`PeriodCompare.swift`（由 `WeekCompare.swift` 更名泛化）、`OverviewCards.swift`、`OverviewView.swift`、`PeriodCompareTests.swift`。
+
 ## v3.9.5 — 2026-09-25 — 总览周环比与趋势来源筛选
 
 - **全来源周环比卡**：总览新增「本周 vs 上周（全部 Coding 来源）」卡——合计行加各来源行（来源色点、本周值粗体、上周值灰、行尾环比徽标：涨红降绿，上周为 0 无基期显示 —），日历周口径（本周截至今天）、数据来自本机按天历史，DeepSeek 平台账户不计入；与 Claude 页「周趋势」同语义但覆盖全部来源。环比徽标抽为共享 `ChangeBadge`，Claude 页同步换用。影响范围：`WeekCompare.swift`（新增）、`OverviewCards.swift`、`OverviewView.swift`、`SourceDashboardComponents.swift`、`ClaudeView.swift`、`WeekCompareTests.swift`（新增）。
