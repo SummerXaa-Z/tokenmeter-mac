@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.9.3 — 2026-09-25 — 订阅额度告警全家桶与用量 CSV 导出
+
+- **订阅额度告警（Kimi / 智谱 / 火山方舟）**：三家订阅额度接入既有告警体系——每家全部额度窗口（Kimi summary 与各 limit、智谱 5 小时/每周/工具调用次数、方舟全部已订阅套餐的全部周期）取最坏剩余百分比，阈值线与 Codex 一致：剩余 ≤10% 发系统通知（越线只提醒一次，恢复或配额数据消失自动重新布防），≤30% 菜单栏图标变橙、≤10% 变红；图标染色在 Codex、Claude 日用量与三家订阅额度中取最高。告警评估只依赖配额缓存，与 Coding 来源开关无关；状态栏刷新现在也会预热三家配额缓存（60s TTL、无 Key/未安装 arkcli 早退），火山方舟由此首次获得定时刷新节奏。影响范围：`SubscriptionQuotaAlert.swift`（新增）、`AppDelegate.swift`、`SettingsView.swift`、`SubscriptionQuotaAlertTests.swift`（新增）。
+- **用量 CSV 导出**：设置页新增「用量导出」，把本机已积累的按天用量导出为 CSV——各 Coding 来源 Token、Coding 合计、DeepSeek 平台 Token 与平台费用，按日期升序，纯本地生成。影响范围：`UsageCSVExport.swift`（新增）、`SettingsView.swift`、`UsageCSVExportTests.swift`（新增）。
+
 ## v3.9.2 — 2026-09-24 — 菜单栏「全部」来源合计
 
 - **菜单栏「全部」显示档**：菜单栏显示新增第五档「全部」，直接显示今日所有已启用 Coding 来源（Claude、Codex、Kimi、OpenCode、Gemini、Copilot、Qwen、Cursor）的 Token 合计，口径与首页总览一致——各源实时值优先、加载失败回退当日历史记录、跨天旧缓存不算今日、DeepSeek 平台账户不计入。状态栏刷新在「全部」档下会拉起全部已启用来源的加载（各加载器自带的 60s TTL 与 in-flight 门禁防止循环刷新）；同时修复只启用非 Claude/Codex 来源时菜单栏文字会被误清空的问题。设置页选择器增加第五段，脚注说明「Claude + Codex」与「全部」两档口径；既有档位与默认值不变。影响范围：`MenubarTodayTotal.swift`（新增）、`AppDelegate.swift`、`SettingsView.swift`、`MenubarTodayTotalTests.swift`（新增）。
