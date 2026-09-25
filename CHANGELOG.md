@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.9.4 — 2026-09-25 — 图表悬停查值
+
+- **全部图表悬停查值**：所有 token 图表（总览趋势的小时与日/周/月两个粒度分支、Claude/Codex/Kimi/Qwen 共用的今日分时图、七个来源各自的最近 7 天堆叠图、DeepSeek 缓存命中明细、模型详情趋势）接入指针悬停交互——悬停出现竖直虚线参考线，图表上方固定高度的说明行实时显示该桶的日期、合计与前三大分量（色点 + 数值，更多分量折叠为「+N 项」）；未悬停时说明行默认显示最新有量的桶，版面不跳动。周/月桶按 `TrendPoint.date` 桶键聚合（label 跨年可能重名）；各来源 7 天图的分量拆解与其柱形堆叠一一对应（如 Codex 新输入按非缓存输入、OpenCode/Copilot 输出含推理）。影响范围：`ChartHover.swift`（新增）、`SourceDashboardComponents.swift`、`OverviewCards.swift`、七个来源视图、`DashboardComponents.swift`、`ModelDetailView.swift`、`ChartHoverPartsTests.swift`（新增）。
+- **调试工具**：`--ui-render` 离屏导出新增 `overview-full`（1600pt 长视口总览页；RootView 自钉面板尺寸，改为直接 host `OverviewView`）。影响范围：`AppDelegate.swift`。
+
 ## v3.9.3 — 2026-09-25 — 订阅额度告警全家桶与用量 CSV 导出
 
 - **订阅额度告警（Kimi / 智谱 / 火山方舟）**：三家订阅额度接入既有告警体系——每家全部额度窗口（Kimi summary 与各 limit、智谱 5 小时/每周/工具调用次数、方舟全部已订阅套餐的全部周期）取最坏剩余百分比，阈值线与 Codex 一致：剩余 ≤10% 发系统通知（越线只提醒一次，恢复或配额数据消失自动重新布防），≤30% 菜单栏图标变橙、≤10% 变红；图标染色在 Codex、Claude 日用量与三家订阅额度中取最高。告警评估只依赖配额缓存，与 Coding 来源开关无关；状态栏刷新现在也会预热三家配额缓存（60s TTL、无 Key/未安装 arkcli 早退），火山方舟由此首次获得定时刷新节奏。影响范围：`SubscriptionQuotaAlert.swift`（新增）、`AppDelegate.swift`、`SettingsView.swift`、`SubscriptionQuotaAlertTests.swift`（新增）。
