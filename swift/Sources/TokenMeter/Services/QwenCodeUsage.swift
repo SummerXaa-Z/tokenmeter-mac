@@ -58,6 +58,12 @@ struct QwenCodeUsageResult: Equatable {
     var weekTotal: Int { days.reduce(0) { qwenSaturatedAdd($0, $1.totalTokens) } }
     var weekMessages: Int { days.reduce(0) { qwenSaturatedAdd($0, $1.messageCount) } }
     var weekSessions: Int { days.reduce(0) { qwenSaturatedAdd($0, $1.sessionCount) } }
+    // 日期 → 会话数，供按天落盘
+    var daySessions: [String: Int] {
+        days.reduce(into: [:]) { result, day in
+            if day.sessionCount > 0 { result[day.date] = day.sessionCount }
+        }
+    }
 }
 
 enum QwenCodeUsageError: LocalizedError, Equatable {

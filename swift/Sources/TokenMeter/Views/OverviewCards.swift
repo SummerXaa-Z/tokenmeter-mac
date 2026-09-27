@@ -572,7 +572,7 @@ struct OverviewProfileCard: View {
                         profile.primaryShare.map { "主力 \(Int(($0 * 100).rounded()))%" }
                             ?? "主力工具"
                     )
-                    stat("\(Fmt.int(profile.weeklySessions))", "7日会话")
+                    stat("\(Fmt.int(profile.rangeSessions))", "\(range.scopeTitle)会话")
                 }
 
                 if !profile.badges.isEmpty {
@@ -665,7 +665,7 @@ struct OverviewRankingsCard: View {
                 }
 
                 Divider()
-                header("Skills 榜", detail: "近 7 天 · 只认明确调用证据")
+                header("Skills 榜", detail: "\(range.scopeTitle) · 只认明确调用证据")
                 if skillRankings.entries.isEmpty {
                     empty("Claude / Codex / Copilot 暂无可确认的 Skill 调用")
                 } else {

@@ -78,9 +78,17 @@ struct CodexUsageResult: Equatable {
     let skills: [CodexSkillUsage]     // 近 7 天实际读取 SKILL.md 的工具调用
     // 日期 → 模型 → 互斥五类 Token（已从 input 扣缓存、从 output 扣 reasoning）
     var dayModels: [String: [String: ModelTokenTally]] = [:]
+    // 日期 → Skill 名 → 调用次数，与 dayModels 同窗口同语义
+    var daySkills: [String: [String: Int]] = [:]
     var today: CodexDayUsage? { days.last }
     var weekTotal: Int { days.reduce(0) { $0 + $1.totalTokens } }
     var weekSessions: Int { days.reduce(0) { $0 + $1.sessionCount } }
+    // 日期 → 活跃会话数，供按天落盘
+    var daySessions: [String: Int] {
+        days.reduce(into: [:]) { result, day in
+            if day.sessionCount > 0 { result[day.date] = day.sessionCount }
+        }
+    }
 }
 
 struct CodexHourUsage: Equatable, Identifiable {
@@ -214,6 +222,7 @@ enum CodexUsage {
         var limitsByChannel: [String: CodexRateLimits] = [:]
         var modelMap: [String: CodexModelUsage] = [:]
         var dayModels: [String: [String: ModelTokenTally]] = [:]
+        var daySkills: [String: [String: Int]] = [:]
         var projectMap: [String: CodexProjectUsage] = [:]
         var skillMap: [String: Int] = [:]
         var hourMap: [Int: Int] = [:]
@@ -251,7 +260,10 @@ enum CodexUsage {
                 limitsByChannel[channel] = rl
             }
             for (date, skills) in summary.perDaySkill where window.contains(date) {
-                for (name, count) in skills { skillMap[name, default: 0] += count }
+                for (name, count) in skills {
+                    skillMap[name, default: 0] += count
+                    daySkills[date, default: [:]][name, default: 0] += count
+                }
             }
             guard counted else { continue }
             for (date, models) in summary.perDayModel where window.contains(date) {
@@ -299,7 +311,8 @@ enum CodexUsage {
         return CodexUsageResult(rateLimits: channels.first, allRateLimits: channels, days: days,
                                 models: models, projects: projects, todayHours: todayHours,
                                 skills: skills,
-                                dayModels: dayModels.compactMapValues(ModelTokenTally.nonEmpty))
+                                dayModels: dayModels.compactMapValues(ModelTokenTally.nonEmpty),
+                                daySkills: daySkills)
     }
 
     // MARK: - 单文件流式扫描（带缓存）

@@ -58,6 +58,9 @@ final class CopilotUsageTests: XCTestCase {
         XCTAssertEqual(today.linesRemoved, 3)
         XCTAssertEqual(result.models.map(\.model), ["gpt-5.4"])
         XCTAssertEqual(result.skills, [CopilotSkillUsage(name: "pdf", invocationCount: 1)])
+        // Skill 按会话结束日归属，供按天明细落盘
+        XCTAssertEqual(result.daySkills, ["2026-08-12": ["pdf": 1]])
+        XCTAssertEqual(result.daySessions, ["2026-08-12": 1])
     }
 
     func testLatestShutdownReplacesOlderAggregateAndUsesOnlyActiveParentChain() throws {

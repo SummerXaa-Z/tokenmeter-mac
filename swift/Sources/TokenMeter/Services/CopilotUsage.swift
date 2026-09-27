@@ -59,6 +59,8 @@ struct CopilotUsageResult: Equatable {
     let skills: [CopilotSkillUsage]
     // 日期（会话结束日）→ 模型 → 互斥五类 Token，落盘为按天模型明细
     var dayModels: [String: [String: ModelTokenTally]] = [:]
+    // 日期 → Skill 名 → 调用次数；Copilot 的 skill 证据按会话结束日归属
+    var daySkills: [String: [String: Int]] = [:]
 
     var today: CopilotDayUsage? { days.last }
     var weekTotal: Int { days.reduce(0) { $0 + $1.totalTokens } }
@@ -67,6 +69,12 @@ struct CopilotUsageResult: Equatable {
     var weekSkills: Int { days.reduce(0) { $0 + $1.skillCount } }
     var weekLinesAdded: Int { days.reduce(0) { $0 + $1.linesAdded } }
     var weekLinesRemoved: Int { days.reduce(0) { $0 + $1.linesRemoved } }
+    // 日期 → 会话数（按结束日归属），供按天落盘
+    var daySessions: [String: Int] {
+        days.reduce(into: [:]) { result, day in
+            if day.sessionCount > 0 { result[day.date] = day.sessionCount }
+        }
+    }
 }
 
 enum CopilotUsageError: LocalizedError {
@@ -167,6 +175,7 @@ enum CopilotUsage {
         var days: [String: CopilotDayUsage] = [:]
         var models: [String: CopilotModelUsage] = [:]
         var dayModels: [String: [String: ModelTokenTally]] = [:]
+        var daySkills: [String: [String: Int]] = [:]
         var skills: [String: Int] = [:]
 
         for file in files {
@@ -220,7 +229,10 @@ enum CopilotUsage {
                     output: output, reasoning: reasoning)
             }
             days[dayKey] = day
-            for name in summary.skillNames { skills[name, default: 0] += 1 }
+            for name in summary.skillNames {
+                skills[name, default: 0] += 1
+                daySkills[dayKey, default: [:]][name, default: 0] += 1
+            }
         }
 
         let dayRows = (0..<7).map { index -> CopilotDayUsage in
@@ -240,7 +252,8 @@ enum CopilotUsage {
                 return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             }
         return CopilotUsageResult(days: dayRows, models: modelRows, skills: skillRows,
-                                  dayModels: dayModels.compactMapValues(ModelTokenTally.nonEmpty))
+                                  dayModels: dayModels.compactMapValues(ModelTokenTally.nonEmpty),
+                                  daySkills: daySkills)
     }
 
     private static func sessionFiles(in root: URL, modifiedSince cutoff: Date) -> [URL] {

@@ -12,7 +12,7 @@ final class PersonalUsageProfileTests: XCTestCase {
         let profile = PersonalUsageProfile(
             history: history,
             enabledSources: [.claude],
-            weeklySessions: [.claude: 4, .codex: 99],
+            sessionsBySource: [.claude: 4, .codex: 99],
             cacheUsage: [:]
         )
 
@@ -20,7 +20,7 @@ final class PersonalUsageProfileTests: XCTestCase {
         XCTAssertEqual(profile.currentStreak, 3)
         XCTAssertEqual(profile.primarySource, .claude)
         XCTAssertEqual(profile.primaryShare, 1)
-        XCTAssertEqual(profile.weeklySessions, 4)
+        XCTAssertEqual(profile.rangeSessions, 4)
     }
 
     func testCurrentStreakAllowsTheCurrentDayToBeInactive() {
@@ -31,7 +31,7 @@ final class PersonalUsageProfileTests: XCTestCase {
                 point("2026-08-12", [:]),
             ],
             enabledSources: [.claude],
-            weeklySessions: [:],
+            sessionsBySource: [:],
             cacheUsage: [:]
         )
 
@@ -48,7 +48,7 @@ final class PersonalUsageProfileTests: XCTestCase {
                 point("2026-08-12", [:]),
             ],
             enabledSources: [.claude],
-            weeklySessions: [:],
+            sessionsBySource: [:],
             cacheUsage: [:]
         )
 
@@ -64,7 +64,7 @@ final class PersonalUsageProfileTests: XCTestCase {
             history: selectedHistory,
             streakHistory: fullHistory,
             enabledSources: [.claude],
-            weeklySessions: [:],
+            sessionsBySource: [:],
             cacheUsage: [:]
         )
 
@@ -76,7 +76,7 @@ final class PersonalUsageProfileTests: XCTestCase {
         let profile = PersonalUsageProfile(
             history: [],
             enabledSources: [.deepseek, .claude],
-            weeklySessions: [.deepseek: 100, .claude: 7, .codex: 20],
+            sessionsBySource: [.deepseek: 100, .claude: 7, .codex: 20],
             cacheUsage: [
                 .deepseek: .init(cachedInputTokens: 80, totalInputTokens: 100),
                 .claude: .init(cachedInputTokens: 10, totalInputTokens: 20),
@@ -84,7 +84,7 @@ final class PersonalUsageProfileTests: XCTestCase {
             ]
         )
 
-        XCTAssertEqual(profile.weeklySessions, 7)
+        XCTAssertEqual(profile.rangeSessions, 7)
         XCTAssertEqual(profile.cachedInputTokens, 10)
         XCTAssertEqual(profile.nonCachedInputTokens, 10)
         XCTAssertEqual(profile.cacheHitRate ?? 0, 0.5, accuracy: 0.0001)
@@ -99,7 +99,7 @@ final class PersonalUsageProfileTests: XCTestCase {
         let profile = PersonalUsageProfile(
             history: history,
             enabledSources: [.deepseek, .claude, .codex],
-            weeklySessions: [:],
+            sessionsBySource: [:],
             cacheUsage: [
                 .claude: .init(cachedInputTokens: 80, totalInputTokens: 100),
             ]
@@ -112,7 +112,7 @@ final class PersonalUsageProfileTests: XCTestCase {
         let profile = PersonalUsageProfile(
             history: [point("2026-08-12", [.deepseek: 1_000])],
             enabledSources: [.deepseek],
-            weeklySessions: [.deepseek: 20],
+            sessionsBySource: [.deepseek: 20],
             cacheUsage: [
                 .deepseek: .init(cachedInputTokens: 800, totalInputTokens: 1_000),
             ]
@@ -122,7 +122,7 @@ final class PersonalUsageProfileTests: XCTestCase {
         XCTAssertEqual(profile.currentStreak, 0)
         XCTAssertNil(profile.primarySource)
         XCTAssertEqual(profile.usedSourceCount, 0)
-        XCTAssertEqual(profile.weeklySessions, 0)
+        XCTAssertEqual(profile.rangeSessions, 0)
         XCTAssertEqual(profile.totalInputTokens, 0)
     }
 

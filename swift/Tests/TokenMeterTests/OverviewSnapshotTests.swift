@@ -42,7 +42,7 @@ final class OverviewSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.periodTotal, 350)
         XCTAssertEqual(snapshot.historyStartDate, "2026-08-11")
         XCTAssertEqual(snapshot.availableHistoryDays, 2)
-        XCTAssertEqual(snapshot.profile.weeklySessions, 3)
+        XCTAssertEqual(snapshot.profile.rangeSessions, 3)
         XCTAssertEqual(snapshot.rankings.tools.map(\.source), [.codex, .claude])
         XCTAssertEqual(snapshot.skillRankings.entries.map(\.name), ["shared-skill"])
         XCTAssertEqual(snapshot.skillRankings.entries.first?.invocationCount, 5)
@@ -154,7 +154,7 @@ final class OverviewSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.periodBySource[.qwen], 120)
         XCTAssertEqual(snapshot.nonzeroPeriodSources, [.qwen])
         XCTAssertEqual(snapshot.trend.filter { $0.source == .qwen }.reduce(0) { $0 + $1.tokens }, 120)
-        XCTAssertEqual(snapshot.profile.weeklySessions, 1)
+        XCTAssertEqual(snapshot.profile.rangeSessions, 1)
         XCTAssertEqual(snapshot.rankings.models.first?.model, "qwen3-coder")
         XCTAssertEqual(snapshot.apiReferenceCost.totalTokens, 120)
     }
@@ -472,7 +472,7 @@ final class OverviewSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.trend.count, 24)
         XCTAssertEqual(snapshot.trend.first { $0.hour == 9 }?.tokens, 370)
         XCTAssertEqual(snapshot.trendTotal, 370)
-        XCTAssertEqual(snapshot.profile.weeklySessions, 1)
+        XCTAssertEqual(snapshot.profile.rangeSessions, 1)
         XCTAssertEqual(snapshot.profile.cachedInputTokens, 200)
         XCTAssertEqual(snapshot.rankings.models.first?.source, .kimi)
         XCTAssertEqual(snapshot.rankings.models.first?.model, "k3-agent")
@@ -558,12 +558,16 @@ final class OverviewSnapshotTests: XCTestCase {
     func testModelDimensionsFollowRangeAndPreferLiveScanOverPersistedDetail() throws {
         let history = try makeHistory(start: "2026-08-27", count: 30) { _ in [.codex: 1] }
         let persisted = [
-            ModelUsageDay(date: "2026-09-01", bySource: [.codex: ["gpt-5.4": .init(output: 1_000_000)]]),
-            ModelUsageDay(date: "2026-09-20", bySource: [.codex: [
-                "gpt-5.4": .init(cached: 2_000_000, output: 100_000),
-            ]]),
+            ModelUsageDay(date: "2026-09-01", bySource: [
+                .codex: SourceDayDetail(models: ["gpt-5.4": .init(output: 1_000_000)]),
+            ]),
+            ModelUsageDay(date: "2026-09-20", bySource: [
+                .codex: SourceDayDetail(models: ["gpt-5.4": .init(cached: 2_000_000, output: 100_000)]),
+            ]),
             // 本次扫描已覆盖这一天：留存的旧值不能叠加进来
-            ModelUsageDay(date: "2026-09-25", bySource: [.codex: ["gpt-5.4": .init(input: 5_000_000)]]),
+            ModelUsageDay(date: "2026-09-25", bySource: [
+                .codex: SourceDayDetail(models: ["gpt-5.4": .init(input: 5_000_000)]),
+            ]),
         ]
         let codex = codexResult(dayModels: [
             "2026-09-25": ["gpt-5.4 (xhigh)": .init(input: 1_000_000)],
@@ -600,11 +604,13 @@ final class OverviewSnapshotTests: XCTestCase {
     func testModelDimensionsIgnoreFutureDaysDeselectedSourcesAndCursor() {
         let persisted = [
             ModelUsageDay(date: "2026-09-25", bySource: [
-                .codex: ["gpt-5.4": .init(input: 10)],
-                .claude: ["opus-5-5": .init(input: 20)],
-                .cursor: ["auto": .init(input: 30)],
+                .codex: SourceDayDetail(models: ["gpt-5.4": .init(input: 10)]),
+                .claude: SourceDayDetail(models: ["opus-5-5": .init(input: 20)]),
+                .cursor: SourceDayDetail(models: ["auto": .init(input: 30)]),
             ]),
-            ModelUsageDay(date: "2026-09-26", bySource: [.codex: ["gpt-5.4": .init(input: 40)]]),
+            ModelUsageDay(date: "2026-09-26", bySource: [
+                .codex: SourceDayDetail(models: ["gpt-5.4": .init(input: 40)]),
+            ]),
         ]
         let snapshot = OverviewSnapshot(
             selection: OverviewSourceSelection(sources: [.codex, .cursor]),
@@ -617,12 +623,60 @@ final class OverviewSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.modelCoverageStartDate, "2026-09-25")
     }
 
+    func testSessionsAndSkillsFollowRangeAndPreferLiveScan() throws {
+        let persisted = [
+            ModelUsageDay(date: "2026-09-01", bySource: [
+                .codex: SourceDayDetail(skills: ["pdf": 2], sessions: 4),
+                // 未选择的来源：不进会话与 Skills 榜
+                .claude: SourceDayDetail(skills: ["pdf": 9], sessions: 8),
+            ]),
+            // 未来日期的明细一律忽略
+            ModelUsageDay(date: "2026-09-26", bySource: [
+                .codex: SourceDayDetail(skills: ["future": 1], sessions: 5),
+            ]),
+        ]
+        var today = CodexDayUsage(date: "2026-09-25")
+        today.sessionCount = 2
+        let live = CodexUsageResult(
+            rateLimits: nil, allRateLimits: [], days: [today],
+            models: [], projects: [], todayHours: [],
+            skills: [CodexSkillUsage(name: "pdf", invocationCount: 1)],
+            dayModels: ["2026-09-25": ["gpt-5.4": .init(input: 10)]],
+            daySkills: ["2026-09-25": ["pdf": 1]])
+        // 同一天的留存值被实时扫描整体覆盖，不叠加
+        let stalePersisted = persisted + [
+            ModelUsageDay(date: "2026-09-25", bySource: [
+                .codex: SourceDayDetail(skills: ["pdf": 7], sessions: 6),
+            ]),
+        ]
+        func snapshot(_ range: UsageHistoryRange) -> OverviewSnapshot {
+            OverviewSnapshot(
+                selection: OverviewSourceSelection(sources: [.codex]),
+                range: range, history: [], streakHistory: [],
+                deepSeek: nil, claude: nil, codex: live, openCode: nil, gemini: nil,
+                copilot: nil, cursor: nil, modelHistory: stalePersisted,
+                todayKey: "2026-09-25")
+        }
+
+        let day = snapshot(.day)
+        XCTAssertEqual(day.profile.rangeSessions, 2)
+        XCTAssertEqual(day.skillRankings.entries.map(\.name), ["pdf"])
+        XCTAssertEqual(day.skillRankings.entries.first?.invocationCount, 1)
+
+        let month = snapshot(.month)
+        XCTAssertEqual(month.profile.rangeSessions, 6)   // 留存 4 + 实时 2
+        XCTAssertEqual(month.skillRankings.entries.first?.invocationCount, 3)   // 2 + 1
+        XCTAssertEqual(month.modelCoverageStartDate, "2026-09-01")
+    }
+
     func testCoverageNoteOnlyWhenToolUsageStartsBeforeModelDetail() throws {
         let history = try makeHistory(start: "2026-08-27", count: 30) { index in
             index >= 14 ? [.codex: 5] : [:]   // 工具用量自 09-10 起
         }
         let persisted = [
-            ModelUsageDay(date: "2026-09-20", bySource: [.codex: ["gpt-5.4": .init(input: 10)]]),
+            ModelUsageDay(date: "2026-09-20", bySource: [
+                .codex: SourceDayDetail(models: ["gpt-5.4": .init(input: 10)]),
+            ]),
         ]
         func snapshot(_ range: UsageHistoryRange) -> OverviewSnapshot {
             OverviewSnapshot(
@@ -634,7 +688,7 @@ final class OverviewSnapshotTests: XCTestCase {
 
         let month = snapshot(.month)
         XCTAssertTrue(month.modelCoverageIsPartial)
-        XCTAssertEqual(month.modelCoverageNote, "模型明细自 9/20 起按天留存，更早的用量只计入工具合计。")
+        XCTAssertEqual(month.modelCoverageNote, "按天明细自 9/20 起留存，更早的用量只计入工具合计。")
         XCTAssertTrue(snapshot(.all).modelCoverageIsPartial)
         // 近 7 天从 09-19 起，09-19 有工具用量但没有模型明细
         XCTAssertTrue(snapshot(.week).modelCoverageIsPartial)
@@ -644,7 +698,9 @@ final class OverviewSnapshotTests: XCTestCase {
 
     func testSubscriptionValueProratesMonthlyFeesOverCoveredDaysOnly() throws {
         let persisted = [
-            ModelUsageDay(date: "2026-09-20", bySource: [.codex: ["gpt-5.4": .init(output: 1_000_000)]]),
+            ModelUsageDay(date: "2026-09-20", bySource: [
+                .codex: SourceDayDetail(models: ["gpt-5.4": .init(output: 1_000_000)]),
+            ]),
         ]
         let plans = [
             SubscriptionPlan(name: "ChatGPT Pro", monthlyFee: 100),
@@ -695,7 +751,8 @@ final class OverviewSnapshotTests: XCTestCase {
                 ClaudeHourUsage(hour: 8, totalTokens: 100, deepseekBackendTokens: 60),
             ],
             weekCompare: .empty,
-            skills: [ClaudeSkillUsage(name: "shared-skill", invocationCount: 2)]
+            skills: [ClaudeSkillUsage(name: "shared-skill", invocationCount: 2)],
+            daySkills: ["2026-08-12": ["shared-skill": 2]]
         )
     }
 
@@ -719,7 +776,8 @@ final class OverviewSnapshotTests: XCTestCase {
                 CodexHourUsage(hour: 2, totalTokens: 80),
                 CodexHourUsage(hour: 8, totalTokens: 120),
             ],
-            skills: [CodexSkillUsage(name: "shared-skill", invocationCount: 3)]
+            skills: [CodexSkillUsage(name: "shared-skill", invocationCount: 3)],
+            daySkills: ["2026-08-12": ["shared-skill": 3]]
         )
     }
 

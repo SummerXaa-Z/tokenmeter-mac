@@ -45,14 +45,14 @@ struct OverviewSnapshot: Equatable {
         selection.sources.filter { (periodBySource[$0] ?? 0) > 0 }
     }
 
-    /// 范围早于模型明细起点时，模型榜、API 等价与缓存复用共用的口径说明。
+    /// 范围早于模型明细起点时，模型榜 / Skills 榜 / 会话数 / API 等价共用的口径说明。
     var modelCoverageNote: String? {
         guard modelCoverageIsPartial, let modelCoverageStartDate else { return nil }
         return Self.modelCoverageNote(since: modelCoverageStartDate)
     }
 
     static func modelCoverageNote(since start: String) -> String {
-        "模型明细自 \(Fmt.mmdd(start)) 起按天留存，更早的用量只计入工具合计。"
+        "按天明细自 \(Fmt.mmdd(start)) 起留存，更早的用量只计入工具合计。"
     }
 
     init(
@@ -158,24 +158,13 @@ struct OverviewSnapshot: Equatable {
             historyStartDate = nil
             availableHistoryDays = 0
         }
-        var weeklySessions: [HistorySource: Int] = [:]
-        if selection.contains(.claude), let claude { weeklySessions[.claude] = claude.weekSessions }
-        if selection.contains(.codex), let codex { weeklySessions[.codex] = codex.weekSessions }
-        if selection.contains(.kimi), let kimi { weeklySessions[.kimi] = kimi.weekSessions }
-        if selection.contains(.opencode), let openCode {
-            weeklySessions[.opencode] = openCode.weekSessions
-        }
-        if selection.contains(.gemini), let gemini { weeklySessions[.gemini] = gemini.weekSessions }
-        if selection.contains(.copilot), let copilot {
-            weeklySessions[.copilot] = copilot.weekSessions
-        }
-        if selection.contains(.qwen), let qwen { weeklySessions[.qwen] = qwen.weekSessions }
-
-        // 模型维度（模型榜、API 等价参考、输入缓存复用）按天 × 模型明细聚合并
-        // 跟随所选范围：采集器本次扫描到的天优先，其余天取本机留存的明细。
-        // Cursor 只有订阅周期聚合，不进入模型维度。
+        // 模型 / Skills / 会话三个维度（模型榜、API 等价参考、输入缓存复用、
+        // Skills 榜、会话数）按天明细聚合并跟随所选范围：采集器本次扫描到的
+        // 天优先，其余天取本机留存的明细。Cursor 只有订阅周期聚合，不进入。
         let modelSources = selection.sources.filter { $0 != .cursor }
         var liveModels: [HistorySource: [String: [String: ModelTokenTally]]] = [:]
+        var liveSkills: [HistorySource: [String: [String: Int]]] = [:]
+        var liveSessions: [HistorySource: [String: Int]] = [:]
         liveModels[.claude] = claude?.dayModels
         liveModels[.codex] = codex?.dayModels
         liveModels[.kimi] = kimi?.dayModels
@@ -183,9 +172,21 @@ struct OverviewSnapshot: Equatable {
         liveModels[.gemini] = gemini?.dayModels
         liveModels[.copilot] = copilot?.dayModels
         liveModels[.qwen] = qwen?.dayModels
-        let modelDays = Self.mergedModelDays(
+        liveSkills[.claude] = claude?.daySkills
+        liveSkills[.codex] = codex?.daySkills
+        liveSkills[.copilot] = copilot?.daySkills
+        liveSessions[.claude] = claude?.daySessions
+        liveSessions[.codex] = codex?.daySessions
+        liveSessions[.kimi] = kimi?.daySessions
+        liveSessions[.opencode] = openCode?.daySessions
+        liveSessions[.gemini] = gemini?.daySessions
+        liveSessions[.copilot] = copilot?.daySessions
+        liveSessions[.qwen] = qwen?.daySessions
+        let modelDays = Self.mergedDetailDays(
             sources: modelSources,
-            live: liveModels,
+            liveModels: liveModels,
+            liveSkills: liveSkills,
+            liveSessions: liveSessions,
             persisted: modelHistory,
             todayKey: todayKey
         )
@@ -197,14 +198,20 @@ struct OverviewSnapshot: Equatable {
         var modelSamples: [PersonalUsageRankings.ModelSample] = []
         var costSamples: [APICostSample] = []
         var sourceTallies: [HistorySource: ModelTokenTally] = [:]
+        var skillCountBySource: [HistorySource: [String: Int]] = [:]
+        var sessionBySource: [HistorySource: Int] = [:]
         for date in rangeDates {
             // 首个价格快照之前的用量按首个快照计价，此后按用量当日生效价
             let pricingDate = max(date, APIReferencePricingCatalog.firstObservedAt)
             let bySource = modelDays[date] ?? [:]
             for source in modelSources {
-                guard let models = bySource[source] else { continue }
-                for model in models.keys.sorted() {
-                    guard let tally = models[model] else { continue }
+                guard let detail = bySource[source] else { continue }
+                sessionBySource[source, default: 0] += detail.sessions
+                for (name, count) in detail.skills {
+                    skillCountBySource[source, default: [:]][name, default: 0] += count
+                }
+                for model in detail.models.keys.sorted() {
+                    guard let tally = detail.models[model] else { continue }
                     modelSamples.append(.init(
                         source: source, model: model, totalTokens: tally.total))
                     costSamples.append(.init(
@@ -219,7 +226,7 @@ struct OverviewSnapshot: Equatable {
             history: history,
             streakHistory: streakHistory,
             enabledSources: selection.sources,
-            weeklySessions: weeklySessions,
+            sessionsBySource: sessionBySource,
             cacheUsage: sourceTallies.mapValues {
                 PersonalUsageProfile.CacheUsage(
                     cachedInputTokens: $0.cached, totalInputTokens: $0.promptTokens)
@@ -231,24 +238,13 @@ struct OverviewSnapshot: Equatable {
             modelSamples: modelSamples
         )
 
-        var skillSamples: [PersonalSkillRankings.Sample] = []
-        if selection.contains(.claude), let claude {
-            skillSamples += claude.skills.map {
-                .init(source: .claude, name: $0.name, invocationCount: $0.invocationCount)
-            }
-        }
-        if selection.contains(.codex), let codex {
-            skillSamples += codex.skills.map {
-                .init(source: .codex, name: $0.name, invocationCount: $0.invocationCount)
-            }
-        }
-        if selection.contains(.copilot), let copilot {
-            skillSamples += copilot.skills.map {
-                .init(source: .copilot, name: $0.name, invocationCount: $0.invocationCount)
-            }
-        }
         skillRankings = PersonalSkillRankings(
-            samples: skillSamples,
+            samples: skillCountBySource.flatMap { source, byName in
+                byName.map {
+                    PersonalSkillRankings.Sample(
+                        source: source, name: $0.key, invocationCount: $0.value)
+                }
+            },
             enabledSources: selection.sources
         )
 
@@ -327,27 +323,37 @@ struct OverviewSnapshot: Equatable {
         trendTotal = computedTrend.reduce(0) { $0 + $1.tokens }
     }
 
-    // 日期 → 来源 → 模型。采集器本次扫描的天整体覆盖留存明细（同一天
-    // 不会叠加两份），其余天取留存明细；晚于今天的日期一律忽略。
-    private static func mergedModelDays(
+    // 日期 → 来源 → 当天明细（模型 / Skills / 会话）。采集器本次扫描的天
+    // 整体覆盖留存明细（同一天不会叠加两份），其余天取留存明细；晚于今天
+    // 的日期一律忽略。
+    private static func mergedDetailDays(
         sources: [HistorySource],
-        live: [HistorySource: [String: [String: ModelTokenTally]]],
+        liveModels: [HistorySource: [String: [String: ModelTokenTally]]],
+        liveSkills: [HistorySource: [String: [String: Int]]],
+        liveSessions: [HistorySource: [String: Int]],
         persisted: [ModelUsageDay],
         todayKey: String
-    ) -> [String: [HistorySource: [String: ModelTokenTally]]] {
-        var result: [String: [HistorySource: [String: ModelTokenTally]]] = [:]
+    ) -> [String: [HistorySource: SourceDayDetail]] {
+        var result: [String: [HistorySource: SourceDayDetail]] = [:]
         for day in persisted where day.date <= todayKey {
             for source in sources {
-                guard let models = day.bySource[source].flatMap(ModelTokenTally.nonEmpty)
-                else { continue }
-                result[day.date, default: [:]][source] = models
+                guard let detail = day.bySource[source], !detail.isEmpty else { continue }
+                result[day.date, default: [:]][source] = detail
             }
         }
         for source in sources {
-            for (date, models) in live[source] ?? [:]
+            let models = liveModels[source] ?? [:]
+            let skills = liveSkills[source] ?? [:]
+            let sessions = liveSessions[source] ?? [:]
+            let dates = Set(models.keys).union(skills.keys).union(sessions.keys)
+            for date in dates
             where date <= todayKey && ModelUsageHistoryStore.isDateKey(date) {
-                guard let kept = ModelTokenTally.nonEmpty(models) else { continue }
-                result[date, default: [:]][source] = kept
+                let detail = SourceDayDetail(
+                    models: models[date] ?? [:],
+                    skills: skills[date] ?? [:],
+                    sessions: sessions[date] ?? 0)
+                guard !detail.isEmpty else { continue }
+                result[date, default: [:]][source] = detail
             }
         }
         return result

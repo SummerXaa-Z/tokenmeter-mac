@@ -341,7 +341,8 @@ final class AppState: ObservableObject {
             // 不得用它与 Claude 模型子集做跨源扣减。
             HistoryStore.reconcile(.claude, authoritativeDays: Self.claudeHistoryDays(from: r))
             recordModelHistory(.claude, windowDates: r.days.map(\.date),
-                               dayModels: r.dayModels, authoritative: true)
+                               dayModels: r.dayModels, daySkills: r.daySkills,
+                               daySessions: r.daySessions, authoritative: true)
             historyRevision &+= 1
 
             guard claudeRefresh.finish() else { break }
@@ -352,16 +353,26 @@ final class AppState: ObservableObject {
         }
     }
 
-    // 按天模型明细与 HistoryStore 同口径落盘：权威重扫的来源（与
-    // HistoryStore.reconcile 对应）会删除窗口内已确认无用量的天。
+    // 按天明细与 HistoryStore 同口径落盘：模型 Token、Skill 次数与会话数
+    // 合成 SourceDayDetail。权威重扫的来源（与 HistoryStore.reconcile 对应）
+    // 会删除窗口内已确认无任何明细的天。
     private func recordModelHistory(
         _ source: HistorySource,
         windowDates: [String],
         dayModels: [String: [String: ModelTokenTally]],
+        daySkills: [String: [String: Int]] = [:],
+        daySessions: [String: Int] = [:],
         authoritative: Bool
     ) {
+        var days: [String: SourceDayDetail] = [:]
+        for date in Set(dayModels.keys).union(daySkills.keys).union(daySessions.keys) {
+            days[date] = SourceDayDetail(
+                models: dayModels[date] ?? [:],
+                skills: daySkills[date] ?? [:],
+                sessions: daySessions[date] ?? 0)
+        }
         ModelUsageHistoryStore.shared.write(
-            source, windowDates: windowDates, days: dayModels,
+            source, windowDates: windowDates, days: days,
             deletesEmptyDays: authoritative)
     }
 
@@ -397,7 +408,8 @@ final class AppState: ObservableObject {
                 r = CodexUsageResult(rateLimits: liveLimits.first, allRateLimits: liveLimits,
                                      days: r.days, models: r.models,
                                      projects: r.projects, todayHours: r.todayHours,
-                                     skills: r.skills, dayModels: r.dayModels)
+                                     skills: r.skills, dayModels: r.dayModels,
+                                     daySkills: r.daySkills)
             }
             codex.result = r
             codex.loadedAt = Date()
@@ -405,7 +417,8 @@ final class AppState: ObservableObject {
                 (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
             })
             recordModelHistory(.codex, windowDates: r.days.map(\.date),
-                               dayModels: r.dayModels, authoritative: false)
+                               dayModels: r.dayModels, daySkills: r.daySkills,
+                               daySessions: r.daySessions, authoritative: false)
             historyRevision &+= 1
 
             guard codexRefresh.finish() else { break }
@@ -442,7 +455,8 @@ final class AppState: ObservableObject {
                     (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
                 })
                 recordModelHistory(.kimi, windowDates: result.days.map(\.date),
-                                   dayModels: result.dayModels, authoritative: true)
+                                   dayModels: result.dayModels,
+                                   daySessions: result.daySessions, authoritative: true)
                 historyRevision &+= 1
             } catch {
                 kimi.result = nil
@@ -484,7 +498,8 @@ final class AppState: ObservableObject {
                     (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
                 })
                 recordModelHistory(.opencode, windowDates: result.days.map(\.date),
-                                   dayModels: result.dayModels, authoritative: false)
+                                   dayModels: result.dayModels,
+                                   daySessions: result.daySessions, authoritative: false)
                 historyRevision &+= 1
             } catch {
                 opencode.result = nil
@@ -526,7 +541,8 @@ final class AppState: ObservableObject {
                     (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
                 })
                 recordModelHistory(.gemini, windowDates: result.days.map(\.date),
-                                   dayModels: result.dayModels, authoritative: false)
+                                   dayModels: result.dayModels,
+                                   daySessions: result.daySessions, authoritative: false)
                 historyRevision &+= 1
             } catch {
                 gemini.result = nil
@@ -568,7 +584,8 @@ final class AppState: ObservableObject {
                     (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
                 })
                 recordModelHistory(.copilot, windowDates: result.days.map(\.date),
-                                   dayModels: result.dayModels, authoritative: false)
+                                   dayModels: result.dayModels, daySkills: result.daySkills,
+                                   daySessions: result.daySessions, authoritative: false)
                 historyRevision &+= 1
             } catch {
                 copilot.result = nil
@@ -610,7 +627,8 @@ final class AppState: ObservableObject {
                     (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
                 })
                 recordModelHistory(.qwen, windowDates: result.days.map(\.date),
-                                   dayModels: result.dayModels, authoritative: true)
+                                   dayModels: result.dayModels,
+                                   daySessions: result.daySessions, authoritative: true)
                 historyRevision &+= 1
             } catch {
                 qwen.result = nil

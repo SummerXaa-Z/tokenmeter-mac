@@ -13,7 +13,7 @@ struct PersonalUsageProfile: Equatable {
     let primarySource: HistorySource?
     let primaryShare: Double?
     let usedSourceCount: Int
-    let weeklySessions: Int
+    let rangeSessions: Int
     let cachedInputTokens: Int
     let totalInputTokens: Int
 
@@ -39,7 +39,7 @@ struct PersonalUsageProfile: Equatable {
         history: [HistoryStore.DayPoint],
         streakHistory: [HistoryStore.DayPoint]? = nil,
         enabledSources: [HistorySource],
-        weeklySessions: [HistorySource: Int],
+        sessionsBySource: [HistorySource: Int],
         cacheUsage: [HistorySource: CacheUsage]
     ) {
         let selected = Set(enabledSources)
@@ -85,8 +85,8 @@ struct PersonalUsageProfile: Equatable {
         let allTokens = totals.values.reduce(0, +)
         primaryShare = allTokens > 0 ? Double(primaryTokens) / Double(allTokens) : nil
 
-        self.weeklySessions = codingSources.reduce(0) {
-            $0 + max(weeklySessions[$1] ?? 0, 0)
+        self.rangeSessions = codingSources.reduce(0) {
+            $0 + max(sessionsBySource[$1] ?? 0, 0)
         }
         cachedInputTokens = codingSources.reduce(0) {
             $0 + max(cacheUsage[$1]?.cachedInputTokens ?? 0, 0)

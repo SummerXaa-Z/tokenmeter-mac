@@ -42,7 +42,7 @@ enum UsageCSVExport {
         for day in modelHistory {
             let pricingDate = max(day.date, APIReferencePricingCatalog.firstObservedAt)
             let samples = HistorySource.codingAgents.flatMap { source in
-                (day.bySource[source] ?? [:]).map { model, tally in
+                (day.bySource[source]?.models ?? [:]).map { model, tally in
                     APICostSample(
                         model: model, tokens: tally.breakdown,
                         usageDate: pricingDate, source: source)

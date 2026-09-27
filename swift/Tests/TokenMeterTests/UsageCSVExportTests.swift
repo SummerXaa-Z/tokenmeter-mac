@@ -52,10 +52,12 @@ final class UsageCSVExportTests: XCTestCase {
     func testAPIValueColumnFillsOnlyDaysWithPricedModelDetail() {
         let values = UsageCSVExport.apiValueByDate([
             ModelUsageDay(date: "2026-09-24", bySource: [
-                .codex: ["gpt-5.4": .init(output: 1_000_000)],
-                .claude: ["opus-5-5": .init(input: 1_000_000)],
+                .codex: SourceDayDetail(models: ["gpt-5.4": .init(output: 1_000_000)]),
+                .claude: SourceDayDetail(models: ["opus-5-5": .init(input: 1_000_000)]),
             ]),
-            ModelUsageDay(date: "2026-09-25", bySource: [.qwen: ["private-model": .init(input: 5)]]),
+            ModelUsageDay(date: "2026-09-25", bySource: [
+                .qwen: SourceDayDetail(models: ["private-model": .init(input: 5)]),
+            ]),
         ])
         XCTAssertEqual(values.count, 1)
         XCTAssertEqual(values["2026-09-24"] ?? 0, 19, accuracy: 1e-9)
