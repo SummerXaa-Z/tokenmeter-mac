@@ -85,6 +85,8 @@ struct SourceHistoryTrendCard: View {
     let source: HistorySource
     let color: Color
     @State private var hoverDate: String?
+    // 与来源页趋势卡同款 7|30 档(Cursor 只有按日合计,无分量无金额)
+    @State private var span: SourceTrendCard.Span = .week
 
     private var history: [HistoryStore.DayPoint] { HistoryStore.all() }
 
@@ -103,11 +105,11 @@ struct SourceHistoryTrendCard: View {
             let value = max(day.bySource[source] ?? 0, 0)
             if value > 0 { totals[day.date] = value }
         }
-        // 近 7 天骨架(含零天),保证柱数与日期稳定
+        // 所选档窗口骨架(含零天),保证柱数与日期稳定
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         var buckets: [(date: String, label: String, value: Int)] = []
-        for offset in stride(from: -6, through: 0, by: 1) {
+        for offset in stride(from: -(span.rawValue - 1), through: 0, by: 1) {
             guard let date = calendar.date(byAdding: .day, value: offset, to: today) else { continue }
             let key = DateUtil.key(date)
             buckets.append((key, Fmt.mmdd(date), totals[key] ?? 0))
@@ -115,8 +117,19 @@ struct SourceHistoryTrendCard: View {
         let captions = buckets.map { (label: $0.label, total: $0.value, parts: [(name: String, value: Int, color: Color)]()) }
         return Card {
             VStack(alignment: .leading, spacing: 4) {
-                Label("近 7 天 Token", systemImage: "chart.bar.fill")
-                    .font(.system(size: 12, weight: .semibold))
+                HStack {
+                    Label("近 \(span.rawValue) 天 Token", systemImage: "chart.bar.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Picker("范围", selection: $span) {
+                        ForEach(SourceTrendCard.Span.allCases, id: \.self) { item in
+                            Text(item.title).tag(item)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .controlSize(.mini)
+                    .frame(width: 104)
+                }
                 ChartHover.caption(hover: hoverDate, buckets: captions)
                 Chart {
                     ForEach(buckets, id: \.date) { bucket in
