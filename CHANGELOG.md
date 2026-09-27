@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.22.0 — 2026-09-27 — 来源页趋势悬停显示当日金额
+
+- **来源页悬停金额**：七个 Coding 来源详情页的 7 天趋势图悬停说明行在 Token 数据之后追加当日 API 等价美元金额，与总览趋势图对称；实时采集的 dayModels 覆盖留存明细同一天，采集失败时仍可从留存回看当日金额。缺价或无明细的日子不显示金额（不冒充 $0）。`SourceAPICost` 抽出逐日合并共用逻辑并新增 `dailyValues`（近 7 天逐日金额，缺价日不建条目）；`ChartHover.caption` 加可选 `amountFor` 闭包（置于 buckets 参数之前，其余图表调用点零改动）。影响范围：`SourceAPICostCard.swift`、`ChartHover.swift`、七个来源页。
+- 新增 1 个测试（合计 291）：逐日按当日生效价计价、缺价日无条目、窗口外不计入。
+
 ## v3.21.0 — 2026-09-27 — 趋势图悬停显示当日金额
 
 - **悬停金额**：总览趋势图的悬停说明行在日期、合计与来源分量之后追加该桶的 API 等价美元金额——日粒度显示当日金额、周/月粒度显示桶内合计、1D 小时档显示今日合计（按天明细只有日粒度）。金额与说明行的 Token 同口径：图例点暗隐藏的来源不计入；缺价模型不计入（与金额卡一致）。`OverviewSnapshot` 新增 `apiValueByTrendBucket`（趋势桶键 → 来源 → 金额，逐日按同价格口径重算后按粒度归桶）；`ChartHoverCaption` 加可选金额文本，其余图表不受影响。影响范围：`OverviewSnapshot.swift`、`ChartHover.swift`、`OverviewCards.swift`。
