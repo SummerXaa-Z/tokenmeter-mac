@@ -220,6 +220,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                   usageDate: "2026-09-22", source: .qwen),
             .init(model: "gemini-exp-lab", tokens: tokens(200_000, output: 20_000),
                   usageDate: "2026-09-22", source: .gemini),
+            // 再补两个缺价模型：凑满 4 个触发「等 N」截断 + 复制按钮的夹具态
+            .init(model: "vision-max-preview", tokens: tokens(150_000, output: 30_000),
+                  usageDate: "2026-09-21", source: .qwen),
+            .init(model: "lab-reasoner-2", tokens: tokens(90_000, output: 10_000),
+                  usageDate: "2026-09-21", source: .opencode),
         ])
         // 大部分用量缺价：覆盖条转橙色
         let sparse = summary([

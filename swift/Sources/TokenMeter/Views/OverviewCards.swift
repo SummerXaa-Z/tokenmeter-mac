@@ -802,11 +802,7 @@ struct OverviewAPICostCard: View {
                         amountRow(rank: index + 1, amount: amount)
                     }
                 }
-                if let unpricedText {
-                    Text(unpricedText)
-                        .font(.system(size: 11)).foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                UnpricedModelsNote(names: summary.unpricedModels)
                 if let conversionNote {
                     Text(conversionNote)
                         .font(.system(size: 11)).foregroundStyle(.secondary)
@@ -884,14 +880,6 @@ struct OverviewAPICostCard: View {
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private var unpricedText: String? {
-        let names = summary.unpricedModels
-        guard !names.isEmpty else { return nil }
-        let listed = names.prefix(3).joined(separator: "、")
-        let suffix = names.count > 3 ? " 等" : ""
-        return "另有 \(names.count) 个模型缺少参考价，未计入金额：\(listed)\(suffix)"
     }
 
     private var conversionNote: String? {

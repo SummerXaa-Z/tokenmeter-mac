@@ -58,6 +58,7 @@
 		68DC204BA8F8A4EB2A4D53DE /* ArkPlanQuotaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96B332F068C8D6A1265701DD /* ArkPlanQuotaService.swift */; };
 		6F61B832C0A969BE3C20F6DC /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D564596B6873D239FB7F78 /* SettingsView.swift */; };
 		7193ABE0E27AFAD75C13A5D8 /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE2676BB49AC73AF2BA8531 /* Format.swift */; };
+		727D1AB8872C9EFC6DA1022C /* UnpricedModelsNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CA840794CFA53614F8872DD /* UnpricedModelsNote.swift */; };
 		753185080D5D22027CBF7B00 /* HistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21D9FAD2975109A06D1A9B98 /* HistoryStore.swift */; };
 		75BC978308318F6F92DB408A /* Notifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0108201849DF5FC34BB50A /* Notifier.swift */; };
 		7FC26DEF67EDD2E756D49FB4 /* StatusRefreshSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CD680EDC59AF40606AAC1E7 /* StatusRefreshSettingsTests.swift */; };
@@ -177,6 +178,7 @@
 		69102B74FE1F50DD2D8C39FA /* ForcedRefreshCoalescerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForcedRefreshCoalescerTests.swift; sourceTree = "<group>"; };
 		6BE2676BB49AC73AF2BA8531 /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
 		6C075D0390F0D1124F63A4D3 /* OverviewSourceSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewSourceSelectionTests.swift; sourceTree = "<group>"; };
+		6CA840794CFA53614F8872DD /* UnpricedModelsNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnpricedModelsNote.swift; sourceTree = "<group>"; };
 		6FC438DB603405FFCE72770E /* QwenCodeUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QwenCodeUsage.swift; sourceTree = "<group>"; };
 		7546D54798D07DFF4CEB314F /* ChartHoverPartsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartHoverPartsTests.swift; sourceTree = "<group>"; };
 		776AA6C25BBA738D14FADBAF /* Updater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updater.swift; sourceTree = "<group>"; };
@@ -452,6 +454,7 @@
 				638E58654570BFA104A2B280 /* SourceTrendCard.swift */,
 				B4B9D1BF0F7C7B056BB012BF /* SubscriptionPlansEditor.swift */,
 				C58B1ACBAB5C28E4D83047B6 /* Theme.swift */,
+				6CA840794CFA53614F8872DD /* UnpricedModelsNote.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -662,6 +665,7 @@
 				08147C52D77F2CD0B3131AEA /* SubscriptionQuotaSnapshot.swift in Sources */,
 				C5275D6A5BFA7DD2B9A4453E /* Theme.swift in Sources */,
 				870C36A98D492D4EA893DC70 /* TrendSeriesFilter.swift in Sources */,
+				727D1AB8872C9EFC6DA1022C /* UnpricedModelsNote.swift in Sources */,
 				85E3701A3E68F2AC251DE64F /* Updater.swift in Sources */,
 				FDB2F7A0E3271979E1128210 /* UsageCSVExport.swift in Sources */,
 				3FA4F30FF15DD5E6A92FE55D /* UsageHeatmap.swift in Sources */,

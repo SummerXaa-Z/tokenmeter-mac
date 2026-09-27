@@ -94,11 +94,7 @@ struct SourceAPICostCard: View {
                 index, amount in
                 amountRow(rank: index + 1, amount: amount, total: summary.total)
             }
-            if let names = unpricedText(summary) {
-                Text(names)
-                    .font(.system(size: 11)).foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            UnpricedModelsNote(names: summary.unpricedModels)
             if let conversion = conversionNote(summary) {
                 Text(conversion)
                     .font(.system(size: 11)).foregroundStyle(.secondary)
@@ -140,14 +136,6 @@ struct SourceAPICostCard: View {
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
         }
-    }
-
-    private func unpricedText(_ summary: APIReferenceCostSummary) -> String? {
-        let names = summary.unpricedModels
-        guard !names.isEmpty else { return nil }
-        let listed = names.prefix(3).joined(separator: "、")
-        let suffix = names.count > 3 ? " 等" : ""
-        return "另有 \(names.count) 个模型缺少参考价，未计入金额：\(listed)\(suffix)"
     }
 
     private func conversionNote(_ summary: APIReferenceCostSummary) -> String? {

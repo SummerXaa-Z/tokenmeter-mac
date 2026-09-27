@@ -306,4 +306,30 @@ final class SourceAPICostTests: XCTestCase {
         XCTAssertEqual(SubscriptionValueSummary.multipleText(9.96), "约 10.0 倍")
         XCTAssertEqual(SubscriptionValueSummary.multipleText(0.7), "约 0.7 倍")
     }
+
+    // MARK: - 缺价模型自报家门
+
+    func testUnpricedNoteCaptionListsAtMostThreeAndFoldsTheRest() {
+        XCTAssertNil(UnpricedModelsNote.caption([]))
+        XCTAssertEqual(
+            UnpricedModelsNote.caption(["preview-coder-x"]),
+            "另有 1 个模型缺少参考价，未计入金额：preview-coder-x"
+        )
+        XCTAssertEqual(
+            UnpricedModelsNote.caption(["a", "b", "c"]),
+            "另有 3 个模型缺少参考价，未计入金额：a、b、c"
+        )
+        XCTAssertEqual(
+            UnpricedModelsNote.caption(["a", "b", "c", "d"]),
+            "另有 4 个模型缺少参考价，未计入金额：a、b、c 等"
+        )
+    }
+
+    func testUnpricedNoteCopyTextKeepsEveryNameOnePerLine() {
+        XCTAssertEqual(UnpricedModelsNote.copyText([]), "")
+        XCTAssertEqual(
+            UnpricedModelsNote.copyText(["a", "b", "c", "d"]),
+            "a\nb\nc\nd"
+        )
+    }
 }
