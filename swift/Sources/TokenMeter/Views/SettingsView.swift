@@ -521,7 +521,7 @@ struct SettingsView: View {
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("每周一用量周报").font(.system(size: 12, weight: .semibold))
-                        Text("周一至周三上午 9 点后推一条上周摘要：合计、环比与主力来源；上周没有用量则跳过")
+                        Text("周一至周三上午 9 点后推一条上周摘要：合计、环比、主力来源与 API 等价金额；上周没有用量则跳过")
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }

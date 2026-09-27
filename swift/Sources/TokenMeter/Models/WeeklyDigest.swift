@@ -1,7 +1,8 @@
 import Foundation
 
-// 每周一条的"上周用量摘要"通知:上周全部 Coding 来源 Token 合计、环比与
-// 主力来源。数据与总览环比卡同源(PeriodCompare 日历周口径),纯本地计算,
+// 每周一条的"上周用量摘要"通知:上周全部 Coding 来源 Token 合计、环比、
+// 主力来源与 API 等价金额。数据与总览环比卡同源(PeriodCompare 日历周口径),
+// 金额按天明细 + 当日生效价重算(与总览 API 等价同口径),纯本地计算,
 // 经 Notifier 推系统通知;上周一条记录都没有就不打扰。
 enum WeeklyDigest {
     struct Message: Equatable {
@@ -36,9 +37,12 @@ enum WeeklyDigest {
     /// 两个整周桶,环比复用 PeriodCompare 的口径。上周无任何用量返回 nil。
     /// 不走 DateInterval 边界判断——Darwin 的 contains 把 end 视作闭端,
     /// 回退一周复用区间时会把边界日(今天)误计进上周。
+    /// API 等价金额取按天模型明细(v3.12 起留存):没有明细的早期历史只报
+    /// Token,金额段自动省略。
     static func message(
         _ days: [HistoryStore.DayPoint],
         participants: some Sequence<HistorySource>,
+        modelDays: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
         today: Date = Date(),
         calendar: Calendar = .current
     ) -> Message? {
@@ -81,7 +85,55 @@ enum WeeklyDigest {
                 body += "；全部来自 \(top.key.overviewName)"
             }
         }
+        let amounts = weeklyAmounts(
+            modelDays, allowed: allowed, lastKey: lastKey, priorKey: priorKey,
+            calendar: calendar)
+        if let last = amounts.last, last.matchedTokens > 0 {
+            body += "；API 等价 \(Fmt.usd(last.total))"
+            if let prior = amounts.prior, prior.total > 0 {
+                let change = (last.total - prior.total) / prior.total * 100
+                body += "（环比 \(change >= 0 ? "↑" : "↓") \(Fmt.percent(abs(change)))）"
+            }
+            if let coverage = last.coverage, coverage < 0.999 {
+                body += "，价格覆盖 \(Int((coverage * 100).rounded()))%"
+            }
+        }
         return Message(title: "TokenMeter 上周用量摘要", body: body)
+    }
+
+    /// 上周/上上周的 API 等价金额:按天明细逐日取样,价格取用量当日已生效
+    /// 的快照(首个快照之前的用量按首快照计价),与总览同口径。
+    private static func weeklyAmounts(
+        _ modelDays: [ModelUsageDay],
+        allowed: Set<HistorySource>,
+        lastKey: String,
+        priorKey: String,
+        calendar: Calendar
+    ) -> (last: APIReferenceCostSummary?, prior: APIReferenceCostSummary?) {
+        var buckets: [String: [APICostSample]] = [lastKey: [], priorKey: []]
+        for day in modelDays {
+            guard let date = DateUtil.date(from: day.date) else { continue }
+            let key = weekKey(date, calendar: calendar)
+            guard buckets[key] != nil else { continue }
+            for (source, detail) in day.bySource where allowed.contains(source) {
+                for (model, tally) in detail.models where !tally.isEmpty {
+                    buckets[key]?.append(APICostSample(
+                        model: model,
+                        tokens: tally.breakdown,
+                        usageDate: max(day.date, APIReferencePricingCatalog.firstObservedAt),
+                        source: source))
+                }
+            }
+        }
+        func summary(_ samples: [APICostSample]) -> APIReferenceCostSummary? {
+            guard !samples.isEmpty else { return nil }
+            return APIReferenceCostSummary(
+                samples: samples,
+                estimator: APIReferencePricingCatalog.estimator,
+                referenceDate: APIReferencePricingCatalog.observedAt,
+                conversionRates: APIReferencePricingCatalog.conversionRatesToUSD)
+        }
+        return (summary(buckets[lastKey] ?? []), summary(buckets[priorKey] ?? []))
     }
 
     /// 设置里已启用的 Coding 来源(DeepSeek 平台账户天然不在其列)。
