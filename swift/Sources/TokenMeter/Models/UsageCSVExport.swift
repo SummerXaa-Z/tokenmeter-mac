@@ -4,27 +4,62 @@ import Foundation
 // 列固定为 日期 + Coding 来源（不含 DeepSeek 平台）+ Coding 合计 + 平台 Token
 // + 平台费用 + API 等价；按日期升序，任何输入顺序都产出稳定结果。
 // API 等价只在当天有模型明细时填写，留空表示无明细（不是 0 元）。
-// 末尾附「汇总」行（各列求和，与表头同列对齐）；填写了订阅月费时再附
-// 「订阅回本」行——月费合计、按导出跨度折算的天数与订阅费、API 等价
-// 合计与回本倍数，与总览同口径。
+// 可选按自然日窗口（近 N 天，滚动到今天）截取导出范围；末尾附「汇总」行
+// （各列求和，与表头同列对齐）；填写了订阅月费时再附「订阅回本」行——
+// 月费合计、按导出跨度折算的天数与订阅费、API 等价合计与回本倍数，
+// 与总览同口径，且都只统计所选范围内的天。
 enum UsageCSVExport {
+    enum ExportRange: Hashable {
+        case all
+        case lastDays(Int)
+
+        /// 设置页分段选择器的选项与标题
+        static let choices: [ExportRange] = [.all, .lastDays(30), .lastDays(90)]
+
+        var title: String {
+            switch self {
+            case .all: return "全部"
+            case .lastDays(let n): return "近\(n)天"
+            }
+        }
+    }
+
     private static let codingColumns: [(source: HistorySource, title: String)] = [
         (.claude, "Claude"), (.codex, "Codex"), (.kimi, "Kimi"),
         (.opencode, "OpenCode"), (.gemini, "Gemini"), (.copilot, "Copilot"),
         (.qwen, "Qwen Code"), (.cursor, "Cursor"),
     ]
 
+    /// 窗口起点日期键（含）；全部档返回 nil。近 N 天=滚动窗口，
+    /// 从今天往前数第 N 个自然日（含今天），与总览「近 7 天」同口径。
+    static func windowStartDateKey(
+        _ range: ExportRange,
+        todayKey: String = DateUtil.today(),
+        calendar: Calendar = .current
+    ) -> String? {
+        guard case let .lastDays(n) = range,
+              let today = DateUtil.date(from: todayKey) else { return nil }
+        let start = calendar.date(
+            byAdding: .day, value: -(n - 1), to: calendar.startOfDay(for: today)) ?? today
+        return DateUtil.key(start)
+    }
+
     static func makeCSV(
         _ days: [HistoryStore.DayPoint],
         apiValueByDate: [String: Double] = [:],
         modelHistory: [ModelUsageDay] = [],
-        plans: [SubscriptionPlan] = []
+        plans: [SubscriptionPlan] = [],
+        range: ExportRange = .all,
+        todayKey: String = DateUtil.today()
     ) -> String {
         var lines = [[String]]()
         lines.append(["日期"]
             + codingColumns.map(\.title)
             + ["Coding 合计", "DeepSeek 平台", "平台费用(USD)", "API 等价(USD)"])
-        let sorted = days.sorted(by: { $0.date < $1.date })
+        var sorted = days.sorted(by: { $0.date < $1.date })
+        if let startKey = windowStartDateKey(range, todayKey: todayKey) {
+            sorted = sorted.filter { $0.date >= startKey }
+        }
         for day in sorted {
             let codingTotal = HistorySource.codingAgents.reduce(0) {
                 $0 + (day.bySource[$1] ?? 0)
@@ -85,7 +120,8 @@ enum UsageCSVExport {
 
     /// 「订阅回本」行的数字：月费为全部订阅合计（人民币按固定参考汇率折算）；
     /// 折算天数从导出起点与按天明细留存起点中较晚者数到导出终点——不拿
-    /// 没算进金额的天去摊订阅费（与总览/来源页同钳制）。
+    /// 没算进金额的天去摊订阅费（与总览/来源页同钳制）。API 等价合计
+    /// 只统计导出范围内的天（与「汇总」行同口径）。
     private static func subscriptionSummary(
         _ sorted: [HistoryStore.DayPoint],
         apiValueByDate: [String: Double],
@@ -101,7 +137,7 @@ enum UsageCSVExport {
               let endDate = DateUtil.date(from: exportEnd)
         else { return nil }
         let days = Calendar.current.dateComponents([.day], from: startDate, to: endDate).day ?? 0
-        let apiTotal = apiValueByDate.values.reduce(0, +)
+        let apiTotal = sorted.compactMap { apiValueByDate[$0.date] }.reduce(0, +)
         return SubscriptionValueSummary(
             monthlyFeeUSD: monthlyFee, days: days + 1, apiValueUSD: apiTotal)
     }
@@ -142,7 +178,12 @@ enum UsageCSVExport {
         return result
     }
 
-    static func suggestedFilename() -> String {
-        "TokenMeter-usage-\(DateUtil.today()).csv"
+    static func suggestedFilename(range: ExportRange = .all) -> String {
+        let suffix: String
+        switch range {
+        case .all: suffix = ""
+        case .lastDays(let n): suffix = "-\(n)d"
+        }
+        return "TokenMeter-usage-\(DateUtil.today())\(suffix).csv"
     }
 }

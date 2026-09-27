@@ -95,6 +95,7 @@ final class UsageCSVExportTests: XCTestCase {
         let apiValues = UsageCSVExport.apiValueByDate(modelHistory)
         let rows = parseRows(UsageCSVExport.makeCSV([
             day("2026-09-20", bySource: [.kimi: 100]),
+            day("2026-09-22", bySource: [.kimi: 150]),
             day("2026-09-26", bySource: [.kimi: 200]),
         ], apiValueByDate: apiValues, modelHistory: modelHistory,
            plans: [SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY")]))
@@ -113,6 +114,78 @@ final class UsageCSVExportTests: XCTestCase {
         ], apiValueByDate: ["2026-09-24": 5])
         let rows = parseRows(csv)
         XCTAssertEqual(rows.last?.first, "汇总")   // 无订阅:止于汇总行
+    }
+
+    // MARK: - 导出范围
+
+    func testRangeLastDaysScopesRowsTotalsAndSubscription() throws {
+        // 近 5 天(today=09-26) → 起点 09-22:09-18 行被剔除,
+        // 汇总与订阅回本都只统计范围内的天(09-18 的金额不计入)
+        let modelHistory = [
+            ModelUsageDay(date: "2026-09-18", bySource: [
+                .kimi: SourceDayDetail(models: ["kimi-k2.6": .init(output: 1_000_000)]),
+            ]),
+            ModelUsageDay(date: "2026-09-22", bySource: [
+                .kimi: SourceDayDetail(models: ["kimi-k2.6": .init(output: 1_000_000)]),
+            ]),
+            ModelUsageDay(date: "2026-09-26", bySource: [
+                .kimi: SourceDayDetail(models: ["kimi-k2.6": .init(output: 1_000_000)]),
+            ]),
+        ]
+        let apiValues = UsageCSVExport.apiValueByDate(modelHistory)
+        // 09-22 旧价 $2.44 + 09-26 新价 $4.00 = $6.44
+        let rows = parseRows(UsageCSVExport.makeCSV([
+            day("2026-09-18", bySource: [.kimi: 100]),
+            day("2026-09-22", bySource: [.kimi: 200]),
+            day("2026-09-26", bySource: [.kimi: 300]),
+        ], apiValueByDate: apiValues, modelHistory: modelHistory,
+           plans: [SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY")],
+           range: .lastDays(5), todayKey: "2026-09-26"))
+        XCTAssertEqual(rows.count, 5)   // 表头 + 2 天 + 汇总 + 订阅回本
+        XCTAssertEqual(rows[1][0], "2026-09-22")
+        XCTAssertFalse(rows.contains { $0.first == "2026-09-18" })
+        // 汇总只算范围内:Kimi 200+300,API 等价 2.44+4.00
+        XCTAssertEqual(rows[3][0], "汇总")
+        XCTAssertEqual(rows[3][3], "500")
+        XCTAssertEqual(rows[3][12], "6.44")
+        let text = try XCTUnwrap(rows.last?.joined(separator: ","))
+        XCTAssertTrue(text.contains("折算天数 5"), text)          // 09-22..09-26
+        XCTAssertTrue(text.contains("折算订阅费(USD) 3.29"), text)  // 20×12/365×5
+        XCTAssertTrue(text.contains("API 等价合计(USD) 6.44"), text)
+        XCTAssertTrue(text.contains("回本倍数 1.96"), text)        // 6.44/3.29
+    }
+
+    func testRangeBeyondHistoryKeepsEverything() {
+        let days = [
+            day("2026-09-18", bySource: [.kimi: 100]),
+            day("2026-09-26", bySource: [.kimi: 300]),
+        ]
+        let all = parseRows(UsageCSVExport.makeCSV(days))
+        let scoped = parseRows(UsageCSVExport.makeCSV(
+            days, range: .lastDays(90), todayKey: "2026-09-26"))
+        XCTAssertEqual(scoped.count, all.count)
+        XCTAssertEqual(scoped.map { $0.first }, all.map { $0.first })
+    }
+
+    func testWindowStartDateKeyBoundaries() {
+        XCTAssertNil(UsageCSVExport.windowStartDateKey(.all, todayKey: "2026-09-26"))
+        XCTAssertEqual(
+            UsageCSVExport.windowStartDateKey(.lastDays(7), todayKey: "2026-09-26"),
+            "2026-09-20")
+        XCTAssertEqual(
+            UsageCSVExport.windowStartDateKey(.lastDays(1), todayKey: "2026-09-26"),
+            "2026-09-26")
+    }
+
+    func testSuggestedFilenameCarriesRange() {
+        XCTAssertTrue(UsageCSVExport.suggestedFilename(range: .lastDays(30))
+            .hasSuffix("-30d.csv"))
+        XCTAssertTrue(UsageCSVExport.suggestedFilename(range: .lastDays(90))
+            .hasSuffix("-90d.csv"))
+        let all = UsageCSVExport.suggestedFilename()
+        XCTAssertTrue(all.hasPrefix("TokenMeter-usage-"))
+        XCTAssertTrue(all.hasSuffix(".csv"))
+        XCTAssertFalse(all.contains("-30d"))
     }
 
     func testEndsWithNewline() {

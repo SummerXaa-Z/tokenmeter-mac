@@ -26,6 +26,7 @@ struct SettingsView: View {
     @State private var subscriptionPlans: [SubscriptionPlan] = []
     @State private var diagnosticStatus = ""
     @State private var usageExportStatus = ""
+    @State private var usageExportRange: UsageCSVExport.ExportRange = .all
     // 连接行的展开态：未配置的默认展开引导输入，已配置的收起成一行；
     // 验证保存成功后自动收起，清除后保持展开方便重输。
     @State private var expandBalanceKey = false
@@ -674,11 +675,20 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 7) {
                     Label("用量导出", systemImage: "square.and.arrow.up")
                         .font(.system(size: 12, weight: .semibold))
-                    Text("按天导出本机已积累的全部来源 Token、平台费用与 API 等价，末尾附汇总与订阅回本行（填写过订阅月费时）；CSV 纯本地生成。")
+                    Text("按天导出本机已积累的全部来源 Token、平台费用与 API 等价，可选范围（近 N 天为滚动窗口、含今天），末尾的汇总与订阅回本行随所选范围重新计算；CSV 纯本地生成。")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                     HStack {
                         Button("导出用量 CSV") { exportUsageCSV() }
                         Spacer()
+                        Picker("范围", selection: $usageExportRange) {
+                            ForEach(
+                                UsageCSVExport.ExportRange.choices, id: \.self
+                            ) { item in
+                                Text(item.title).tag(item)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 190)
                     }
                     if !usageExportStatus.isEmpty {
                         Text(usageExportStatus)
@@ -747,7 +757,7 @@ struct SettingsView: View {
         NSApp.activate(ignoringOtherApps: true)
         let panel = NSSavePanel()
         panel.title = "导出用量 CSV"
-        panel.nameFieldStringValue = UsageCSVExport.suggestedFilename()
+        panel.nameFieldStringValue = UsageCSVExport.suggestedFilename(range: usageExportRange)
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
         panel.allowedContentTypes = [.commaSeparatedText]
@@ -760,7 +770,8 @@ struct SettingsView: View {
                 HistoryStore.all(),
                 apiValueByDate: apiValues,
                 modelHistory: modelHistory,
-                plans: ConfigStore.shared.subscriptionPlans
+                plans: ConfigStore.shared.subscriptionPlans,
+                range: usageExportRange
             ).write(to: url, atomically: true, encoding: .utf8)
             usageExportStatus = "已导出：\(url.lastPathComponent)"
         } catch {
