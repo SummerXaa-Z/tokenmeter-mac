@@ -28,6 +28,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             runUIRender(outputPath: String(renderArg.dropFirst("--ui-render=".count)))
             return
         }
+        // 导出内置价格快照为 JSON（scripts/price-check.sh 与 OpenRouter 比对用）。
+        if ProcessInfo.processInfo.arguments.contains("--dump-price-catalog") {
+            FileHandle.standardOutput.write(
+                Data(APIReferencePricingCatalog.jsonDump().utf8))
+            exit(0)
+        }
 #endif
         // 菜单栏应用：不占 Dock、不抢主菜单栏
         NSApp.setActivationPolicy(.accessory)

@@ -6,7 +6,7 @@ SCHEME := TokenMeter
 CONFIGURATION ?= Debug
 DERIVED_DATA ?= build
 
-.PHONY: project test ui-smoke release-check package clean
+.PHONY: project test ui-smoke release-check package price-check clean
 
 project:
 	cd $(SWIFT_DIR) && xcodegen generate
@@ -39,6 +39,10 @@ release-check: test
 
 package: release-check
 	cd $(SWIFT_DIR) && ./scripts/package.sh
+
+# 价格目录保鲜：比对内置价格快照与 OpenRouter 实时目录（需联网，只读公开接口）
+price-check:
+	cd $(SWIFT_DIR) && ./scripts/price-check.sh
 
 clean:
 	rm -rf $(SWIFT_DIR)/$(DERIVED_DATA)

@@ -307,11 +307,16 @@ struct APICostEstimator {
 // 目录刷新只追加、不改旧价：调价模型新增一条自本次观测日起生效的快照，
 // 此前的用量继续按当日价格计算。新收录模型的生效日取 OpenRouter 上架日
 // 与首个观测日的较晚者，上架之前的用量保持缺价，不向前套用。
+//
+// 刷新流程：`make price-check` 拉取 OpenRouter 实时目录与内置快照逐一比对，
+// 调价模型输出可直接粘贴的 snapshot 行；核对后更新 observedAt 随版本发布。
+// 快照的生效日一律写显式日期字面量，不引用 observedAt——否则 bump 观测日
+// 会悄悄平移已有调价的生效日。
 enum APIReferencePricingCatalog {
     // 首个价格快照的观测日；早于它的用量按这一天的价格参考
     static let firstObservedAt = "2026-08-12"
     // 最近一次核对 OpenRouter 目录的日期
-    static let observedAt = "2026-09-25"
+    static let observedAt = "2026-09-27"
     static let sourceURL = "https://openrouter.ai/api/v1/models"
     static let cnyPerUSD = 6.9
     // 目标币种是 USD：1 CNY = 1 / 6.9 USD。它是产品固定参考汇率，
@@ -331,11 +336,11 @@ enum APIReferencePricingCatalog {
         snapshot("openai/gpt-5.5", input: 5, cached: 0.5, output: 30),
         snapshot("openai/gpt-5.6-sol", input: 5, cached: 0.5,
                  cacheWrite: 6.25, output: 30),
-        snapshot("openai/gpt-5.6-sol", from: observedAt, input: 2, cached: 0.2,
+        snapshot("openai/gpt-5.6-sol", from: "2026-09-25", input: 2, cached: 0.2,
                  cacheWrite: 2.5, output: 10),
         snapshot("openai/gpt-5.6-terra", input: 1, cached: 0.1,
                  cacheWrite: 1.25, output: 6),
-        snapshot("openai/gpt-5.6-terra", from: observedAt, input: 2, cached: 0.2,
+        snapshot("openai/gpt-5.6-terra", from: "2026-09-25", input: 2, cached: 0.2,
                  cacheWrite: 2.5, output: 12),
         snapshot("openai/gpt-5.6-luna", input: 0.2, cached: 0.02,
                  cacheWrite: 0.25, output: 1.2),
@@ -347,7 +352,7 @@ enum APIReferencePricingCatalog {
         snapshot("moonshotai/kimi-k2.6", aliases: ["kimi-k2.6", "k2d6-agent"],
                  input: 0.5795, cached: 0.0976, output: 2.44),
         snapshot("moonshotai/kimi-k2.6", aliases: ["kimi-k2.6", "k2d6-agent"],
-                 from: observedAt, input: 0.95, cached: 0.16, output: 4),
+                 from: "2026-09-25", input: 0.95, cached: 0.16, output: 4),
         snapshot("moonshotai/kimi-k2.7-code", input: 0.6562, cached: 0.18, output: 3.3),
 
         // OpenRouter 暂无 Doubao-Seed-Evolving。这里采用火山方舟公开原价，
@@ -376,6 +381,7 @@ enum APIReferencePricingCatalog {
                  cacheWrite: 3.75, output: 15),
         snapshot("anthropic/claude-sonnet-5", input: 2, cached: 0.2,
                  cacheWrite: 2.5, output: 10),
+        // 已从 OpenRouter 目录下架；历史用量仍按此价计算，保留
         snapshot("anthropic/claude-opus-4", input: 15, cached: 1.5,
                  cacheWrite: 18.75, output: 75),
         snapshot("anthropic/claude-opus-4.1", input: 15, cached: 1.5,
@@ -441,19 +447,27 @@ enum APIReferencePricingCatalog {
 
         // MiniMax
         snapshot("minimax/minimax-m2.7", input: 0.3, cached: 0.06, output: 1.2),
+        snapshot("minimax/minimax-m2.7", from: "2026-09-27",
+                 input: 0.21, cached: 0.042, output: 0.84),
         snapshot("minimax/minimax-m3", input: 0.3, cached: 0.06, output: 1.2),
 
         // DeepSeek API 等价参考；平台返回费用仍优先作为实际平台口径展示。
         snapshot("deepseek/deepseek-v4-flash", aliases: ["V4 Flash"],
                  input: 0.14, cached: 0.028, output: 0.28),
         snapshot("deepseek/deepseek-v4-flash", aliases: ["V4 Flash"],
-                 from: observedAt, input: 0.049, cached: 0.0098, output: 0.098),
+                 from: "2026-09-25", input: 0.049, cached: 0.0098, output: 0.098),
+        snapshot("deepseek/deepseek-v4-flash", aliases: ["V4 Flash"],
+                 from: "2026-09-27", input: 0.0469, cached: 0.00938, output: 0.0938),
         snapshot("deepseek/deepseek-v4-pro", aliases: ["V4 Pro"],
                  input: 1.168, cached: 0.09855, output: 2.336),
         snapshot("deepseek/deepseek-v4-pro", aliases: ["V4 Pro"],
-                 from: observedAt, input: 0.783, cached: 0.06525, output: 1.566),
+                 from: "2026-09-25", input: 0.783, cached: 0.06525, output: 1.566),
+        snapshot("deepseek/deepseek-v4-pro", aliases: ["V4 Pro"],
+                 from: "2026-09-27", input: 0.348, cached: 0.029, output: 0.696),
         snapshot("deepseek/deepseek-v4.1-flash", from: "2026-09-10",
                  input: 0.3, cached: 0.006, output: 1.2),
+        snapshot("deepseek/deepseek-v4.1-flash", from: "2026-09-27",
+                 input: 0.035, cached: 0.001, output: 0.29),
     ])
 
     private static func snapshot(
@@ -520,5 +534,40 @@ enum APIReferencePricingCatalog {
             ),
             source: source
         )
+    }
+
+    // `--dump-price-catalog`（Debug）导出的机器可比对形态，供
+    // scripts/price-check.sh 与 OpenRouter 实时目录逐一对照。
+    // 只输出模型名、别名、生效日与单价，不含任何本地用量数据。
+    static func jsonDump() -> String {
+        let payload: [String: Any] = [
+            "firstObservedAt": firstObservedAt,
+            "observedAt": observedAt,
+            "cnyPerUSD": cnyPerUSD,
+            "snapshots": estimator.snapshots.map { snapshot -> [String: Any] in
+                var rates: [String: Any] = [
+                    "input": snapshot.perMillion.newInput,
+                    "cached": snapshot.perMillion.cachedInput,
+                    "cacheWrite": snapshot.perMillion.cacheCreation,
+                    "output": snapshot.perMillion.output,
+                ]
+                if let reasoning = snapshot.perMillion.reasoningOutput {
+                    rates["reasoning"] = reasoning
+                }
+                return [
+                    "model": snapshot.model,
+                    "aliases": snapshot.aliases,
+                    "effectiveFrom": snapshot.effectiveFrom,
+                    "currency": snapshot.currency,
+                    "source": snapshot.source.label,
+                    "perMillion": rates,
+                ]
+            },
+        ]
+        let data = try! JSONSerialization.data(
+            withJSONObject: payload,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        return String(data: data, encoding: .utf8) ?? "{}"
     }
 }

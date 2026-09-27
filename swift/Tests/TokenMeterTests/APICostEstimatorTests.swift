@@ -494,4 +494,96 @@ final class APICostEstimatorTests: XCTestCase {
         XCTAssertEqual(APICostEstimator.canonicalModel("  GPT-5.6-Sol (xhigh) "), "gpt-5.6-sol")
         XCTAssertEqual(APICostEstimator.baseModel("model(x)"), "model(x)")
     }
+
+    // MARK: - 价格目录保鲜（快照不变量，防止刷新悄悄劣化）
+
+    private func assertValidDateKey(_ key: String, _ context: String) {
+        XCTAssertNotNil(
+            key.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression),
+            "\(context) 生效日 \(key) 不是 YYYY-MM-DD（字典序比较依赖它）"
+        )
+        let parts = key.split(separator: "-").compactMap { Int($0) }
+        XCTAssertEqual(parts.count, 3, "\(context) \(key)")
+        if parts.count == 3 {
+            XCTAssertTrue((1...12).contains(parts[1]), "\(context) \(key) 月份越界")
+            XCTAssertTrue((1...31).contains(parts[2]), "\(context) \(key) 日期越界")
+        }
+    }
+
+    func testCatalogEffectiveDatesStayWithinObservationWindow() {
+        let catalog = APIReferencePricingCatalog.self
+        assertValidDateKey(catalog.firstObservedAt, "firstObservedAt")
+        assertValidDateKey(catalog.observedAt, "observedAt")
+        XCTAssertLessThanOrEqual(catalog.firstObservedAt, catalog.observedAt)
+
+        for snapshot in catalog.estimator.snapshots {
+            assertValidDateKey(snapshot.effectiveFrom, snapshot.model)
+            // 不向前外推到首个观测日之前，也不出现晚于最近核对日的未来价
+            XCTAssertGreaterThanOrEqual(
+                snapshot.effectiveFrom, catalog.firstObservedAt,
+                "\(snapshot.model) 早于首个观测日，会向更早的用量外推价格")
+            XCTAssertLessThanOrEqual(
+                snapshot.effectiveFrom, catalog.observedAt,
+                "\(snapshot.model) 晚于最近核对日，属于未观测的未来价")
+        }
+    }
+
+    func testCatalogHasNoDuplicateEffectiveDatesPerModel() {
+        var seen: [String: Set<String>] = [:]
+        for snapshot in APIReferencePricingCatalog.estimator.snapshots {
+            let dates = seen[snapshot.model, default: []]
+            XCTAssertFalse(
+                dates.contains(snapshot.effectiveFrom),
+                "\(snapshot.model) 在 \(snapshot.effectiveFrom) 有两条快照，max 选择不确定，其中一条永远选不中"
+            )
+            seen[snapshot.model] = dates.union([snapshot.effectiveFrom])
+        }
+    }
+
+    func testRepricedRowsKeepAliasParity() {
+        // 调价追加的新快照行必须与旧行同别名集合：漏一个别名，
+        // 该别名的近期用量会永远查到旧价（kimi-k2.6 曾踩过的静默劣化）
+        var aliasesByModel: [String: Set<String>] = [:]
+        for snapshot in APIReferencePricingCatalog.estimator.snapshots {
+            if let existing = aliasesByModel[snapshot.model] {
+                XCTAssertEqual(
+                    existing, Set(snapshot.aliases),
+                    "\(snapshot.model) 的多条快照别名不一致；请把别名复制到新行"
+                )
+            } else {
+                aliasesByModel[snapshot.model] = Set(snapshot.aliases)
+            }
+        }
+    }
+
+    func testCatalogCoversEverySupportedToolsModelBasket() {
+        // 覆盖下限：各采集器实际会写出的代表模型名，在最近核对日必须全部有价。
+        // 以后收录新工具/新模型时往这里加，只增不减。
+        let basket = [
+            // Claude Code（displayModel 去前缀 + 连字符版本号两种写法）
+            "claude-opus-5.5", "opus-5-5", "claude-sonnet-5", "haiku-4-5",
+            "claude-fable-5-1", "fable-5.1",
+            // Codex（可能带推理强度后缀）
+            "gpt-5.5 (xhigh)", "gpt-5.4-mini", "gpt-5.6-terra",
+            // Kimi Code（产品别名）
+            "kimi-k3", "k3-agent", "k2d6-agent", "kimi-k2.7-code",
+            // Claude Code / OpenCode 里的 GLM
+            "glm-5.3", "glm-5.3-flash", "glm-5.1",
+            // Qwen Code / Gemini CLI / MiniMax
+            "qwen3-coder", "qwen3.8-flash", "gemini-3.8-flash", "minimax-m3",
+            // DeepSeek 平台（官方展示名）与火山方舟（CNY 官方价）
+            "V4 Flash", "V4 Pro", "agent-plan/doubao-seed-evolving",
+        ]
+        let tokens = million(input: 1)
+        for model in basket {
+            XCTAssertNotNil(
+                APIReferencePricingCatalog.estimator.estimate(
+                    model: model,
+                    usageDate: APIReferencePricingCatalog.observedAt,
+                    tokens: tokens
+                ),
+                "\(model) 在最近核对日缺价；刷新目录时不要删掉既有条目或别名"
+            )
+        }
+    }
 }
