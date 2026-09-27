@@ -1,5 +1,15 @@
 # Changelog
 
+## v3.12.0 — 2026-09-27 — 费用口径升级：模型维度跟随范围与订阅回本
+
+- **模型维度跟随所选范围**：模型榜、API 等价参考与输入缓存复用此前固定近 7 天，切到 30D / 全部也只看短窗口。现在三者跟随 1D / 7D / 30D / 全部——各采集器按天输出互斥的模型 Token 四分类明细（`ModelTokenTally`）， AppState 在写入按天历史的同时落盘 `model-history/`（按月分片本地 JSON，只含日期、来源、模型名与 Token 计数）；总览把实时扫描与落盘明细按「日期 + 来源」合并（实时覆盖同日落盘值，不重复计数）后按范围聚合。未来日期、设置里关掉的来源与 Cursor（只有订阅周期聚合）不参与；范围早于明细起点时模型榜与 API 卡注明「模型明细自 X/X 起按天留存，更早的用量只计入工具合计」。影响范围：`ModelUsageHistory.swift`（新增）、各来源采集器、`AppState.swift`、`OverviewSnapshot.swift`、`OverviewView.swift`、`OverviewCards.swift`。
+- **价格目录带生效日并按天计价**：API 参考价快照全部标注生效日期（57 个模型，已逐条对照 OpenRouter 核对），调价模型追加新快照而不改写旧价；总览与 CSV 导出按「用量当日已生效」的价格重算，早于首个观测日的用量按观测日价格参考。本轮收录/更新：OpenAI gpt-5.6 sol/terra 重定价与 luna 新增、Kimi k2.6 重定价与 k2.7-code、Claude opus-5.5、GLM 5.x 全系、Gemini 3.6-3.8 flash、Qwen 3.8 max、MiniMax m2.7/m3、DeepSeek v4 flash/pro 重定价、豆包人民币官方价等。影响范围：`APICostEstimator.swift`。
+- **修两处计价口径错误**：Codex 的 reasoning token 此前既混入 output 又按 reasoning 单独计价（双份），Copilot 的输出此前在总和里被扣了两次（双扣）；两类来源现在都输出互斥四分类（输入 / 缓存读取 / 缓存创建 / 输出+reasoning），API 等价与模型榜不再虚高或虚低。影响范围：`CodexUsage.swift`、`CopilotUsage.swift`、`ClaudeUsage.swift` 等。
+- **订阅月费与回本倍数**：设置新增「订阅与费用」——逐条填写正在付费的 AI 订阅名称、月费与币种（USD/CNY，人民币按固定参考汇率折算，只存本机）；总览 API 等价参考按所选范围把月费年化折到天（× 12/365 × 覆盖天数），显示「订阅回本：约 N 倍」，低于 1 倍提示按 API 用量付费会更省，未填写时显示引导文案。影响范围：`SubscriptionPlan.swift`（新增）、`SubscriptionPlansEditor.swift`（新增）、`Store.swift`、`SettingsView.swift`、`OverviewSnapshot.swift`、`OverviewCards.swift`。
+- **CSV 导出补 API 等价列**：按天导出新增「API 等价(USD)」列——按当天模型明细与当日生效价格计算，没有计价明细的日期留空而非填 0。影响范围：`UsageCSVExport.swift`、`SettingsView.swift`。
+- **调试工具**：`--ui-render` 新增 `cost-fixture` 合成数据页（Debug 构建），覆盖回本 ≥1 倍 / <1 倍 / 未填订阅、缺价模型、人民币折算与覆盖说明各分支；`overview-full` / `overview-day-full` 视口加高以容纳变长的模型榜与 API 卡。影响范围：`AppDelegate.swift`。
+- 新增 22 个测试（合计 258）：模型明细合并与实时覆盖、范围裁剪与排除项、覆盖说明触发条件、订阅折算与回本倍数边界、按天计价与别名匹配、CSV API 列填充规则、订阅月费存取与容错。
+
 ## v3.11.0 — 2026-09-25 — 额度节奏预测：会不会提前用完
 
 - **订阅额度节奏预测**：订阅剩余量此前只有「剩余 % + 重置时间」，看不出按当前速度撑不撑得到重置。新增 `QuotaPace` 线性外推——已用比例对比窗口时间已过比例：撑得到重置的窗口在明细行末尾给出「届时约剩 X%」，用得比匀速快的窗口多一行橙色「按当前速度约 N 小时后用完，早于重置」；窗口刚开始（已过 < 5%）样本太少不外推，已用尽的窗口交给进度条本身。进度条新增匀速参照刻度（此刻按匀速应剩的位置），填充短于刻度即用得偏快。覆盖总览订阅剩余量卡（Codex / Kimi Code / 智谱 GLM / 火山方舟）与 Codex 页配额卡。影响范围：`QuotaPace.swift`（新增）、`SubscriptionQuotaSnapshot.swift`、`Theme.swift`、`OverviewCards.swift`、`CodexView.swift`。
