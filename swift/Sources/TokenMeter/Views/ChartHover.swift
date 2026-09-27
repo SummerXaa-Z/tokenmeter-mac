@@ -10,6 +10,8 @@ struct ChartHoverCaption: View {
     let label: String
     let total: Int
     let parts: [(name: String, value: Int, color: Color)]
+    // 该桶的 API 等价金额文本(如 "$12.34")；无金额数据的图表不传
+    var amountText: String? = nil
 
     var body: some View {
         let top = ChartHover.topParts(parts)
@@ -28,6 +30,10 @@ struct ChartHoverCaption: View {
             if top.overflowCount > 0 {
                 Text("+\(top.overflowCount) 项")
                     .font(Theme.detailFont).foregroundStyle(.tertiary)
+            }
+            if let amountText {
+                Text(amountText)
+                    .font(Theme.detailFont).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
         }

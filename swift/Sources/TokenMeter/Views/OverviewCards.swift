@@ -1055,7 +1055,8 @@ struct OverviewTrendCard: View {
             ChartHoverCaption(
                 label: "\(activeHour)时",
                 total: bucket.reduce(0) { $0 + $1.tokens },
-                parts: bucket.map { ($0.source.overviewChartName, $0.tokens, sourceColor($0.source)) }
+                parts: bucket.map { ($0.source.overviewChartName, $0.tokens, sourceColor($0.source)) },
+                amountText: todayAmountText
             )
         }
     }
@@ -1068,9 +1069,35 @@ struct OverviewTrendCard: View {
             ChartHoverCaption(
                 label: active.label,
                 total: bucket.reduce(0) { $0 + $1.tokens },
-                parts: bucket.map { ($0.source.overviewChartName, $0.tokens, sourceColor($0.source)) }
+                parts: bucket.map { ($0.source.overviewChartName, $0.tokens, sourceColor($0.source)) },
+                amountText: bucketAmountText(active.date)
             )
         }
+    }
+
+    // 小时粒度的金额：按天明细只有日粒度，悬停任何钟点都显示今日合计
+    private var todayAmountText: String? {
+        guard let today = visibleTrend.first?.date,
+              let bySource = snapshot.apiValueByTrendBucket[today],
+              !bySource.isEmpty else { return nil }
+        return amountText(summing: bySource)
+    }
+
+    private func bucketAmountText(_ bucketKey: String) -> String? {
+        guard let bySource = snapshot.apiValueByTrendBucket[bucketKey],
+              !bySource.isEmpty else { return nil }
+        return amountText(summing: bySource)
+    }
+
+    // 图例隐藏的来源不计入金额，与说明行的 token 合计同口径
+    private func amountText(
+        summing bySource: [HistorySource: Double]
+    ) -> String? {
+        let visible = bySource
+            .filter { !hiddenSources.contains($0.key.overviewChartName) }
+            .reduce(0.0) { $0 + $1.value }
+        guard visible > 0 else { return nil }
+        return Fmt.usd(visible)
     }
 
     private func sourceColor(_ source: HistorySource) -> Color {

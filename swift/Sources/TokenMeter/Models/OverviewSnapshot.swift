@@ -36,6 +36,9 @@ struct OverviewSnapshot: Equatable {
     let trend: [TrendPoint]
     let trendGranularity: UsageTrendGranularity
     let trendTotal: Int
+    // 趋势桶键(日=自然日/周=周一/月=月首/小时=当日) → 来源 → API 等价美元：
+    // 悬停说明行的金额数据，同价格口径、不随图例隐藏(视图端按可见来源取)
+    let apiValueByTrendBucket: [String: [HistorySource: Double]]
     let hourlyUnattributedSources: [HistorySource]
     let deepSeekPlatformTokens: Int
     let deepSeekPlatformCost: Double?
@@ -359,6 +362,38 @@ struct OverviewSnapshot: Equatable {
         trend = computedTrend
         hourlyUnattributedSources = computedUnattributedSources
         trendTotal = computedTrend.reduce(0) { $0 + $1.tokens }
+
+        // 悬停金额：逐日按来源重算 API 等价(同价格口径)，再按趋势粒度归桶。
+        // 小时粒度桶键即当日，金额整天恒定；缺价模型不计入(与金额卡一致)。
+        var valueByBucket: [String: [HistorySource: Double]] = [:]
+        let rates = APIReferencePricingCatalog.conversionRatesToUSD
+        for (date, bySource) in modelDays {
+            let bucket = Self.trendBucket(dateKey: date, granularity: trendGranularity).key
+            let pricingDate = max(date, APIReferencePricingCatalog.firstObservedAt)
+            for source in modelSources {
+                guard let detail = bySource[source] else { continue }
+                var daySamples: [APICostSample] = []
+                for model in detail.models.keys.sorted() {
+                    guard let tally = detail.models[model] else { continue }
+                    daySamples.append(.init(
+                        model: model, tokens: tally.breakdown,
+                        usageDate: pricingDate, source: source))
+                }
+                guard !daySamples.isEmpty else { continue }
+                let summary = APIReferenceCostSummary(
+                    samples: daySamples,
+                    estimator: APIReferencePricingCatalog.estimator,
+                    referenceDate: APIReferencePricingCatalog.observedAt,
+                    conversionRates: rates)
+                // 缺汇率的币种已被 summary 静默跳过，这里的 total 即可入账的
+                // 美元等价；为 0 (全缺价)不建条目，说明行自然不显示金额
+                if summary.total > 0 {
+                    valueByBucket[bucket, default: [:]][source] =
+                        (valueByBucket[bucket]?[source] ?? 0) + summary.total
+                }
+            }
+        }
+        apiValueByTrendBucket = valueByBucket
     }
 
     // 日期 → 来源 → 当天明细（模型 / Skills / 会话）。采集器本次扫描的天

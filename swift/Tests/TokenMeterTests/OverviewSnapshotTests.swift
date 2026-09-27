@@ -638,6 +638,46 @@ final class OverviewSnapshotTests: XCTestCase {
         XCTAssertNil(snapshot(.all).priorAPIReferenceCost)
     }
 
+    func testAPIValueByTrendBucketSplitsByDaySourceAndGranularity() throws {
+        let persisted = [
+            ModelUsageDay(date: "2026-09-24", bySource: [
+                .codex: SourceDayDetail(models: ["gpt-5.4": .init(output: 1_000_000)]),
+            ]),
+            ModelUsageDay(date: "2026-09-23", bySource: [
+                .claude: SourceDayDetail(models: ["opus-5-5": .init(cached: 2_000_000)]),
+            ]),
+            // 缺价模型不计入：这天不建金额条目
+            ModelUsageDay(date: "2026-09-22", bySource: [
+                .kimi: SourceDayDetail(models: ["mystery-model": .init(output: 1_000_000)]),
+            ]),
+        ]
+        func snapshot(range: UsageHistoryRange, historyDays: Int) throws -> OverviewSnapshot {
+            let history = try makeHistory(start: "2026-06-01", count: historyDays) { _ in
+                [.claude: 1, .codex: 1]
+            }
+            return OverviewSnapshot(
+                selection: OverviewSourceSelection(sources: [.claude, .codex, .kimi]),
+                range: range, history: range.slice(history), streakHistory: history,
+                deepSeek: nil, claude: nil, codex: nil, openCode: nil, gemini: nil,
+                copilot: nil, cursor: nil, modelHistory: persisted, todayKey: "2026-09-25")
+        }
+
+        // 日粒度(固定范围)：按天按来源入桶，gpt-5.4 输出 $15/M、opus-5-5
+        // (09-23 用新价)缓存读取 $0.20/M
+        let daily = try snapshot(range: .week, historyDays: 7)
+        XCTAssertEqual(daily.trendGranularity, .day)
+        XCTAssertEqual(daily.apiValueByTrendBucket["2026-09-24"]?[.codex] ?? 0, 15, accuracy: 1e-9)
+        XCTAssertEqual(daily.apiValueByTrendBucket["2026-09-23"]?[.claude] ?? 0, 0.4, accuracy: 1e-9)
+        XCTAssertNil(daily.apiValueByTrendBucket["2026-09-22"])
+
+        // 周粒度(全部 + 100 天历史 > 90 阈值)：同 ISO 周的两天金额合并到周一桶键
+        let weekly = try snapshot(range: .all, historyDays: 100)
+        XCTAssertEqual(weekly.trendGranularity, .week)
+        let weekBucket = weekly.apiValueByTrendBucket["2026-09-21"] ?? [:]
+        XCTAssertEqual(weekBucket[.codex] ?? 0, 15, accuracy: 1e-9)
+        XCTAssertEqual(weekBucket[.claude] ?? 0, 0.4, accuracy: 1e-9)
+    }
+
     func testModelDimensionsIgnoreFutureDaysDeselectedSourcesAndCursor() {
         let persisted = [
             ModelUsageDay(date: "2026-09-25", bySource: [
