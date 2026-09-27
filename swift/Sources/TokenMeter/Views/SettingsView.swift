@@ -6,6 +6,11 @@ struct SettingsView: View {
     @EnvironmentObject var state: AppState
     var onBack: () -> Void
 
+    // 用量导出的档位：三个预设 + 自选起止（映射为 ExportRange.window）
+    enum ExportPreset: Hashable {
+        case all, d30, d90, custom
+    }
+
     private let store = ConfigStore.shared
     @State private var apiKeyInput = ""
     @State private var apiStatus = ""
@@ -26,7 +31,10 @@ struct SettingsView: View {
     @State private var subscriptionPlans: [SubscriptionPlan] = []
     @State private var diagnosticStatus = ""
     @State private var usageExportStatus = ""
-    @State private var usageExportRange: UsageCSVExport.ExportRange = .all
+    @State private var usageExportPreset: ExportPreset
+    // 自定义起止（自然日，含两端）；止日不晚于今天，起日不晚于止日
+    @State private var exportCustomStart: Date
+    @State private var exportCustomEnd: Date
     @State private var digestExportStatus = ""
     // 连接行的展开态：未配置的默认展开引导输入，已配置的收起成一行；
     // 验证保存成功后自动收起，清除后保持展开方便重输。
@@ -38,6 +46,15 @@ struct SettingsView: View {
 
     @StateObject private var sync = LoginSyncController()
     @ObservedObject private var updater = Updater.shared
+
+    init(onBack: @escaping () -> Void, initialExportPreset: ExportPreset = .all) {
+        self.onBack = onBack
+        _usageExportPreset = State(initialValue: initialExportPreset)
+        let today = Calendar.current.startOfDay(for: Date())
+        _exportCustomEnd = State(initialValue: today)
+        _exportCustomStart = State(
+            initialValue: Calendar.current.date(byAdding: .day, value: -29, to: today) ?? today)
+    }
 
     private let codingProviders: [Provider] = [
         .claude, .codex, .kimi, .opencode, .gemini, .copilot, .qwen, .cursor,
@@ -689,20 +706,30 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 7) {
                     Label("用量导出", systemImage: "square.and.arrow.up")
                         .font(.system(size: 12, weight: .semibold))
-                    Text("按天导出本机已积累的全部来源 Token、平台费用与 API 等价，可选范围（近 N 天为滚动窗口、含今天），末尾的汇总与订阅回本行随所选范围重新计算；CSV 纯本地生成。")
+                    Text("按天导出本机已积累的全部来源 Token、平台费用与 API 等价，可选范围（近 N 天为滚动窗口、含今天；自定义按自然日、含两端），末尾的汇总与订阅回本行随所选范围重新计算；CSV 纯本地生成。")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
+                    HStack {
+                        Picker("范围", selection: $usageExportPreset) {
+                            Text("全部").tag(ExportPreset.all)
+                            Text("近30天").tag(ExportPreset.d30)
+                            Text("近90天").tag(ExportPreset.d90)
+                            Text("自定义").tag(ExportPreset.custom)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 248)
+                        Spacer()
+                    }
+                    if usageExportPreset == .custom {
+                        HStack(spacing: 12) {
+                            DatePicker(
+                                "起", selection: $exportCustomStart, in: ...exportCustomEnd)
+                            DatePicker("止", selection: $exportCustomEnd, in: ...Date())
+                        }
+                        .datePickerStyle(.compact)
+                    }
                     HStack {
                         Button("导出用量 CSV") { exportUsageCSV() }
                         Spacer()
-                        Picker("范围", selection: $usageExportRange) {
-                            ForEach(
-                                UsageCSVExport.ExportRange.choices, id: \.self
-                            ) { item in
-                                Text(item.title).tag(item)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 190)
                     }
                     if !usageExportStatus.isEmpty {
                         Text(usageExportStatus)
@@ -767,8 +794,20 @@ struct SettingsView: View {
         }
     }
 
+    private var effectiveExportRange: UsageCSVExport.ExportRange {
+        switch usageExportPreset {
+        case .all: return .all
+        case .d30: return .lastDays(30)
+        case .d90: return .lastDays(90)
+        case .custom:
+            return .window(
+                start: DateUtil.key(exportCustomStart),
+                end: DateUtil.key(exportCustomEnd))
+        }
+    }
+
     private func exportUsageCSV() {
-        if let status = runUsageCSVExport(range: usageExportRange) {
+        if let status = runUsageCSVExport(range: effectiveExportRange) {
             usageExportStatus = status
         }
     }

@@ -226,9 +226,20 @@ final class UsageCSVExportTests: XCTestCase {
     }
 
     func testSuggestedFilenameWindowSuffix() {
-        XCTAssertTrue(UsageCSVExport.suggestedFilename(
-            range: .window(start: "2026-09-14", end: "2026-09-20")
-        ).hasSuffix("-lastweek.csv"))
+        // 固定窗口的文件名直接标出起止(月日),周报导出与自定义起止共用
+        let name = UsageCSVExport.suggestedFilename(
+            range: .window(start: "2026-09-14", end: "2026-09-20"))
+        XCTAssertTrue(name.hasSuffix("-0914-0920.csv"), name)
+    }
+
+    func testWindowStartAfterEndYieldsHeaderOnly() {
+        // 自定义起止选反时不出明细行,也不出汇总/订阅回本行
+        let rows = parseRows(UsageCSVExport.makeCSV([
+            day("2026-09-15", bySource: [.kimi: 100]),
+        ], apiValueByDate: ["2026-09-15": 2],
+           plans: [SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY")],
+           range: .window(start: "2026-09-20", end: "2026-09-14")))
+        XCTAssertEqual(rows.count, 1)   // 仅表头
     }
 
     func testSuggestedFilenameCarriesRange() {

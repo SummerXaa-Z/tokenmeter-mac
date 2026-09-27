@@ -12,19 +12,8 @@ enum UsageCSVExport {
     enum ExportRange: Hashable {
         case all
         case lastDays(Int)
-        /// 固定自然日窗口（含两端），如周报导出的「上周」周一到周日
+        /// 固定自然日窗口（含两端），如周报导出的「上周」或用户自选起止日期
         case window(start: String, end: String)
-
-        /// 设置页分段选择器的选项与标题
-        static let choices: [ExportRange] = [.all, .lastDays(30), .lastDays(90)]
-
-        var title: String {
-            switch self {
-            case .all: return "全部"
-            case .lastDays(let n): return "近\(n)天"
-            case .window: return "指定范围"
-            }
-        }
     }
 
     private static let codingColumns: [(source: HistorySource, title: String)] = [
@@ -219,8 +208,14 @@ enum UsageCSVExport {
         switch range {
         case .all: suffix = ""
         case .lastDays(let n): suffix = "-\(n)d"
-        case .window: suffix = "-lastweek"
+        case .window(let start, let end):
+            // "2026-09-14" → "0914";文件名直接标出窗口起止,跨按钮通用
+            suffix = "-\(compact(start))-\(compact(end))"
         }
         return "TokenMeter-usage-\(DateUtil.today())\(suffix).csv"
+    }
+
+    private static func compact(_ dateKey: String) -> String {
+        String(dateKey.suffix(5).replacingOccurrences(of: "-", with: ""))
     }
 }

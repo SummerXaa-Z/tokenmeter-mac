@@ -332,6 +332,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("settings", hosting(SettingsView(onBack: {}))),
             // 长滚动页审计：整页高度导出设置页，覆盖首屏之外的滚动区
             ("settings-full", hosting(SettingsView(onBack: {}), height: 3200)),
+            // 用量导出「自定义」档:起止 DatePicker 只在该档出现,单独布点验证
+            ("settings-export-custom", hosting(
+                SettingsView(onBack: {}, initialExportPreset: .custom), height: 3200)),
             // RootView 自钉 420×600，长视口需直接 host 总览页本体
             ("overview-full", hosting(
                 OverviewView(
