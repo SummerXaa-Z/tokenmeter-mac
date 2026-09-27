@@ -335,6 +335,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 用量导出「自定义」档:起止 DatePicker 只在该档出现,单独布点验证
             ("settings-export-custom", hosting(
                 SettingsView(onBack: {}, initialExportPreset: .custom), height: 3200)),
+            // 分区筛选档:常显 chips + 只看所选分区,验证筛选与高度
+            ("settings-section-alerts", hosting(
+                SettingsView(onBack: {}, initialSection: .alerts), height: 1600)),
+            ("settings-section-tools", hosting(
+                SettingsView(onBack: {}, initialSection: .tools), height: 1400)),
             // RootView 自钉 420×600，长视口需直接 host 总览页本体
             ("overview-full", hosting(
                 OverviewView(

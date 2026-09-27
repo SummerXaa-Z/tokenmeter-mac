@@ -11,6 +11,18 @@ struct SettingsView: View {
         case all, d30, d90, custom
     }
 
+    // 设置页的六个分区：筛选 chips 用；nil = 全部（默认，保持原整页滚动）
+    enum SettingsSection: String, CaseIterable, Identifiable {
+        case dataSources = "数据来源"
+        case accounts = "平台账户与额度"
+        case subscriptions = "订阅与费用"
+        case alerts = "菜单栏与提醒"
+        case runtime = "刷新与启动"
+        case tools = "工具与维护"
+
+        var id: String { rawValue }
+    }
+
     private let store = ConfigStore.shared
     @State private var apiKeyInput = ""
     @State private var apiStatus = ""
@@ -36,6 +48,7 @@ struct SettingsView: View {
     @State private var exportCustomStart: Date
     @State private var exportCustomEnd: Date
     @State private var digestExportStatus = ""
+    @State private var activeSection: SettingsSection?
     // 连接行的展开态：未配置的默认展开引导输入，已配置的收起成一行；
     // 验证保存成功后自动收起，清除后保持展开方便重输。
     @State private var expandBalanceKey = false
@@ -47,9 +60,14 @@ struct SettingsView: View {
     @StateObject private var sync = LoginSyncController()
     @ObservedObject private var updater = Updater.shared
 
-    init(onBack: @escaping () -> Void, initialExportPreset: ExportPreset = .all) {
+    init(
+        onBack: @escaping () -> Void,
+        initialExportPreset: ExportPreset = .all,
+        initialSection: SettingsSection? = nil
+    ) {
         self.onBack = onBack
         _usageExportPreset = State(initialValue: initialExportPreset)
+        _activeSection = State(initialValue: initialSection)
         let today = Calendar.current.startOfDay(for: Date())
         _exportCustomEnd = State(initialValue: today)
         _exportCustomStart = State(
@@ -66,25 +84,37 @@ struct SettingsView: View {
                 .padding(.horizontal, 14)
                 .frame(height: 44)
             Divider()
+            // 常显分区筛选：不随内容滚走，点选只看该分区
+            sectionBar
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+            Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    sectionTitle("数据来源")
-                    sourcesSection
-
-                    sectionTitle("平台账户与额度")
-                    accountsSection
-
-                    sectionTitle("订阅与费用")
-                    subscriptionsSection
-
-                    sectionTitle("菜单栏与提醒")
-                    displayAndAlertsSection
-
-                    sectionTitle("刷新与启动")
-                    runtimeSection
-
-                    sectionTitle("工具与维护")
-                    maintenanceSection
+                    if shows(.dataSources) {
+                        sectionTitle("数据来源")
+                        sourcesSection
+                    }
+                    if shows(.accounts) {
+                        sectionTitle("平台账户与额度")
+                        accountsSection
+                    }
+                    if shows(.subscriptions) {
+                        sectionTitle("订阅与费用")
+                        subscriptionsSection
+                    }
+                    if shows(.alerts) {
+                        sectionTitle("菜单栏与提醒")
+                        displayAndAlertsSection
+                    }
+                    if shows(.runtime) {
+                        sectionTitle("刷新与启动")
+                        runtimeSection
+                    }
+                    if shows(.tools) {
+                        sectionTitle("工具与维护")
+                        maintenanceSection
+                    }
                     footer
                 }
                 .padding(14)
@@ -120,6 +150,42 @@ struct SettingsView: View {
 
     private func sectionTitle(_ title: String) -> some View {
         Text(title).font(.system(size: 13, weight: .bold))
+    }
+
+    private func shows(_ section: SettingsSection) -> Bool {
+        activeSection == nil || activeSection == section
+    }
+
+    // 「全部」+ 六个分区胶囊；超出宽度可横滑，选中态与来源徽章同款配色
+    private var sectionBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                sectionChip(nil, label: "全部")
+                ForEach(SettingsSection.allCases) { section in
+                    sectionChip(section, label: section.rawValue)
+                }
+            }
+        }
+    }
+
+    private func sectionChip(_ section: SettingsSection?, label: String) -> some View {
+        let selected = activeSection == section
+        return Button {
+            activeSection = section
+        } label: {
+            Text(label)
+                .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                .foregroundStyle(selected ? Theme.brand : .secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(
+                    selected
+                        ? Theme.brand.opacity(0.12)
+                        : Color.primary.opacity(0.05),
+                    in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("只看\(label)")
     }
 
     private var header: some View {
