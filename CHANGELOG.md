@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.23.0 — 2026-09-27 — 订阅拆分到来源，来源页显示回本倍数
+
+- **订阅归属来源**：「设置 → 订阅与费用」每条订阅新增「归属」选择（Claude / Codex / Kimi Code / OpenCode / Gemini / Copilot / Qwen Code / Cursor，或「不指定」），旧数据自动兼容。总览回本口径不变——始终计入全部订阅；归属只影响来源页。
+- **来源页订阅回本**：各来源详情页「API 等价参考」卡内新增订阅回本区块（与总览同款式）：分母为归属到该来源的月费合计（人民币按固定参考汇率折算），按所选 周|近7天|月 窗口内、自该来源明细留存起点以来的自然日折算——不满整周/整月的新来源不拿空白天摊成本。金额低于 1 倍时提示「按 API 用量付费会更省」；未归属订阅的来源不显示该区块。回本倍数文案移到 `SubscriptionValueSummary` 供总览与来源页共用。影响范围：`SubscriptionPlan.swift`、`SubscriptionPlansEditor.swift`、`SourceAPICostCard.swift`、`OverviewCards.swift`、`AppDelegate.swift`（cost-fixture 合成样例扩展）。
+- 新增 5 个测试（合计 296）：旧 JSON 无 source 键解码为 nil、归属月费合计与人民币折算、窗口天数按明细起点钳制、无归属订阅/本期无明细返回 nil、倍数文案阈值。
+
 ## v3.22.0 — 2026-09-27 — 来源页趋势悬停显示当日金额
 
 - **来源页悬停金额**：七个 Coding 来源详情页的 7 天趋势图悬停说明行在 Token 数据之后追加当日 API 等价美元金额，与总览趋势图对称；实时采集的 dayModels 覆盖留存明细同一天，采集失败时仍可从留存回看当日金额。缺价或无明细的日子不显示金额（不冒充 $0）。`SourceAPICost` 抽出逐日合并共用逻辑并新增 `dailyValues`（近 7 天逐日金额，缺价日不建条目）；`ChartHover.caption` 加可选 `amountFor` 闭包（置于 buckets 参数之前，其余图表调用点零改动）。影响范围：`SourceAPICostCard.swift`、`ChartHover.swift`、七个来源页。
