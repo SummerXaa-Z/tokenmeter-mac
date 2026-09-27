@@ -198,4 +198,24 @@ final class SourceAPICostTests: XCTestCase {
             persisted: days, todayKey: "2026-09-24", calendar: calendar))
         XCTAssertEqual(prior.total, 2.44, accuracy: 0.001)
     }
+
+    // MARK: - 逐日金额（来源页 7 天趋势悬停）
+
+    func testDailyValuesPriceEachDayAndSkipUnpricedDays() {
+        // 09-24 旧价 $2.44、09-26 新价 $4；缺价日不建条目
+        let values = SourceAPICost.dailyValues(
+            source: .kimi, liveDayModels: nil,
+            persisted: [
+                day("2026-09-24", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+                day("2026-09-26", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+                day("2026-09-25", source: .kimi, ["mystery-model": .init(output: 1_000_000)]),
+                // 窗口外
+                day("2026-09-19", source: .kimi, ["kimi-k2.6": .init(output: 9_000_000)]),
+            ],
+            todayKey: "2026-09-27", calendar: calendar)
+        XCTAssertEqual(values.count, 2)
+        XCTAssertEqual(values["2026-09-24"] ?? 0, 2.44, accuracy: 0.001)
+        XCTAssertEqual(values["2026-09-26"] ?? 0, 4.0, accuracy: 0.001)
+        XCTAssertNil(values["2026-09-25"])
+    }
 }

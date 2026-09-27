@@ -156,7 +156,7 @@ struct CodexView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("最近 7 天 Token", systemImage: "chart.bar.fill")
                     .font(.system(size: 12, weight: .semibold))
-                ChartHover.caption(hover: weekHover, buckets: r.days.map { day in
+                ChartHover.caption(hover: weekHover, amountFor: SourceHoverAmount.make(source: .codex, liveDayModels: r.dayModels, days: r.days.map(\.date)), buckets: r.days.map { day in
                     let fresh = max(day.inputTokens - day.cachedInputTokens, 0)
                     return (
                         label: Fmt.mmdd(day.date),

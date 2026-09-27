@@ -148,6 +148,23 @@ struct SourceAPICostCard: View {
     }
 }
 
+// 来源页 7 天趋势图共用的悬停金额闭包：mmdd label → 当日 API 等价金额文本。
+// 数据走 SourceAPICost.dailyValues（实时 dayModels 覆盖留存同一天）。
+enum SourceHoverAmount {
+    static func make(
+        source: HistorySource,
+        liveDayModels: [String: [String: ModelTokenTally]]?,
+        days: [String]   // 图中各桶的自然日键(YYYY-MM-DD)
+    ) -> (String) -> String? {
+        let values = SourceAPICost.dailyValues(source: source, liveDayModels: liveDayModels)
+        let labels = Dictionary(uniqueKeysWithValues: days.map { (Fmt.mmdd($0), $0) })
+        return { label in
+            guard let key = labels[label], let value = values[key], value > 0 else { return nil }
+            return Fmt.usd(value)
+        }
+    }
+}
+
 // 单来源的 API 等价汇总：窗口口径与来源页历史环比卡一致（周=ISO 日历周、
 // 月=自然月，本期均截至今天；近 7 天为滚动窗口），实时采集的 dayModels
 // 覆盖留存明细的同一天（不叠加），其余天取本机留存；首个价格快照之前的
@@ -192,9 +209,50 @@ enum SourceAPICost {
     ) -> APIReferenceCostSummary? {
         guard let today = DateUtil.date(from: todayKey),
               let window = windowKeys(
-                period: period, today: today, calendar: calendar, prior: prior)
+                period: period, today: today, calendar: calendar, prior: prior),
+              let merged = mergedDays(
+                source: source, liveDayModels: liveDayModels,
+                persisted: persisted, window: window),
+              let summary = summary(from: samples(from: merged, source: source))
         else { return nil }
+        return summary
+    }
 
+    /// 近 7 天逐日 API 等价美元金额（自然日键 → USD）：来源页 7 天趋势图
+    /// 悬停说明行显示当日金额。合并口径与 summary 一致，缺价模型不计入
+    /// （该日金额为 0 时不建条目，说明行自然不显示）。
+    static func dailyValues(
+        source: HistorySource,
+        liveDayModels: [String: [String: ModelTokenTally]]?,
+        persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
+        todayKey: String = DateUtil.today(),
+        calendar: Calendar = .current
+    ) -> [String: Double] {
+        guard let today = DateUtil.date(from: todayKey),
+              let window = windowKeys(
+                period: .rolling7, today: today, calendar: calendar, prior: false),
+              let merged = mergedDays(
+                source: source, liveDayModels: liveDayModels,
+                persisted: persisted, window: window)
+        else { return [:] }
+        var result: [String: Double] = [:]
+        for date in merged.keys {
+            let daySamples = samples(from: [date: merged[date] ?? [:]], source: source)
+            if let summary = summary(from: daySamples), summary.total > 0 {
+                result[date] = summary.total
+            }
+        }
+        return result
+    }
+
+    /// 窗口内合并后的逐日模型明细：实时采集的 dayModels 覆盖留存明细的
+    /// 同一天（不叠加），其余天取留存。
+    private static func mergedDays(
+        source: HistorySource,
+        liveDayModels: [String: [String: ModelTokenTally]]?,
+        persisted: [ModelUsageDay],
+        window: Set<String>
+    ) -> [String: [String: ModelTokenTally]]? {
         var merged: [String: [String: ModelTokenTally]] = [:]
         for day in persisted
         where window.contains(day.date) && ModelUsageHistoryStore.isDateKey(day.date) {
@@ -206,9 +264,14 @@ enum SourceAPICost {
             merged[date] = ModelTokenTally.nonEmpty(models) ?? [:]
         }
         merged = merged.filter { !$0.value.isEmpty }
-        guard !merged.isEmpty else { return nil }
+        return merged.isEmpty ? nil : merged
+    }
 
-        let samples: [APICostSample] = merged.sorted { $0.key < $1.key }.flatMap { date, models in
+    private static func samples(
+        from merged: [String: [String: ModelTokenTally]],
+        source: HistorySource
+    ) -> [APICostSample] {
+        merged.sorted { $0.key < $1.key }.flatMap { date, models in
             models.keys.sorted().compactMap { model -> APICostSample? in
                 guard let tally = models[model] else { return nil }
                 return APICostSample(
@@ -218,6 +281,12 @@ enum SourceAPICost {
                     source: source)
             }
         }
+    }
+
+    private static func summary(
+        from samples: [APICostSample]
+    ) -> APIReferenceCostSummary? {
+        guard !samples.isEmpty else { return nil }
         return APIReferenceCostSummary(
             samples: samples,
             estimator: APIReferencePricingCatalog.estimator,

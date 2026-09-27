@@ -54,13 +54,17 @@ enum ChartHover {
     }
 
     /// 通用说明行装配：hover 指向的桶，缺省回落到最后一桶（buckets 按时间升序）。
+    /// amountFor 把桶 label 映射为该桶的 API 等价金额文本，不传则不显示金额。
     @ViewBuilder
     static func caption(
         hover: String?,
+        amountFor: ((String) -> String?)? = nil,
         buckets: [(label: String, total: Int, parts: [(name: String, value: Int, color: Color)])]
     ) -> some View {
         if let active = buckets.first(where: { $0.label == hover }) ?? buckets.last {
-            ChartHoverCaption(label: active.label, total: active.total, parts: active.parts)
+            ChartHoverCaption(
+                label: active.label, total: active.total, parts: active.parts,
+                amountText: amountFor?(active.label))
         }
     }
 }

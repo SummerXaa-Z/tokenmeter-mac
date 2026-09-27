@@ -82,7 +82,7 @@ struct CopilotView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("最近 7 天 Token（按会话结束日）", systemImage: "chart.bar.fill")
                     .font(.system(size: 12, weight: .semibold))
-                ChartHover.caption(hover: weekHover, buckets: result.days.map { day in
+                ChartHover.caption(hover: weekHover, amountFor: SourceHoverAmount.make(source: .copilot, liveDayModels: result.dayModels, days: result.days.map(\.date)), buckets: result.days.map { day in
                     (
                         label: Fmt.mmdd(day.date),
                         total: day.cachedInputTokens + day.cacheWriteTokens
