@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.19.0 — 2026-09-27 — 总览 API 等价卡加上期对比
+
+- **总览上期对比**：总览「API 等价参考」卡加上期金额与环比徽标，基期是同长度的上一滚动窗口——1D 档比昨日、7D 档比前 7 天、30D 档比前 30 天（标签随档位变化），徽标与来源页同款（涨红降绿、无基期显示 —）；「全部」档没有可比基期，不显示对比。`OverviewSnapshot` 新增 `priorAPIReferenceCost`，与本期完全同价格口径逐日取样（实时明细覆盖留存同一天、首个快照前的用量按首快照计价）。影响范围：`OverviewSnapshot.swift`、`OverviewCards.swift`、`OverviewView.swift`、`AppDelegate.swift`（渲染 fixture）。
+- 新增 1 个测试（合计 289）：1D/7D 基期窗口金额与「全部」为 nil。
+
 ## v3.18.0 — 2026-09-27 — API 等价卡加上期金额与环比徽标
 
 - **上期对比**：来源页「API 等价参考」卡总额行新增「上期 $X」与环比徽标（涨红降绿、无基期显示 —），基期随所选档位切换——周档比上周、近 7 天比前 7 天、月档比上月；本周期暂无明细的提示行同样附上期金额做参照。金额环比计算沉淀为 `PeriodCompare.change` 的 Double 重载，周报的金额环比同步复用。顺带修复上期窗口的终点未钳到区间排他边界的问题（此前会把"上周"一直算到今天，测试捕获）。影响范围：`SourceAPICostCard.swift`、`PeriodCompare.swift`、`WeeklyDigest.swift`。
