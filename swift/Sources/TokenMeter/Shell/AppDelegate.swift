@@ -448,7 +448,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         else { return }
         store.lastWeeklyDigestWeek = WeeklyDigest.weekKey(Date())
         guard let message = WeeklyDigest.message(
-            HistoryStore.all(), participants: WeeklyDigest.participants(store))
+            HistoryStore.all(), participants: WeeklyDigest.participants(store),
+            plans: store.subscriptionPlans)
         else { return }
         Notifier.send(id: "weekly.digest", title: message.title, body: message.body)
     }

@@ -1,9 +1,9 @@
 import Foundation
 
 // 每周一条的"上周用量摘要"通知:上周全部 Coding 来源 Token 合计、环比、
-// 主力来源与 API 等价金额。数据与总览环比卡同源(PeriodCompare 日历周口径),
-// 金额按天明细 + 当日生效价重算(与总览 API 等价同口径),纯本地计算,
-// 经 Notifier 推系统通知;上周一条记录都没有就不打扰。
+// 主力来源、API 等价金额与订阅回本倍数。数据与总览环比卡同源(PeriodCompare
+// 日历周口径),金额按天明细 + 当日生效价重算(与总览 API 等价同口径),
+// 纯本地计算,经 Notifier 推系统通知;上周一条记录都没有就不打扰。
 enum WeeklyDigest {
     struct Message: Equatable {
         let title: String
@@ -43,6 +43,7 @@ enum WeeklyDigest {
         _ days: [HistoryStore.DayPoint],
         participants: some Sequence<HistorySource>,
         modelDays: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
+        plans: [SubscriptionPlan] = [],
         today: Date = Date(),
         calendar: Calendar = .current
     ) -> Message? {
@@ -98,8 +99,51 @@ enum WeeklyDigest {
             if let coverage = last.coverage, coverage < 0.999 {
                 body += "，价格覆盖 \(Int((coverage * 100).rounded()))%"
             }
+            if let value = subscriptionValue(
+                apiValueUSD: last.total, modelDays: modelDays, allowed: allowed,
+                lastWeekDate: lastWeek, plans: plans, calendar: calendar),
+               let multiple = value.multiple
+            {
+                body += "；订阅回本 \(SubscriptionValueSummary.multipleText(multiple))"
+            }
         }
         return Message(title: "TokenMeter 上周用量摘要", body: body)
+    }
+
+    /// 上周的订阅回本:分母为全部订阅月费合计(总览口径,人民币按固定参考
+    /// 汇率折算),按上周自然日折算;明细留存起点落在周内时不拿之前的空白
+    /// 天摊(与来源页回本同钳制)。未填订阅或无按天明细返回 nil,段省略。
+    private static func subscriptionValue(
+        apiValueUSD: Double,
+        modelDays: [ModelUsageDay],
+        allowed: Set<HistorySource>,
+        lastWeekDate: Date,
+        plans: [SubscriptionPlan],
+        calendar: Calendar
+    ) -> SubscriptionValueSummary? {
+        let monthlyFee = SubscriptionPlan.monthlyTotalUSD(plans)
+        guard monthlyFee > 0 else { return nil }
+        var iso = Calendar(identifier: .iso8601)
+        iso.timeZone = calendar.timeZone
+        iso.firstWeekday = 2
+        guard let week = iso.dateInterval(of: .weekOfYear, for: lastWeekDate)
+        else { return nil }
+        let weekStart = calendar.startOfDay(for: week.start)
+        guard let weekEnd = calendar.date(byAdding: .day, value: 6, to: weekStart)
+        else { return nil }
+        let coverageStart = modelDays
+            .filter { day in
+                ModelUsageHistoryStore.isDateKey(day.date)
+                    && day.bySource.contains { allowed.contains($0.key) && !$0.value.models.isEmpty }
+            }
+            .map(\.date).min()
+        guard let coverageStart,
+              let startDate = DateUtil.date(from: max(DateUtil.key(weekStart), coverageStart)),
+              let endDate = DateUtil.date(from: DateUtil.key(weekEnd))
+        else { return nil }
+        let days = calendar.dateComponents([.day], from: startDate, to: endDate).day ?? 0
+        return SubscriptionValueSummary(
+            monthlyFeeUSD: monthlyFee, days: days + 1, apiValueUSD: apiValueUSD)
     }
 
     /// 上周/上上周的 API 等价金额:按天明细逐日取样,价格取用量当日已生效

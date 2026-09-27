@@ -149,4 +149,56 @@ final class WeeklyDigestTests: XCTestCase {
             message?.body,
             "合计 1M；全部来自 Kimi Code；API 等价 $2.44")
     }
+
+    // MARK: - 订阅回本
+
+    func testMessageAppendsSubscriptionMultipleWithClampedDays() {
+        // 明细从上周二(09-22)才有 → 只摊 09-22..27 共 6 天,不拿周一起摊。
+        // ¥138/月 = $20,折算 20×12/365×6;金额 $7.32 → 约 1.9 倍
+        let message = WeeklyDigest.message([
+            day("2026-09-22", bySource: [.kimi: 3_000_000]),
+        ], participants: [.kimi],
+           modelDays: [
+               modelDay("2026-09-22", source: .kimi, ["kimi-k2.6": .init(output: 3_000_000)]),
+           ],
+           plans: [SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY")],
+           today: date("2026-09-28"), calendar: calendar)
+        XCTAssertEqual(
+            message?.body,
+            "合计 3M；全部来自 Kimi Code；API 等价 $7.32；订阅回本 约 1.9 倍")
+    }
+
+    func testMessageSubscriptionUsesFullWeekWhenCoveragePredatesIt() {
+        // 明细早于上周(09-10) → 整周 7 天摊;多币种合计 $120 → 7.32/27.62 ≈ 0.3 倍
+        let message = WeeklyDigest.message([
+            day("2026-09-22", bySource: [.kimi: 3_000_000]),
+        ], participants: [.kimi],
+           modelDays: [
+               modelDay("2026-09-10", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+               modelDay("2026-09-22", source: .kimi, ["kimi-k2.6": .init(output: 3_000_000)]),
+           ],
+           plans: [
+               SubscriptionPlan(name: "Claude Max", monthlyFee: 100),
+               SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY"),
+           ],
+           today: date("2026-09-28"), calendar: calendar)
+        XCTAssertEqual(
+            message?.body,
+            "合计 3M；全部来自 Kimi Code；API 等价 $7.32；订阅回本 约 0.3 倍")
+    }
+
+    func testMessageSubscriptionOmittedWithoutPositiveFee() {
+        // 月费为 0 的订阅不计入:分母为 0,段省略(金额段保留)
+        let message = WeeklyDigest.message([
+            day("2026-09-22", bySource: [.kimi: 1_000_000]),
+        ], participants: [.kimi],
+           modelDays: [
+               modelDay("2026-09-22", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+           ],
+           plans: [SubscriptionPlan(name: "Free Tier", monthlyFee: 0)],
+           today: date("2026-09-28"), calendar: calendar)
+        XCTAssertEqual(
+            message?.body,
+            "合计 1M；全部来自 Kimi Code；API 等价 $2.44")
+    }
 }

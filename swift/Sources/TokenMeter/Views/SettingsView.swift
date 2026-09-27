@@ -514,14 +514,15 @@ struct SettingsView: View {
                 Divider()
                 let digestPreview = WeeklyDigest.message(
                     HistoryStore.all(),
-                    participants: WeeklyDigest.participants(store))
+                    participants: WeeklyDigest.participants(store),
+                    plans: store.subscriptionPlans)
                 Toggle(isOn: Binding(
                     get: { store.weeklyDigestEnabled },
                     set: { store.weeklyDigestEnabled = $0 }
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("每周一用量周报").font(.system(size: 12, weight: .semibold))
-                        Text("周一至周三上午 9 点后推一条上周摘要：合计、环比、主力来源与 API 等价金额；上周没有用量则跳过")
+                        Text("周一至周三上午 9 点后推一条上周摘要：合计、环比、主力来源、API 等价金额与订阅回本倍数；上周没有用量则跳过")
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }
