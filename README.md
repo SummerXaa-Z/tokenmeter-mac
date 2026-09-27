@@ -197,6 +197,14 @@ make release-check
 
 `make test` 会先用 XcodeGen 重新生成 `swift/TokenMeter.xcodeproj`，再跑 XCTest。`make release-check` 会追加 Release build，并核对 App 版本、Bundle ID 与主程序元数据；push / PR 时由 GitHub Actions 执行。当前测试重点覆盖配额与解析契约、用量窗口边界和配置存储。
 
+内置价格快照的保鲜（可选、需联网）：
+
+```bash
+make price-check
+```
+
+只读 OpenRouter 公开目录与仓库代码，比对内置价格快照并给出可直接粘贴的调价行；详见下方[「价格目录保鲜」](#价格目录保鲜)。
+
 需要目视检查菜单栏首页、时间范围和详情返回时，可运行 `make ui-smoke`。它只在 Debug 构建打开 420×600 的普通测试窗口，并跳过通知申请、更新检查与后台计时器；正常启动和 Release 包仍是纯菜单栏应用。
 
 贡献代码前请先看 [CONTRIBUTING.md](CONTRIBUTING.md)。提交安全问题前请先看 [SECURITY.md](SECURITY.md)，不要在公开 issue 里粘贴 API key、token、cookie 或完整个人日志。
@@ -231,6 +239,18 @@ hdiutil verify /tmp/TokenMeter_<版本>_aarch64.dmg
 xcrun stapler validate /tmp/TokenMeter_<版本>_aarch64.dmg
 spctl -a -vvv -t install /tmp/TokenMeter_<版本>_aarch64.dmg
 ```
+
+### 价格目录保鲜
+
+App 内置的 API 参考价格快照会随模型调价慢慢过期（不影响历史——旧用量永远按当日已生效价计价）。发布前跑一次比对：
+
+```bash
+make price-check
+```
+
+脚本构建 Debug 包、导出内置快照（`--dump-price-catalog`），拉取 OpenRouter 实时目录逐一对照，输出：调价模型及可直接粘贴进 `APIReferencePricingCatalog` 的新快照行、距上次核对的天数提醒（>45 天告警）、已下架模型与未收录的常见厂商新模型清单。只读公开接口与本仓库代码，不读取本地用量或凭据。
+
+收录时保持三条纪律：**只追加不改旧价**（调价模型加一条自核对日起生效的新行）；**生效日写日期字面量**（不要引用 `observedAt`，否则更新观测日会平移历史调价的生效日）；**新行复制旧行的完整别名**。核对后（无论是否有调价）把 `observedAt` 更新为当天随版本发布；守卫测试会拦出生效日越界、同日重复、别名不一致与代表模型缺价。
 
 完整发布 checklist 见 [docs/release.md](docs/release.md)。
 
