@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.14.0 — 2026-09-27 — 按天明细回填：升级当天就有 30 天回溯
+
+- **一次性回填**：按天明细此前从安装 v3.12.0 起逐日积累，30D/全部范围要等一个月才完整。新增 `DetailBackfill`——启动 10 秒后低优先级补扫本地会话文件（各采集器新增 `windowDays` 参数，实时路径默认 7 天不变），把最近 31 天的模型 / Skills / 会话明细写进 `model-history/`；每约 7 天自动补一次（持久化 marker 去重），与实时 7 天窗无缝衔接滚动 30 天。读取本地、有界、对缺失与变化中的文件容错（任一来源失败只跳过该来源）；权威标志与实时路径一致。升级当天 30D 范围即有完整回溯。影响范围：`DetailBackfill.swift`（新增）、七个来源采集器、`AppState.swift`、`AppDelegate.swift`、`Store.swift`。
+- 新增 6 个测试（合计 269）：marker 触发节奏、回填窗口覆盖、Copilot / Qwen 宽窗口采集、marker 持久化。
+
 ## v3.13.0 — 2026-09-27 — 口径统一收尾：Skills 榜与会话数跟随范围
 
 - **Skills 榜与会话数跟随所选范围**：总览还剩 Skills 榜和会话数固定近 7 天。现在按天明细从「模型 Token」拓宽为「模型 + Skill 调用次数 + 活跃会话数」（`SourceDayDetail`），落盘仍走 `model-history/` 按月分片——旧分片按旧格式透明解码、该来源下次写入时原位升级；只开会话没耗 token 的天也保留（权威重扫仅删「三项全空」的天）。总览把实时扫描与留存明细按「日期 + 来源」合并后，Skills 榜、画像会话数与模型榜同口径按范围聚合；覆盖说明改为「按天明细自 X/X 起留存」覆盖全部维度。各采集器补齐按天数据：七个来源全部暴露 `daySessions`（从既有的按天会话计数派生），Claude / Codex 沿用解析器已有的 `perDaySkill`，Copilot 的 Skill 证据按会话结束日归属。影响范围：`ModelUsageHistory.swift`、七个来源采集器、`AppState.swift`、`OverviewSnapshot.swift`、`PersonalUsageProfile.swift`、`OverviewCards.swift`。
