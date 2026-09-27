@@ -1257,6 +1257,10 @@ struct OverviewHeatmapCard: View {
         let columns = UsageHeatmap.window(history, participants: participants)
         let streak = UsageHeatmap.currentStreak(history, participants: participants)
         let hasUsage = columns.flatMap(\.cells).contains { $0.level > 0 }
+        // 悬停 tooltip 的当日金额：同价格口径逐日重算，只在有用量时算
+        let apiValues = hasUsage
+            ? UsageHeatmap.dailyAPIValues(participants: participants)
+            : [:]
         return Card {
             VStack(alignment: .leading, spacing: 8) {
                 Label("用量热力图", systemImage: "square.grid.3x3")
@@ -1265,7 +1269,7 @@ struct OverviewHeatmapCard: View {
                     Text("近 \(UsageHeatmap.windowWeeks) 周暂无 Coding 用量记录")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 } else {
-                    grid(columns)
+                    grid(columns, apiValues: apiValues)
                     rhythmChart
                     HStack(spacing: 4) {
                         Text("少")
@@ -1290,7 +1294,7 @@ struct OverviewHeatmapCard: View {
         }
     }
 
-    private func grid(_ columns: [UsageHeatmap.WeekColumn]) -> some View {
+    private func grid(_ columns: [UsageHeatmap.WeekColumn], apiValues: [String: Double]) -> some View {
         HStack(alignment: .top, spacing: 6) {
             weekdayLabels
             VStack(alignment: .leading, spacing: 2) {
@@ -1306,7 +1310,7 @@ struct OverviewHeatmapCard: View {
                     ForEach(columns, id: \.weekOf) { column in
                         VStack(spacing: 2) {
                             ForEach(0..<7, id: \.self) { row in
-                                cell(column, row)
+                                cell(column, row, apiValues: apiValues)
                             }
                         }
                     }
@@ -1373,7 +1377,9 @@ struct OverviewHeatmapCard: View {
     }
 
     // 行号 0...6 对应周一...周日;首尾周不满格时留空占位
-    private func cell(_ column: UsageHeatmap.WeekColumn, _ row: Int) -> some View {
+    private func cell(
+        _ column: UsageHeatmap.WeekColumn, _ row: Int, apiValues: [String: Double]
+    ) -> some View {
         let weekday = row == 6 ? 1 : row + 2
         let match = column.cells.first { $0.weekday == weekday }
         return Group {
@@ -1386,8 +1392,12 @@ struct OverviewHeatmapCard: View {
                                 .stroke(Color.primary.opacity(0.55), lineWidth: 1)
                         }
                     }
-                    .help("\(Fmt.mmdd(match.date)) · \(Fmt.tokensShort(match.total))")
-                    .accessibilityLabel("\(Fmt.mmdd(match.date)) \(Fmt.tokensShort(match.total))")
+                    .help(UsageHeatmap.cellHelpText(
+                        date: match.date, total: match.total,
+                        apiValue: apiValues[match.date]))
+                    .accessibilityLabel(UsageHeatmap.cellHelpText(
+                        date: match.date, total: match.total,
+                        apiValue: apiValues[match.date]))
             } else {
                 Color.clear
             }

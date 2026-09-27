@@ -173,4 +173,71 @@ final class UsageHeatmapTests: XCTestCase {
         XCTAssertEqual(saturday?.average, 15)   // 30 / 2(09-12 为零天)
         XCTAssertEqual(saturday?.days, 2)
     }
+
+    // MARK: - 逐日 API 等价金额（悬停 tooltip）
+
+    private func modelDay(
+        _ date: String, source: HistorySource,
+        _ models: [String: ModelTokenTally]
+    ) -> ModelUsageDay {
+        ModelUsageDay(date: date, bySource: [source: SourceDayDetail(models: models)])
+    }
+
+    private func apiValues(
+        _ persisted: [ModelUsageDay], participants: [HistorySource] = [.kimi, .opencode],
+        todayKey: String = "2026-09-25", windowWeeks: Int = UsageHeatmap.windowWeeks
+    ) -> [String: Double] {
+        UsageHeatmap.dailyAPIValues(
+            participants: participants, persisted: persisted,
+            today: DateUtil.date(from: todayKey)!, windowWeeks: windowWeeks)
+    }
+
+    func testDailyAPIValuesMergeSourcesAndPriceByDay() {
+        // 同一天 kimi($2.44) + opencode 豆包(¥30→$4.35) 合并;另一天只有 kimi
+        let values = apiValues([
+            modelDay("2026-09-24", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+            modelDay("2026-09-24", source: .opencode,
+                     ["doubao-seed-evolving": .init(output: 1_000_000)]),
+            modelDay("2026-09-23", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+        ])
+        XCTAssertEqual(values.count, 2)
+        XCTAssertEqual(values["2026-09-24"] ?? 0, 2.44 + 30.0 / 6.9, accuracy: 0.001)
+        XCTAssertEqual(values["2026-09-23"] ?? 0, 2.44, accuracy: 0.001)
+    }
+
+    func testDailyAPIValuesFilterWindowParticipantsAndUnpricedDays() {
+        let values = apiValues([
+            // 13 周窗口起点 06-27 之外
+            modelDay("2026-06-01", source: .kimi, ["kimi-k2.6": .init(output: 9_000_000)]),
+            // 非参与来源的明细不计
+            modelDay("2026-09-24", source: .codex, ["gpt-5.5": .init(output: 9_000_000)]),
+            // 只有缺价模型 → 金额 0,不建条目
+            modelDay("2026-09-24", source: .kimi, ["mystery-model": .init(output: 1_000_000)]),
+        ])
+        XCTAssertTrue(values.isEmpty)
+        // 只有平台账户(DeepSeek)参与时没有可计价来源
+        XCTAssertTrue(apiValues(
+            [modelDay("2026-09-24", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)])],
+            participants: [.deepseek]).isEmpty)
+    }
+
+    func testDailyAPIValuesClampsUsageBeforeFirstSnapshot() {
+        // 首个价格快照 2026-08-12:更早的用量按这一天的价格计价
+        let values = apiValues([
+            modelDay("2026-08-10", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+        ], todayKey: "2026-08-14", windowWeeks: 1)
+        XCTAssertEqual(values["2026-08-10"] ?? 0, 2.44, accuracy: 0.001)
+    }
+
+    func testCellHelpTextAppendsAmountOnlyWhenPositive() {
+        XCTAssertEqual(
+            UsageHeatmap.cellHelpText(date: "2026-09-25", total: 1_234_567, apiValue: 12.5),
+            "9/25 · 1.2M · $12.50")
+        XCTAssertEqual(
+            UsageHeatmap.cellHelpText(date: "2026-09-25", total: 1_234_567, apiValue: 0),
+            "9/25 · 1.2M")
+        XCTAssertEqual(
+            UsageHeatmap.cellHelpText(date: "2026-09-25", total: 500, apiValue: nil),
+            "9/25 · 500")
+    }
 }

@@ -30,6 +30,69 @@ enum UsageHeatmap {
 
     static let windowWeeks = 13
 
+    /// 窗口内逐日 API 等价美元（自然日键 → USD）：participants 的本地来源
+    /// 合并到同一天，与总览/来源页同一价格口径（按用量当日生效的快照重算、
+    /// 缺价模型不计入）。只读本机留存明细——热力图窗口远超实时采集的
+    /// 7 天，混入实时会让最近一周与更早历史口径断层。金额为 0 的日子
+    /// 不建条目（tooltip 自然不显示，不冒充 $0）。
+    static func dailyAPIValues(
+        participants: some Sequence<HistorySource>,
+        persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
+        today: Date = Date(),
+        windowWeeks: Int = UsageHeatmap.windowWeeks,
+        calendar: Calendar = .current
+    ) -> [String: Double] {
+        let allowed = Set(participants)
+        guard allowed.contains(where: \.isCodingAgent) else { return [:] }
+        let start = calendar.date(
+            byAdding: .day, value: -(windowWeeks * 7 - 1),
+            to: calendar.startOfDay(for: today)) ?? today
+        var keys = Set<String>()
+        var cursor = start
+        while cursor <= today {
+            keys.insert(DateUtil.key(cursor))
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+        var byDay: [String: [APICostSample]] = [:]
+        for day in persisted
+        where keys.contains(day.date) && ModelUsageHistoryStore.isDateKey(day.date) {
+            var samples: [APICostSample] = []
+            for source in day.bySource.keys.sorted(by: { $0.rawValue < $1.rawValue })
+            where allowed.contains(source) {
+                guard let detail = day.bySource[source] else { continue }
+                for model in detail.models.keys.sorted() {
+                    guard let tally = detail.models[model] else { continue }
+                    samples.append(APICostSample(
+                        model: model,
+                        tokens: tally.breakdown,
+                        usageDate: max(day.date, APIReferencePricingCatalog.firstObservedAt),
+                        source: source))
+                }
+            }
+            if !samples.isEmpty { byDay[day.date, default: []].append(contentsOf: samples) }
+        }
+        var result: [String: Double] = [:]
+        for (date, samples) in byDay {
+            let summary = APIReferenceCostSummary(
+                samples: samples,
+                estimator: APIReferencePricingCatalog.estimator,
+                referenceDate: APIReferencePricingCatalog.observedAt,
+                conversionRates: APIReferencePricingCatalog.conversionRatesToUSD)
+            if summary.total > 0 { result[date] = summary.total }
+        }
+        return result
+    }
+
+    /// 格子悬停说明：日期 · 合计 Token，有金额的日子追加美元金额。
+    static func cellHelpText(date: String, total: Int, apiValue: Double?) -> String {
+        var text = "\(Fmt.mmdd(date)) · \(Fmt.tokensShort(total))"
+        if let apiValue, apiValue > 0 {
+            text += " · \(Fmt.usd(apiValue))"
+        }
+        return text
+    }
+
     static func window(
         _ days: [HistoryStore.DayPoint],
         participants: some Sequence<HistorySource>,
