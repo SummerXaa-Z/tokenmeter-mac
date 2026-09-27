@@ -674,7 +674,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 7) {
                     Label("用量导出", systemImage: "square.and.arrow.up")
                         .font(.system(size: 12, weight: .semibold))
-                    Text("按天导出本机已积累的全部来源 Token、平台费用与 API 等价（CSV，纯本地生成）。")
+                    Text("按天导出本机已积累的全部来源 Token、平台费用与 API 等价，末尾附汇总与订阅回本行（填写过订阅月费时）；CSV 纯本地生成。")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                     HStack {
                         Button("导出用量 CSV") { exportUsageCSV() }
@@ -754,9 +754,14 @@ struct SettingsView: View {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let apiValues = UsageCSVExport.apiValueByDate(ModelUsageHistoryStore.shared.all())
-            try UsageCSVExport.makeCSV(HistoryStore.all(), apiValueByDate: apiValues).write(
-                to: url, atomically: true, encoding: .utf8)
+            let modelHistory = ModelUsageHistoryStore.shared.all()
+            let apiValues = UsageCSVExport.apiValueByDate(modelHistory)
+            try UsageCSVExport.makeCSV(
+                HistoryStore.all(),
+                apiValueByDate: apiValues,
+                modelHistory: modelHistory,
+                plans: ConfigStore.shared.subscriptionPlans
+            ).write(to: url, atomically: true, encoding: .utf8)
             usageExportStatus = "已导出：\(url.lastPathComponent)"
         } catch {
             usageExportStatus = "导出失败：\(error.localizedDescription)"
