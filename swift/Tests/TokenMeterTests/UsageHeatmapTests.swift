@@ -63,6 +63,18 @@ final class UsageHeatmapTests: XCTestCase {
         XCTAssertEqual(columns[1].cells.last?.weekday, 6)    // 周五
     }
 
+    func testHalfYearWindowSpans27Columns() {
+        // 26 周档(半年档):起点 3/28(周六),首列六/日两天,共 27 列
+        let columns = window([day("2026-09-25", claude: 100)], windowWeeks: 26)
+        XCTAssertEqual(columns.count, 27)
+        XCTAssertEqual(columns.first?.weekOf, "2026-03-23")
+        XCTAssertEqual(columns.first?.cells.map(\.date), ["2026-03-28", "2026-03-29"])
+        XCTAssertEqual(columns.last?.weekOf, "2026-09-21")
+        XCTAssertEqual(columns.last?.cells.last?.date, "2026-09-25")
+        // 3 月标签出现在首列
+        XCTAssertEqual(columns.first?.monthLabel, "3月")
+    }
+
     func testMonthLabelOnlyOnMonthChange() {
         let columns = window([
             day("2026-08-31", claude: 1), day("2026-09-01", claude: 2),
@@ -172,6 +184,14 @@ final class UsageHeatmapTests: XCTestCase {
         let saturday = stats.first { $0.label == "六" }
         XCTAssertEqual(saturday?.average, 15)   // 30 / 2(09-12 为零天)
         XCTAssertEqual(saturday?.days, 2)
+    }
+
+    func testWeekdayAveragesHalfYearCountsEveryWeekday26Times() {
+        // 26 周窗口 3/28(周六)...09-25(周五) 恰好 182 天 = 26 个整周:
+        // 每个星期几都出现 26 次,休整天计入分母
+        let stats = averages([], windowWeeks: 26)
+        XCTAssertEqual(stats.map(\.days), [26, 26, 26, 26, 26, 26, 26])
+        XCTAssertEqual(stats.map(\.average), [0, 0, 0, 0, 0, 0, 0])
     }
 
     // MARK: - 逐日 API 等价金额（悬停 tooltip）

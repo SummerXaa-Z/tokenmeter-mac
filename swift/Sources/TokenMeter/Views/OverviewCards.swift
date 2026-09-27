@@ -1238,9 +1238,28 @@ struct OverviewCompareCard: View {
 // 近 13 周用量热力图：周为列、周一到周日为行，颜色越深当日合计越大。
 // 纯本机按天历史渲染，悬停查看当日数值。
 struct OverviewHeatmapCard: View {
+    // 热力图窗口档位:13 周为默认档;26 周档格宽收窄到 11pt 以容纳双倍列数
+    enum Span: Int, CaseIterable {
+        case quarter = 13
+        case half = 26
+
+        var title: String { "\(rawValue)周" }
+    }
+
     let history: [HistoryStore.DayPoint]
     let participants: Set<HistorySource>
+    @State private var span: Span
     @State private var hoverWeekday: String?
+
+    init(
+        history: [HistoryStore.DayPoint],
+        participants: Set<HistorySource>,
+        initialSpan: Span = .quarter
+    ) {
+        self.history = history
+        self.participants = participants
+        _span = State(initialValue: initialSpan)
+    }
 
     // 索引 = UsageHeatmap.DayCell.level(0...4)
     private static let levelFills: [Color] = [
@@ -1250,23 +1269,40 @@ struct OverviewHeatmapCard: View {
         Theme.brand.opacity(0.65),
         Theme.brand,
     ]
-    private static let cellWidth: CGFloat = 13
+    private static let quarterCellWidth: CGFloat = 13
+    private static let halfCellWidth: CGFloat = 11
     private static let cellHeight: CGFloat = 11
+    private var cellWidth: CGFloat {
+        span == .half ? Self.halfCellWidth : Self.quarterCellWidth
+    }
 
     var body: some View {
-        let columns = UsageHeatmap.window(history, participants: participants)
+        let columns = UsageHeatmap.window(
+            history, participants: participants, windowWeeks: span.rawValue)
         let streak = UsageHeatmap.currentStreak(history, participants: participants)
         let hasUsage = columns.flatMap(\.cells).contains { $0.level > 0 }
         // 悬停 tooltip 的当日金额：同价格口径逐日重算，只在有用量时算
         let apiValues = hasUsage
-            ? UsageHeatmap.dailyAPIValues(participants: participants)
+            ? UsageHeatmap.dailyAPIValues(
+                participants: participants, windowWeeks: span.rawValue)
             : [:]
         return Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("用量热力图", systemImage: "square.grid.3x3")
-                    .font(.system(size: 12, weight: .semibold))
+                HStack {
+                    Label("用量热力图", systemImage: "square.grid.3x3")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Picker("热力图窗口", selection: $span) {
+                        ForEach(OverviewHeatmapCard.Span.allCases, id: \.self) { item in
+                            Text(item.title).tag(item)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .controlSize(.mini)
+                    .frame(width: 104)
+                }
                 if !hasUsage {
-                    Text("近 \(UsageHeatmap.windowWeeks) 周暂无 Coding 用量记录")
+                    Text("近 \(span.rawValue) 周暂无 Coding 用量记录")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 } else {
                     grid(columns, apiValues: apiValues)
@@ -1286,7 +1322,7 @@ struct OverviewHeatmapCard: View {
                                 .font(Theme.footnoteFont).foregroundStyle(.tertiary)
                         }
                         Spacer(minLength: 0)
-                        Text("近 \(UsageHeatmap.windowWeeks) 周 · 悬停查值 · 描边为今天")
+                        Text("近 \(span.rawValue) 周 · 悬停查值 · 描边为今天")
                             .font(Theme.footnoteFont).foregroundStyle(.tertiary)
                     }
                 }
@@ -1300,10 +1336,12 @@ struct OverviewHeatmapCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 2) {
                     ForEach(columns, id: \.weekOf) { column in
+                        // fixedSize 必须在 Text 上:先 frame 后 fixedSize 时
+                        // 文字仍按 11/13pt 宽度截断,月份标签会碎成残笔
                         Text(column.monthLabel ?? " ")
                             .font(.system(size: 9)).foregroundStyle(.tertiary)
-                            .frame(width: Self.cellWidth, height: 10, alignment: .leading)
                             .fixedSize(horizontal: true, vertical: false)
+                            .frame(width: cellWidth, height: 10, alignment: .leading)
                     }
                 }
                 HStack(spacing: 2) {
@@ -1322,7 +1360,8 @@ struct OverviewHeatmapCard: View {
     // 周内节律小柱图:窗口内各星期几的日均,峰值柱实色、其余半透明;
     // 说明行与其他图表同款悬停查值,未悬停时显示峰值日
     private var rhythmChart: some View {
-        let stats = UsageHeatmap.weekdayAverages(history, participants: participants)
+        let stats = UsageHeatmap.weekdayAverages(
+            history, participants: participants, windowWeeks: span.rawValue)
         let peak = stats.map(\.average).max() ?? 0
         let active = stats.first { $0.label == hoverWeekday }
             ?? stats.max { $0.average < $1.average }
@@ -1402,6 +1441,6 @@ struct OverviewHeatmapCard: View {
                 Color.clear
             }
         }
-        .frame(width: Self.cellWidth, height: Self.cellHeight)
+        .frame(width: cellWidth, height: Self.cellHeight)
     }
 }

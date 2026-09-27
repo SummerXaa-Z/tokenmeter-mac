@@ -106,6 +106,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    // 热力图 13|26 周档的合成数据页：本机留存未必有 26 周历史，
+    // 用确定性周节律覆盖双倍列数下的布局（格宽收窄、月份标签、节律与脚注）。
+    // 只在内存里构造 DayPoint，不写入真实按天留存。
+    private static func heatmapFixture() -> some View {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        var days: [HistoryStore.DayPoint] = []
+        for offset in stride(from: 189, through: 0, by: -1) {
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: today),
+                  offset % 17 != 3   // 周期性休整天，制造空白格
+            else { continue }
+            let weekday = calendar.component(.weekday, from: date)   // 1=周日
+            let base = [15, 60, 45, 70, 55, 40, 10][weekday - 1]    // 日..六
+            let surge = (offset / 28) % 3 == 0 ? 40 : 0
+            days.append(HistoryStore.DayPoint(
+                date: DateUtil.key(date),
+                bySource: [.claude: (base + surge) * 1_000_000],
+                cost: 0))
+        }
+        return VStack(spacing: 12) {
+            OverviewHeatmapCard(history: days, participants: [.claude, .codex])
+            OverviewHeatmapCard(
+                history: days, participants: [.claude, .codex], initialSpan: .half)
+        }
+        .padding(14)
+    }
+
     private static func paceFixture() -> some View {
         let now = Date()
         let hour: TimeInterval = 3600
@@ -339,6 +366,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 用固定快照覆盖"会提前用完 / 撑得到重置 / 余额偏低"各分支
             ("pace-fixture", hosting(Self.paceFixture(), height: 1100)),
             ("cost-fixture", hosting(Self.costFixture(), height: 2700)),
+            // 热力图 13|26 周档合成数据页:本机留存未必覆盖 26 周,
+            // 用确定性周节律验证双倍列数下的格宽收窄、月份标签与脚注
+            ("heatmap-fixture", hosting(Self.heatmapFixture(), height: 560)),
         ]
 
         var windows: [NSWindow] = []
