@@ -26,6 +26,7 @@ struct KimiView: View {
                 } else {
                     SourceStateView(message: "未找到 Kimi Code 本地数据")
                 }
+                SourceAPICostCard(source: .kimi, liveDayModels: state.kimi.result?.dayModels)
                 SourceWeekCompareCard(source: .kimi)
                 Spacer(minLength: 0)
             }

@@ -24,6 +24,7 @@ struct OpenCodeView: View {
                 } else {
                     SourceStateView(message: "未找到 OpenCode 本地数据")
                 }
+                SourceAPICostCard(source: .opencode, liveDayModels: state.opencode.result?.dayModels)
                 SourceWeekCompareCard(source: .opencode)
                 Spacer(minLength: 0)
             }

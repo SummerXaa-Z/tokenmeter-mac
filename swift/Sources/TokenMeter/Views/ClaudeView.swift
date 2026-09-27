@@ -25,6 +25,7 @@ struct ClaudeView: View {
                 } else {
                     SourceStateView(message: "未找到 Claude 本地数据（~/.claude/projects）")
                 }
+                SourceAPICostCard(source: .claude, liveDayModels: state.claude.result?.dayModels)
                 Spacer(minLength: 0)
             }
             .padding(14)

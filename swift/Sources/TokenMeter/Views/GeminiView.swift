@@ -23,6 +23,7 @@ struct GeminiView: View {
                 } else {
                     SourceStateView(message: "未找到 Gemini CLI 本地数据")
                 }
+                SourceAPICostCard(source: .gemini, liveDayModels: state.gemini.result?.dayModels)
                 SourceWeekCompareCard(source: .gemini)
                 Spacer(minLength: 0)
             }

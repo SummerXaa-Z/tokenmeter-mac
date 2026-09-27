@@ -23,6 +23,7 @@ struct QwenCodeView: View {
                 } else {
                     SourceStateView(message: state.qwen.error ?? "未找到 Qwen Code 本地数据")
                 }
+                SourceAPICostCard(source: .qwen, liveDayModels: state.qwen.result?.dayModels)
                 SourceWeekCompareCard(source: .qwen)
                 Spacer(minLength: 0)
             }

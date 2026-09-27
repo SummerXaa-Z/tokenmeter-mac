@@ -26,6 +26,7 @@ struct CopilotView: View {
                 } else {
                     SourceStateView(message: "未找到 GitHub Copilot CLI 本地数据")
                 }
+                SourceAPICostCard(source: .copilot, liveDayModels: state.copilot.result?.dayModels)
                 SourceWeekCompareCard(source: .copilot)
                 Spacer(minLength: 0)
             }
