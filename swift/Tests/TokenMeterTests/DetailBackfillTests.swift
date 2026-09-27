@@ -12,7 +12,7 @@ final class DetailBackfillTests: XCTestCase {
         XCTAssertFalse(DetailBackfill.shouldRun(markerDay: "2026-09-26", todayKey: "2026-09-27"))
         XCTAssertFalse(DetailBackfill.shouldRun(markerDay: "2026-09-21", todayKey: "2026-09-27"))
 
-        // 满 7 天：再跑一次，滚动 31 天窗与实时 7 天窗无缝衔接
+        // 满 7 天：再跑一次，滚动回填窗与实时 7 天窗无缝衔接
         XCTAssertTrue(DetailBackfill.shouldRun(markerDay: "2026-09-20", todayKey: "2026-09-27"))
         XCTAssertTrue(DetailBackfill.shouldRun(markerDay: "2026-08-01", todayKey: "2026-09-27"))
     }
@@ -23,7 +23,7 @@ final class DetailBackfillTests: XCTestCase {
 
     func testBackfillWindowCoversThirtyDayRange() {
         // 30 天命名范围 + 一天余量：跨月与月初边界都不留缝
-        XCTAssertGreaterThanOrEqual(DetailBackfill.windowDays, 31)
+        XCTAssertGreaterThanOrEqual(DetailBackfill.windowDays, 90)
         XCTAssertGreaterThanOrEqual(DetailBackfill.repeatDays, 7)
     }
 }

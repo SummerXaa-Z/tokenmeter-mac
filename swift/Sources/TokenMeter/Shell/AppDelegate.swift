@@ -52,7 +52,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appState.rearmTimer()
 
         // 启动 10s 后低优先级回填按天明细（每约 7 天一次，见 DetailBackfill）：
-        // 把实时 7 天窗之外的本地会话补进 model-history，让 30D/全部 立即可回溯
+        // 把实时 7 天窗之外的本地会话补进 model-history（滚动 90 天），让
+        // 30D/全部 与各处上期基期立即可回溯
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
             guard let self else { return }
             Task { await self.appState.backfillModelDetail() }
