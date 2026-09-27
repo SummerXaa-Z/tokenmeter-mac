@@ -113,4 +113,10 @@ enum PeriodCompare {
         guard last > 0 else { return nil }
         return (Double(this) - Double(last)) / Double(last) * 100
     }
+
+    /// 金额版环比(API 等价美元金额用;同样无基期返回 nil)。
+    static func change(this: Double, last: Double) -> Double? {
+        guard last > 0 else { return nil }
+        return (this - last) / last * 100
+    }
 }

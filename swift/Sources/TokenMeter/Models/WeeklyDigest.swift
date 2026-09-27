@@ -90,8 +90,9 @@ enum WeeklyDigest {
             calendar: calendar)
         if let last = amounts.last, last.matchedTokens > 0 {
             body += "；API 等价 \(Fmt.usd(last.total))"
-            if let prior = amounts.prior, prior.total > 0 {
-                let change = (last.total - prior.total) / prior.total * 100
+            if let change = PeriodCompare.change(
+                this: last.total, last: amounts.prior?.total ?? 0)
+            {
                 body += "（环比 \(change >= 0 ? "↑" : "↓") \(Fmt.percent(abs(change)))）"
             }
             if let coverage = last.coverage, coverage < 0.999 {

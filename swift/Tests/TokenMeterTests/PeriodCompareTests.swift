@@ -145,4 +145,11 @@ final class TrendSeriesFilterTests: XCTestCase {
         // 空隐藏集原样返回
         XCTAssertEqual(TrendSeriesFilter.visible(points, hidden: []).count, 3)
     }
+
+    func testChangeDoubleOverloadForAmounts() {
+        // 金额版环比:与 Token 版同语义,上期为 0/无基期返回 nil
+        XCTAssertEqual(PeriodCompare.change(this: 7.32, last: 2.44) ?? 0, 200, accuracy: 0.01)
+        XCTAssertEqual(PeriodCompare.change(this: 1.22, last: 2.44) ?? 0, -50, accuracy: 0.01)
+        XCTAssertNil(PeriodCompare.change(this: 7.32, last: 0))
+    }
 }

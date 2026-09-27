@@ -159,4 +159,43 @@ final class SourceAPICostTests: XCTestCase {
             day("2026-09-13", source: .kimi, [:]),
         ]))
     }
+
+    // MARK: - 上期基期（环比徽标的基期金额）
+
+    func testPriorSummaryWeekUsesPreviousWeek() throws {
+        // 今天 09-24 周四：上期 = 上周 09-14..20；本周的 9M 不混入
+        let days = [
+            day("2026-09-16", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+            day("2026-09-23", source: .kimi, ["kimi-k2.6": .init(output: 9_000_000)]),
+        ]
+        let prior = try XCTUnwrap(SourceAPICost.priorSummary(
+            source: .kimi, liveDayModels: nil, period: .week,
+            persisted: days, todayKey: "2026-09-24", calendar: calendar))
+        XCTAssertEqual(prior.total, 2.44, accuracy: 0.001)
+        XCTAssertEqual(prior.totalTokens, 1_000_000)
+    }
+
+    func testPriorSummaryRolling7CoversPriorSevenDays() throws {
+        // 今天 09-24：近 7 天的前一期 = 09-11..17；09-13 在内、09-19（本期）不在
+        let days = [
+            day("2026-09-13", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+            day("2026-09-19", source: .kimi, ["kimi-k2.6": .init(output: 9_000_000)]),
+        ]
+        let prior = try XCTUnwrap(SourceAPICost.priorSummary(
+            source: .kimi, liveDayModels: nil, period: .rolling7,
+            persisted: days, todayKey: "2026-09-24", calendar: calendar))
+        XCTAssertEqual(prior.total, 2.44, accuracy: 0.001)
+    }
+
+    func testPriorSummaryMonthUsesPreviousMonth() throws {
+        // 今天 09-24：上期 = 上月整月（08-01..31）；9/2 属本月不混入
+        let days = [
+            day("2026-08-31", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+            day("2026-09-02", source: .kimi, ["kimi-k2.6": .init(output: 9_000_000)]),
+        ]
+        let prior = try XCTUnwrap(SourceAPICost.priorSummary(
+            source: .kimi, liveDayModels: nil, period: .month,
+            persisted: days, todayKey: "2026-09-24", calendar: calendar))
+        XCTAssertEqual(prior.total, 2.44, accuracy: 0.001)
+    }
 }
