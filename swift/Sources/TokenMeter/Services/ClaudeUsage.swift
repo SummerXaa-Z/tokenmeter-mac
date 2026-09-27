@@ -98,6 +98,8 @@ struct ClaudeUsageResult: Equatable {
     let todayHours: [ClaudeHourUsage] // 今日 24 小时分布，缺失补零
     let weekCompare: ClaudeWeekCompare // 本周 vs 上周环比
     let skills: [ClaudeSkillUsage]    // 近 7 天，来自原生 Skill tool_use
+    // 日期 → 模型 → 互斥五类 Token，落盘为按天模型明细
+    var dayModels: [String: [String: ModelTokenTally]] = [:]
     var today: ClaudeDayUsage? { days.last }
     var weekTotal: Int { days.reduce(0) { $0 + $1.totalTokens } }
     var weekMessages: Int { days.reduce(0) { $0 + $1.messageCount } }
@@ -189,6 +191,7 @@ enum ClaudeUsage {
         let windowStart = Calendar.current.startOfDay(for: DateUtil.addDays(now, -13))
 
         var modelMap: [String: ClaudeModelUsage] = [:]
+        var dayModels: [String: [String: ModelTokenTally]] = [:]
         var projectMap: [String: ClaudeProjectUsage] = [:]
         var skillMap: [String: Int] = [:]
         var hourMap: [Int: HourTally] = [:]
@@ -241,6 +244,9 @@ enum ClaudeUsage {
                     m.outputTokens += t.output
                     m.messageCount += t.messages
                     modelMap[model] = m
+                    dayModels[date, default: [:]][model, default: .init()] += ModelTokenTally(
+                        input: t.input, cached: t.cacheRead,
+                        cacheWrite: t.cacheCreate, output: t.output)
                 }
             }
             for (date, projects) in summary.perDayProject where window.contains(date) {
@@ -287,7 +293,8 @@ enum ClaudeUsage {
                 return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             }
         return ClaudeUsageResult(days: days, models: models, projects: projects,
-                                 todayHours: todayHours, weekCompare: compare, skills: skills)
+                                 todayHours: todayHours, weekCompare: compare, skills: skills,
+                                 dayModels: dayModels.compactMapValues(ModelTokenTally.nonEmpty))
     }
 
     // MARK: - 单文件流式扫描（带缓存）

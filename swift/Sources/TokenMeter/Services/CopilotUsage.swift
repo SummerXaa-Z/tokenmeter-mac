@@ -57,6 +57,8 @@ struct CopilotUsageResult: Equatable {
     let days: [CopilotDayUsage]
     let models: [CopilotModelUsage]
     let skills: [CopilotSkillUsage]
+    // 日期（会话结束日）→ 模型 → 互斥五类 Token，落盘为按天模型明细
+    var dayModels: [String: [String: ModelTokenTally]] = [:]
 
     var today: CopilotDayUsage? { days.last }
     var weekTotal: Int { days.reduce(0) { $0 + $1.totalTokens } }
@@ -164,6 +166,7 @@ enum CopilotUsage {
 
         var days: [String: CopilotDayUsage] = [:]
         var models: [String: CopilotModelUsage] = [:]
+        var dayModels: [String: [String: ModelTokenTally]] = [:]
         var skills: [String: Int] = [:]
 
         for file in files {
@@ -212,6 +215,9 @@ enum CopilotUsage {
                 model.reasoningTokens += reasoning
                 model.requestCount += requests
                 models[normalizedName] = model
+                dayModels[dayKey, default: [:]][normalizedName, default: .init()] += ModelTokenTally(
+                    input: input, cached: cacheRead, cacheWrite: cacheWrite,
+                    output: output, reasoning: reasoning)
             }
             days[dayKey] = day
             for name in summary.skillNames { skills[name, default: 0] += 1 }
@@ -233,7 +239,8 @@ enum CopilotUsage {
                 }
                 return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             }
-        return CopilotUsageResult(days: dayRows, models: modelRows, skills: skillRows)
+        return CopilotUsageResult(days: dayRows, models: modelRows, skills: skillRows,
+                                  dayModels: dayModels.compactMapValues(ModelTokenTally.nonEmpty))
     }
 
     private static func sessionFiles(in root: URL, modifiedSince cutoff: Date) -> [URL] {

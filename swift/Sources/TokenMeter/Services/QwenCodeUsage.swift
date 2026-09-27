@@ -51,6 +51,8 @@ struct QwenCodeUsageResult: Equatable {
     let days: [QwenCodeDayUsage]
     let models: [QwenCodeModelUsage]
     let todayHours: [QwenCodeHourUsage]
+    // 日期 → 模型 → 互斥五类 Token，落盘为按天模型明细
+    var dayModels: [String: [String: ModelTokenTally]] = [:]
 
     var today: QwenCodeDayUsage? { days.last }
     var weekTotal: Int { days.reduce(0) { qwenSaturatedAdd($0, $1.totalTokens) } }
@@ -113,6 +115,7 @@ enum QwenCodeUsage {
         let todayKey = localDayKey(now, calendar: calendar)
         var days: [String: QwenCodeDayUsage] = [:]
         var models: [String: QwenCodeModelUsage] = [:]
+        var dayModels: [String: [String: ModelTokenTally]] = [:]
         var sessionsByDay: [String: Set<String>] = [:]
         var todayHours: [Int: Int] = [:]
 
@@ -153,6 +156,8 @@ enum QwenCodeUsage {
                 model.reasoningTokens = qwenSaturatedAdd(model.reasoningTokens, reasoning)
                 model.messageCount = qwenSaturatedAdd(model.messageCount, requests)
                 models[modelName] = model
+                dayModels[dayKey, default: [:]][modelName, default: .init()] += ModelTokenTally(
+                    input: input, cached: cached, output: output, reasoning: reasoning)
 
                 if dayKey == todayKey {
                     let hour = calendar.component(.hour, from: date)
@@ -178,7 +183,8 @@ enum QwenCodeUsage {
         let hourRows = (0..<24).map {
             QwenCodeHourUsage(hour: $0, totalTokens: todayHours[$0] ?? 0)
         }
-        return QwenCodeUsageResult(days: dayRows, models: modelRows, todayHours: hourRows)
+        return QwenCodeUsageResult(days: dayRows, models: modelRows, todayHours: hourRows,
+                                   dayModels: dayModels.compactMapValues(ModelTokenTally.nonEmpty))
     }
 
     // 官方 loadUsageHistory 用 sessionId -> record 的 Map 去重，后出现的完整记录覆盖

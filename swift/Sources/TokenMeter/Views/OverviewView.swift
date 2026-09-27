@@ -9,6 +9,8 @@ struct OverviewView: View {
     let onOpenSource: (Provider) -> Void
     var onSettings: () -> Void
     @State private var history: [HistoryStore.DayPoint] = []
+    @State private var modelHistory: [ModelUsageDay] = []
+    @State private var subscriptionPlans: [SubscriptionPlan] = []
     @State private var refreshing = false
 
     var body: some View {
@@ -58,10 +60,17 @@ struct OverviewView: View {
                     OverviewProfileCard(profile: data.profile, range: range)
                     OverviewRankingsCard(
                         rankings: data.rankings,
-                        skillRankings: data.skillRankings
+                        skillRankings: data.skillRankings,
+                        range: range,
+                        coverageNote: data.modelCoverageNote
                     )
                     if data.apiReferenceCost.totalTokens > 0 {
-                        OverviewAPICostCard(summary: data.apiReferenceCost)
+                        OverviewAPICostCard(
+                            summary: data.apiReferenceCost,
+                            range: range,
+                            subscriptionValue: data.subscriptionValue,
+                            coverageNote: data.modelCoverageNote
+                        )
                     }
                 }
                 Spacer(minLength: 0)
@@ -70,6 +79,8 @@ struct OverviewView: View {
         }
         .scrollIndicators(.hidden)
         .task {
+            // 先用本机留存的历史与明细出图，扫描完成后再刷新一次
+            reloadHistory()
             await loadSources()
             reloadHistory()
         }
@@ -112,7 +123,9 @@ struct OverviewView: View {
             gemini: state.gemini.result,
             copilot: state.copilot.result,
             qwen: state.qwen.result,
-            cursor: state.cursor.result
+            cursor: state.cursor.result,
+            modelHistory: modelHistory,
+            subscriptionPlans: subscriptionPlans
         )
     }
 
@@ -217,6 +230,8 @@ struct OverviewView: View {
 
     private func reloadHistory() {
         history = HistoryStore.all()
+        modelHistory = ModelUsageHistoryStore.shared.all()
+        subscriptionPlans = ConfigStore.shared.subscriptionPlans
     }
 
     private var subscriptionQuotaSnapshot: SubscriptionQuotaSnapshot {

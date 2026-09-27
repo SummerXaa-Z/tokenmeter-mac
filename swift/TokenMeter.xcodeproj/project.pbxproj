@@ -12,6 +12,7 @@
 		08147C52D77F2CD0B3131AEA /* SubscriptionQuotaSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADDB0373895B8FC7D526719A /* SubscriptionQuotaSnapshot.swift */; };
 		099AF48C316A4AEAA44557B0 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF85AA1A761C40D0E1F07633 /* RootView.swift */; };
 		0BD34D6C27AD6A1B1C141E44 /* AlertLatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D6ED3684CAFECA658C89E7 /* AlertLatchTests.swift */; };
+		1523E643D600CAA589B44E24 /* SubscriptionPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2629AD65E076D2C7A7CBB0FC /* SubscriptionPlan.swift */; };
 		18C273CE68171DDDBA1A8B81 /* UsageCSVExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDD6318A133F765FB00F63D7 /* UsageCSVExportTests.swift */; };
 		19C431F6A85911C5FC4AB1E0 /* PeriodCompare.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9522507FE35F705FB723F471 /* PeriodCompare.swift */; };
 		1CE23BCAD7B5D4370FDC44A9 /* DashboardComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B86D6C533AB2687E46CD0D /* DashboardComponents.swift */; };
@@ -30,6 +31,7 @@
 		3F60A655CE88CB5A4CC13645 /* CopilotUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A004CCA5D38A68E443402F7F /* CopilotUsage.swift */; };
 		3FA4F30FF15DD5E6A92FE55D /* UsageHeatmap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 005010A27E1DCBED40A6FCF8 /* UsageHeatmap.swift */; };
 		3FD289641C11563D94585020 /* StatusRefreshCoalescer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D90920C473540BCB20FA68 /* StatusRefreshCoalescer.swift */; };
+		4305DD9D9D4F6A6ED5540FAE /* SubscriptionPlansEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4B9D1BF0F7C7B056BB012BF /* SubscriptionPlansEditor.swift */; };
 		44C3E429D2C0A08C74D6A3E3 /* UsageHistoryRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7CC34673E7679C77153F2F4 /* UsageHistoryRange.swift */; };
 		44E5E9E651933589C14D6311 /* KimiQuotaServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7BFCCAFFA3D5DA745FF32C7 /* KimiQuotaServiceTests.swift */; };
 		4B5BEFE4E1B263A81F7F55BE /* KimiUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99EA86C17A2CC62772DFE1A5 /* KimiUsage.swift */; };
@@ -76,6 +78,7 @@
 		9D36C76D986B393BB51BE38C /* KimiView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3A6CC9B0D4EEEB3CFAD389D /* KimiView.swift */; };
 		9E32529492F2279C8A84BC5A /* ModelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE4C8E58EADDC75850B46AE4 /* ModelDetailView.swift */; };
 		9F762C6D7503AD31ACDB354E /* SourceDashboardComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE348B8A6F5BBC274C411539 /* SourceDashboardComponents.swift */; };
+		9FE335AE9AF7F517C707217C /* ModelUsageHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0260716BFC52AA0CE7823EA6 /* ModelUsageHistoryTests.swift */; };
 		A5D75D459E59FAF73A9CF0D6 /* WeeklyDigestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1ACFF688BA4F5257F82E5A5 /* WeeklyDigestTests.swift */; };
 		A8AF06E58EBAACC576CDE4F8 /* ZhipuQuotaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 925ECE5B69FE0A6F93DD9ECD /* ZhipuQuotaService.swift */; };
 		AA655C6530EBC0F60C9696C9 /* Autostart.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20DB2AD765D26DD9D4D7062 /* Autostart.swift */; };
@@ -98,6 +101,7 @@
 		D2BDF1C3A7257F943C8DEAB9 /* MenubarTodayTotalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 951968B35E5CD5AD3814C04C /* MenubarTodayTotalTests.swift */; };
 		D6D751967A78B4D68A0BAE5A /* PersonalSkillRankingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E0277D82C8B231C115599EB /* PersonalSkillRankingsTests.swift */; };
 		D6F5BA21904C57DC0B1FC419 /* AppStateRefreshTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066AB6165D30EBC039D73A14 /* AppStateRefreshTests.swift */; };
+		DB5E5F1CB341E95E65455EEB /* ModelUsageHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95825681F78E844FFBF6BC2E /* ModelUsageHistory.swift */; };
 		DBEC88D240DE2913C456DDB1 /* AlertLatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 038A081C9252EA71AFE3376F /* AlertLatch.swift */; };
 		DFD0B55D52A8FB22A131C05E /* OverviewCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54824B773553961BECA6D2BE /* OverviewCards.swift */; };
 		E11D3FA4C68C809E0CF7292D /* GeminiView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD8D457FECE03878E165D226 /* GeminiView.swift */; };
@@ -125,6 +129,7 @@
 /* Begin PBXFileReference section */
 		005010A27E1DCBED40A6FCF8 /* UsageHeatmap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageHeatmap.swift; sourceTree = "<group>"; };
 		01E1C8CE16535C1B08838F35 /* PersonalUsageRankingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalUsageRankingsTests.swift; sourceTree = "<group>"; };
+		0260716BFC52AA0CE7823EA6 /* ModelUsageHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelUsageHistoryTests.swift; sourceTree = "<group>"; };
 		038A081C9252EA71AFE3376F /* AlertLatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertLatch.swift; sourceTree = "<group>"; };
 		061B7355FA469C3D6652B6B1 /* OverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewView.swift; sourceTree = "<group>"; };
 		066AB6165D30EBC039D73A14 /* AppStateRefreshTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateRefreshTests.swift; sourceTree = "<group>"; };
@@ -137,6 +142,7 @@
 		1E0277D82C8B231C115599EB /* PersonalSkillRankingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalSkillRankingsTests.swift; sourceTree = "<group>"; };
 		21D9FAD2975109A06D1A9B98 /* HistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryStore.swift; sourceTree = "<group>"; };
 		22064562B364186A960DC06C /* NotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotifierTests.swift; sourceTree = "<group>"; };
+		2629AD65E076D2C7A7CBB0FC /* SubscriptionPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionPlan.swift; sourceTree = "<group>"; };
 		27C0AE619FF776948DDE5842 /* OverviewSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewSnapshotTests.swift; sourceTree = "<group>"; };
 		2B59876F53BE2581617A36DA /* TokenMeterTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TokenMeterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2C3DA452FCD5757E0F3121FF /* WeeklyDigest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyDigest.swift; sourceTree = "<group>"; };
@@ -177,6 +183,7 @@
 		925ECE5B69FE0A6F93DD9ECD /* ZhipuQuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZhipuQuotaService.swift; sourceTree = "<group>"; };
 		951968B35E5CD5AD3814C04C /* MenubarTodayTotalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenubarTodayTotalTests.swift; sourceTree = "<group>"; };
 		9522507FE35F705FB723F471 /* PeriodCompare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodCompare.swift; sourceTree = "<group>"; };
+		95825681F78E844FFBF6BC2E /* ModelUsageHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelUsageHistory.swift; sourceTree = "<group>"; };
 		967FFAA53C071E7B5A4CC8ED /* CodexView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexView.swift; sourceTree = "<group>"; };
 		96B332F068C8D6A1265701DD /* ArkPlanQuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkPlanQuotaService.swift; sourceTree = "<group>"; };
 		984396E82E950E7EFB0A1977 /* ArkPlanQuotaServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkPlanQuotaServiceTests.swift; sourceTree = "<group>"; };
@@ -198,6 +205,7 @@
 		ADDB0373895B8FC7D526719A /* SubscriptionQuotaSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionQuotaSnapshot.swift; sourceTree = "<group>"; };
 		AE4C8E58EADDC75850B46AE4 /* ModelDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDetailView.swift; sourceTree = "<group>"; };
 		B20DB2AD765D26DD9D4D7062 /* Autostart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Autostart.swift; sourceTree = "<group>"; };
+		B4B9D1BF0F7C7B056BB012BF /* SubscriptionPlansEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionPlansEditor.swift; sourceTree = "<group>"; };
 		B4BC3BA51DB70892C2FB9608 /* QwenCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QwenCodeView.swift; sourceTree = "<group>"; };
 		B6D6ED3684CAFECA658C89E7 /* AlertLatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertLatchTests.swift; sourceTree = "<group>"; };
 		BBAA57F5DE3E12AB2E6EC2F4 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -271,6 +279,7 @@
 				99EA86C17A2CC62772DFE1A5 /* KimiUsage.swift */,
 				68782D91DB1A9776445C9CB3 /* LocalUsageCollectorRegistry.swift */,
 				8F3143113E09EDC5443D060F /* LoginSync.swift */,
+				95825681F78E844FFBF6BC2E /* ModelUsageHistory.swift */,
 				FB0108201849DF5FC34BB50A /* Notifier.swift */,
 				7FF0EE60FD4468E9768B8562 /* OpenCodeUsage.swift */,
 				AD11782594C3D8969BDFFA5B /* PlatformPortal.swift */,
@@ -322,6 +331,7 @@
 				F7BFCCAFFA3D5DA745FF32C7 /* KimiQuotaServiceTests.swift */,
 				CC942E758B5C67CFA1D9F55A /* KimiUsageTests.swift */,
 				951968B35E5CD5AD3814C04C /* MenubarTodayTotalTests.swift */,
+				0260716BFC52AA0CE7823EA6 /* ModelUsageHistoryTests.swift */,
 				22064562B364186A960DC06C /* NotifierTests.swift */,
 				10C5D68C952CC99005CB4E46 /* OpenCodeUsageTests.swift */,
 				27C0AE619FF776948DDE5842 /* OverviewSnapshotTests.swift */,
@@ -389,6 +399,7 @@
 				DD11D2DC6163A46FA5BD2D91 /* PersonalUsageProfile.swift */,
 				E13A57349BE9B8FC76B5A9D2 /* PersonalUsageRankings.swift */,
 				DF3C50BBEA971A783811E602 /* QuotaPace.swift */,
+				2629AD65E076D2C7A7CBB0FC /* SubscriptionPlan.swift */,
 				E681D77D51281BCE0A4CADA2 /* SubscriptionQuotaAlert.swift */,
 				ADDB0373895B8FC7D526719A /* SubscriptionQuotaSnapshot.swift */,
 				9BA08A1766B4DFB2AC3C1980 /* TrendSeriesFilter.swift */,
@@ -421,6 +432,7 @@
 				C5D564596B6873D239FB7F78 /* SettingsView.swift */,
 				BE348B8A6F5BBC274C411539 /* SourceDashboardComponents.swift */,
 				7B0D90EC446183887EFACB93 /* SourceHistoryCards.swift */,
+				B4B9D1BF0F7C7B056BB012BF /* SubscriptionPlansEditor.swift */,
 				C58B1ACBAB5C28E4D83047B6 /* Theme.swift */,
 			);
 			path = Views;
@@ -535,6 +547,7 @@
 				44E5E9E651933589C14D6311 /* KimiQuotaServiceTests.swift in Sources */,
 				64F8105551189C91BE2A9409 /* KimiUsageTests.swift in Sources */,
 				D2BDF1C3A7257F943C8DEAB9 /* MenubarTodayTotalTests.swift in Sources */,
+				9FE335AE9AF7F517C707217C /* ModelUsageHistoryTests.swift in Sources */,
 				4C3AA3A1071617E1A4CC41CB /* NotifierTests.swift in Sources */,
 				9C4B3B44EC1921CAE309E26E /* OpenCodeUsageTests.swift in Sources */,
 				855D9BB3F251125EA61B18CE /* OverviewSnapshotTests.swift in Sources */,
@@ -593,6 +606,7 @@
 				20E57E9E36733543BD7864AE /* LoginSync.swift in Sources */,
 				650C8ED95E7695637B0F8F08 /* MenubarTodayTotal.swift in Sources */,
 				9E32529492F2279C8A84BC5A /* ModelDetailView.swift in Sources */,
+				DB5E5F1CB341E95E65455EEB /* ModelUsageHistory.swift in Sources */,
 				B9CB4C72284892743435585C /* Models.swift in Sources */,
 				75BC978308318F6F92DB408A /* Notifier.swift in Sources */,
 				92520D2ADF2A2E1BBD989629 /* OpenCodeUsage.swift in Sources */,
@@ -618,6 +632,8 @@
 				3FD289641C11563D94585020 /* StatusRefreshCoalescer.swift in Sources */,
 				BE507A0D2FF38D14503086DB /* StatusRefreshSettings.swift in Sources */,
 				83527A7C0F23657A419997A0 /* Store.swift in Sources */,
+				1523E643D600CAA589B44E24 /* SubscriptionPlan.swift in Sources */,
+				4305DD9D9D4F6A6ED5540FAE /* SubscriptionPlansEditor.swift in Sources */,
 				B9145247667D76CAE51DE2BA /* SubscriptionQuotaAlert.swift in Sources */,
 				08147C52D77F2CD0B3131AEA /* SubscriptionQuotaSnapshot.swift in Sources */,
 				C5275D6A5BFA7DD2B9A4453E /* Theme.swift in Sources */,

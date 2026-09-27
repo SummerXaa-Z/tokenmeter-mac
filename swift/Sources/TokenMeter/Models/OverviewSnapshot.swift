@@ -24,6 +24,12 @@ struct OverviewSnapshot: Equatable {
     let rankings: PersonalUsageRankings
     let skillRankings: PersonalSkillRankings
     let apiReferenceCost: APIReferenceCostSummary
+    // 所选来源最早有模型明细的一天（截至今天）；nil 表示尚无明细
+    let modelCoverageStartDate: String?
+    // 所选范围内的工具用量早于模型明细起点：模型维度只覆盖后一段
+    let modelCoverageIsPartial: Bool
+    // 用户在设置里填写了订阅月费时的回本倍数；未填写为 nil
+    let subscriptionValue: SubscriptionValueSummary?
     let trend: [TrendPoint]
     let trendGranularity: UsageTrendGranularity
     let trendTotal: Int
@@ -37,6 +43,16 @@ struct OverviewSnapshot: Equatable {
     /// 设置开关和历史本身不受影响，切换范围后会按该范围重新出现。
     var nonzeroPeriodSources: [HistorySource] {
         selection.sources.filter { (periodBySource[$0] ?? 0) > 0 }
+    }
+
+    /// 范围早于模型明细起点时，模型榜、API 等价与缓存复用共用的口径说明。
+    var modelCoverageNote: String? {
+        guard modelCoverageIsPartial, let modelCoverageStartDate else { return nil }
+        return Self.modelCoverageNote(since: modelCoverageStartDate)
+    }
+
+    static func modelCoverageNote(since start: String) -> String {
+        "模型明细自 \(Fmt.mmdd(start)) 起按天留存，更早的用量只计入工具合计。"
     }
 
     init(
@@ -53,6 +69,8 @@ struct OverviewSnapshot: Equatable {
         copilot: CopilotUsageResult?,
         qwen: QwenCodeUsageResult? = nil,
         cursor: CursorUsageResult?,
+        modelHistory: [ModelUsageDay] = [],
+        subscriptionPlans: [SubscriptionPlan] = [],
         todayKey: String = DateUtil.today()
     ) {
         self.selection = selection
@@ -141,112 +159,72 @@ struct OverviewSnapshot: Equatable {
             availableHistoryDays = 0
         }
         var weeklySessions: [HistorySource: Int] = [:]
-        var cacheUsage: [HistorySource: PersonalUsageProfile.CacheUsage] = [:]
-        if selection.contains(.claude), let claude {
-            weeklySessions[.claude] = claude.weekSessions
-            cacheUsage[.claude] = .init(
-                cachedInputTokens: claude.days.reduce(0) { $0 + $1.cacheReadTokens },
-                totalInputTokens: claude.days.reduce(0) {
-                    $0 + $1.inputTokens + $1.cacheCreationTokens + $1.cacheReadTokens
-                }
-            )
-        }
-        if selection.contains(.codex), let codex {
-            weeklySessions[.codex] = codex.weekSessions
-            cacheUsage[.codex] = .init(
-                cachedInputTokens: codex.days.reduce(0) { $0 + $1.cachedInputTokens },
-                totalInputTokens: codex.days.reduce(0) { $0 + $1.inputTokens }
-            )
-        }
-        if selection.contains(.kimi), let kimi {
-            weeklySessions[.kimi] = kimi.weekSessions
-            cacheUsage[.kimi] = .init(
-                cachedInputTokens: kimi.days.reduce(0) { $0 + $1.cachedInputTokens },
-                totalInputTokens: kimi.days.reduce(0) {
-                    $0 + $1.inputTokens + $1.cachedInputTokens + $1.cacheCreationTokens
-                }
-            )
-        }
+        if selection.contains(.claude), let claude { weeklySessions[.claude] = claude.weekSessions }
+        if selection.contains(.codex), let codex { weeklySessions[.codex] = codex.weekSessions }
+        if selection.contains(.kimi), let kimi { weeklySessions[.kimi] = kimi.weekSessions }
         if selection.contains(.opencode), let openCode {
             weeklySessions[.opencode] = openCode.weekSessions
-            cacheUsage[.opencode] = .init(
-                cachedInputTokens: openCode.days.reduce(0) { $0 + $1.cachedInputTokens },
-                totalInputTokens: openCode.days.reduce(0) {
-                    $0 + $1.inputTokens + $1.cachedInputTokens + $1.cacheWriteTokens
-                }
-            )
         }
-        if selection.contains(.gemini), let gemini {
-            weeklySessions[.gemini] = gemini.weekSessions
-            cacheUsage[.gemini] = .init(
-                cachedInputTokens: gemini.days.reduce(0) { $0 + $1.cachedInputTokens },
-                totalInputTokens: gemini.days.reduce(0) {
-                    $0 + $1.inputTokens + $1.cachedInputTokens
-                }
-            )
-        }
+        if selection.contains(.gemini), let gemini { weeklySessions[.gemini] = gemini.weekSessions }
         if selection.contains(.copilot), let copilot {
             weeklySessions[.copilot] = copilot.weekSessions
-            cacheUsage[.copilot] = .init(
-                cachedInputTokens: copilot.days.reduce(0) { $0 + $1.cachedInputTokens },
-                totalInputTokens: copilot.days.reduce(0) {
-                    $0 + $1.inputTokens + $1.cachedInputTokens + $1.cacheWriteTokens
-                }
-            )
         }
-        if selection.contains(.qwen), let qwen {
-            weeklySessions[.qwen] = qwen.weekSessions
-            cacheUsage[.qwen] = .init(
-                cachedInputTokens: qwen.days.reduce(0) { $0 + $1.cachedInputTokens },
-                totalInputTokens: qwen.days.reduce(0) {
-                    $0 + $1.inputTokens + $1.cachedInputTokens
+        if selection.contains(.qwen), let qwen { weeklySessions[.qwen] = qwen.weekSessions }
+
+        // 模型维度（模型榜、API 等价参考、输入缓存复用）按天 × 模型明细聚合并
+        // 跟随所选范围：采集器本次扫描到的天优先，其余天取本机留存的明细。
+        // Cursor 只有订阅周期聚合，不进入模型维度。
+        let modelSources = selection.sources.filter { $0 != .cursor }
+        var liveModels: [HistorySource: [String: [String: ModelTokenTally]]] = [:]
+        liveModels[.claude] = claude?.dayModels
+        liveModels[.codex] = codex?.dayModels
+        liveModels[.kimi] = kimi?.dayModels
+        liveModels[.opencode] = openCode?.dayModels
+        liveModels[.gemini] = gemini?.dayModels
+        liveModels[.copilot] = copilot?.dayModels
+        liveModels[.qwen] = qwen?.dayModels
+        let modelDays = Self.mergedModelDays(
+            sources: modelSources,
+            live: liveModels,
+            persisted: modelHistory,
+            todayKey: todayKey
+        )
+        let rangeStartKey = Self.rangeStartKey(range, todayKey: todayKey)
+        let rangeDates = modelDays.keys.filter { date in
+            rangeStartKey.map { date >= $0 } ?? true
+        }.sorted()
+
+        var modelSamples: [PersonalUsageRankings.ModelSample] = []
+        var costSamples: [APICostSample] = []
+        var sourceTallies: [HistorySource: ModelTokenTally] = [:]
+        for date in rangeDates {
+            // 首个价格快照之前的用量按首个快照计价，此后按用量当日生效价
+            let pricingDate = max(date, APIReferencePricingCatalog.firstObservedAt)
+            let bySource = modelDays[date] ?? [:]
+            for source in modelSources {
+                guard let models = bySource[source] else { continue }
+                for model in models.keys.sorted() {
+                    guard let tally = models[model] else { continue }
+                    modelSamples.append(.init(
+                        source: source, model: model, totalTokens: tally.total))
+                    costSamples.append(.init(
+                        model: model, tokens: tally.breakdown,
+                        usageDate: pricingDate, source: source))
+                    sourceTallies[source, default: .init()] += tally
                 }
-            )
+            }
         }
+
         profile = PersonalUsageProfile(
             history: history,
             streakHistory: streakHistory,
             enabledSources: selection.sources,
             weeklySessions: weeklySessions,
-            cacheUsage: cacheUsage
+            cacheUsage: sourceTallies.mapValues {
+                PersonalUsageProfile.CacheUsage(
+                    cachedInputTokens: $0.cached, totalInputTokens: $0.promptTokens)
+            }
         )
-
-        var modelSamples: [PersonalUsageRankings.ModelSample] = []
-        if selection.contains(.claude), let claude {
-            modelSamples += claude.models.map {
-                .init(source: .claude, model: $0.model, totalTokens: $0.totalTokens)
-            }
-        }
-        if selection.contains(.codex), let codex {
-            modelSamples += codex.models.map {
-                .init(source: .codex, model: $0.model, totalTokens: $0.totalTokens)
-            }
-        }
-        if selection.contains(.kimi), let kimi {
-            modelSamples += kimi.models.map {
-                .init(source: .kimi, model: $0.model, totalTokens: $0.totalTokens)
-            }
-        }
-        if selection.contains(.opencode), let openCode {
-            modelSamples += openCode.models.map {
-                .init(source: .opencode, model: $0.model, totalTokens: $0.totalTokens)
-            }
-        }
-        if selection.contains(.gemini), let gemini {
-            modelSamples += gemini.models.map {
-                .init(source: .gemini, model: $0.model, totalTokens: $0.totalTokens)
-            }
-        }
-        if selection.contains(.copilot), let copilot {
-            modelSamples += copilot.models.map {
-                .init(source: .copilot, model: $0.model, totalTokens: $0.totalTokens)
-            }
-        }
-        if selection.contains(.qwen), let qwen {
-            modelSamples += qwen.models.map {
-                .init(source: .qwen, model: $0.model, totalTokens: $0.totalTokens)
-            }
-        }
         rankings = PersonalUsageRankings(
             history: history,
             enabledSources: selection.sources,
@@ -274,22 +252,37 @@ struct OverviewSnapshot: Equatable {
             enabledSources: selection.sources
         )
 
-        let costSamples = Self.costSamples(
-            selection: selection,
-            claude: claude,
-            codex: codex,
-            kimi: kimi,
-            openCode: openCode,
-            gemini: gemini,
-            copilot: copilot,
-            qwen: qwen
-        )
         apiReferenceCost = APIReferenceCostSummary(
             samples: costSamples,
             estimator: APIReferencePricingCatalog.estimator,
             referenceDate: APIReferencePricingCatalog.observedAt,
             conversionRates: APIReferencePricingCatalog.conversionRatesToUSD
         )
+
+        let coverageStart = modelDays.keys.min()
+        modelCoverageStartDate = coverageStart
+        let firstModelSourceUsage = history.first { point in
+            modelSources.contains { (point.bySource[$0] ?? 0) > 0 }
+        }?.date
+        if let coverageStart, let firstModelSourceUsage {
+            modelCoverageIsPartial = firstModelSourceUsage < coverageStart
+        } else {
+            modelCoverageIsPartial = false
+        }
+
+        let monthlyFee = SubscriptionPlan.monthlyTotalUSD(subscriptionPlans)
+        if monthlyFee > 0, let coverageStart {
+            // 订阅费只摊到范围内有模型明细的自然日（含未使用的日子），
+            // 不拿金额没覆盖到的天去摊成本。
+            let start = max(rangeStartKey ?? coverageStart, coverageStart)
+            subscriptionValue = SubscriptionValueSummary(
+                monthlyFeeUSD: monthlyFee,
+                days: Self.dayCount(from: start, through: todayKey),
+                apiValueUSD: apiReferenceCost.total
+            )
+        } else {
+            subscriptionValue = nil
+        }
 
         trendGranularity = range.trendGranularity(
             historyDayCount: range == .all ? availableHistoryDays : history.count
@@ -332,6 +325,47 @@ struct OverviewSnapshot: Equatable {
         trend = computedTrend
         hourlyUnattributedSources = computedUnattributedSources
         trendTotal = computedTrend.reduce(0) { $0 + $1.tokens }
+    }
+
+    // 日期 → 来源 → 模型。采集器本次扫描的天整体覆盖留存明细（同一天
+    // 不会叠加两份），其余天取留存明细；晚于今天的日期一律忽略。
+    private static func mergedModelDays(
+        sources: [HistorySource],
+        live: [HistorySource: [String: [String: ModelTokenTally]]],
+        persisted: [ModelUsageDay],
+        todayKey: String
+    ) -> [String: [HistorySource: [String: ModelTokenTally]]] {
+        var result: [String: [HistorySource: [String: ModelTokenTally]]] = [:]
+        for day in persisted where day.date <= todayKey {
+            for source in sources {
+                guard let models = day.bySource[source].flatMap(ModelTokenTally.nonEmpty)
+                else { continue }
+                result[day.date, default: [:]][source] = models
+            }
+        }
+        for source in sources {
+            for (date, models) in live[source] ?? [:]
+            where date <= todayKey && ModelUsageHistoryStore.isDateKey(date) {
+                guard let kept = ModelTokenTally.nonEmpty(models) else { continue }
+                result[date, default: [:]][source] = kept
+            }
+        }
+        return result
+    }
+
+    // 固定范围的第一天；“全部”没有下界
+    private static func rangeStartKey(_ range: UsageHistoryRange, todayKey: String) -> String? {
+        guard let dayCount = range.fixedDayCount,
+              let today = DateUtil.date(from: todayKey) else { return nil }
+        return DateUtil.key(DateUtil.addDays(today, 1 - dayCount))
+    }
+
+    // 含首尾的自然日数
+    private static func dayCount(from start: String, through end: String) -> Int {
+        guard let first = DateUtil.date(from: start),
+              let last = DateUtil.date(from: end),
+              first <= last else { return 0 }
+        return (Calendar.current.dateComponents([.day], from: first, to: last).day ?? 0) + 1
     }
 
     private static func hourlyUsage(
@@ -489,96 +523,5 @@ struct OverviewSnapshot: Equatable {
             let key = DateUtil.key(start)
             return (key, Fmt.ym(key))
         }
-    }
-
-    private static func costSamples(
-        selection: OverviewSourceSelection,
-        claude: ClaudeUsageResult?,
-        codex: CodexUsageResult?,
-        kimi: KimiUsageResult?,
-        openCode: OpenCodeUsageResult?,
-        gemini: GeminiUsageResult?,
-        copilot: CopilotUsageResult?,
-        qwen: QwenCodeUsageResult?
-    ) -> [APICostSample] {
-        var samples: [APICostSample] = []
-        if selection.contains(.claude), let claude {
-            for model in claude.models {
-                samples.append(.init(model: model.model, tokens: .init(
-                    newInputTokens: model.inputTokens,
-                    cachedInputTokens: model.cacheReadTokens,
-                    cacheCreationTokens: model.cacheCreationTokens,
-                    outputTokens: model.outputTokens,
-                    reasoningOutputTokens: 0
-                )))
-            }
-        }
-        if selection.contains(.codex), let codex {
-            samples += codex.models.map { model in
-                .init(model: model.model, tokens: .init(
-                    newInputTokens: max(model.inputTokens - model.cachedInputTokens, 0),
-                    cachedInputTokens: model.cachedInputTokens,
-                    cacheCreationTokens: 0,
-                    outputTokens: model.outputTokens,
-                    reasoningOutputTokens: model.reasoningTokens
-                ))
-            }
-        }
-        if selection.contains(.kimi), let kimi {
-            samples += kimi.models.map { model in
-                .init(model: model.model, tokens: .init(
-                    newInputTokens: model.inputTokens,
-                    cachedInputTokens: model.cachedInputTokens,
-                    cacheCreationTokens: model.cacheCreationTokens,
-                    outputTokens: model.outputTokens,
-                    reasoningOutputTokens: 0
-                ))
-            }
-        }
-        if selection.contains(.opencode), let openCode {
-            samples += openCode.models.map { model in
-                .init(model: model.model, tokens: .init(
-                    newInputTokens: model.inputTokens,
-                    cachedInputTokens: model.cachedInputTokens,
-                    cacheCreationTokens: model.cacheWriteTokens,
-                    outputTokens: model.outputTokens,
-                    reasoningOutputTokens: model.reasoningTokens
-                ))
-            }
-        }
-        if selection.contains(.gemini), let gemini {
-            samples += gemini.models.map { model in
-                .init(model: model.model, tokens: .init(
-                    newInputTokens: model.inputTokens,
-                    cachedInputTokens: model.cachedInputTokens,
-                    cacheCreationTokens: 0,
-                    outputTokens: model.outputTokens,
-                    reasoningOutputTokens: model.reasoningTokens
-                ))
-            }
-        }
-        if selection.contains(.copilot), let copilot {
-            samples += copilot.models.map { model in
-                .init(model: model.model, tokens: .init(
-                    newInputTokens: model.inputTokens,
-                    cachedInputTokens: model.cachedInputTokens,
-                    cacheCreationTokens: model.cacheWriteTokens,
-                    outputTokens: max(model.outputTokens - model.reasoningTokens, 0),
-                    reasoningOutputTokens: model.reasoningTokens
-                ))
-            }
-        }
-        if selection.contains(.qwen), let qwen {
-            samples += qwen.models.map { model in
-                .init(model: model.model, tokens: .init(
-                    newInputTokens: model.inputTokens,
-                    cachedInputTokens: model.cachedInputTokens,
-                    cacheCreationTokens: 0,
-                    outputTokens: model.outputTokens,
-                    reasoningOutputTokens: model.reasoningTokens
-                ))
-            }
-        }
-        return samples
     }
 }

@@ -128,6 +128,26 @@ final class ConfigStore {
         static let quotaPaceAlert = "quotaPaceAlertEnabled"
         static let deepseekBalanceAlert = "deepseekBalanceAlertThreshold"
         static let overviewHistoryRange = "overviewHistoryRangeDays"
+        static let subscriptionPlans = "subscriptionPlans"
+    }
+
+    // 用户手填的订阅月费（见 SubscriptionPlan），JSON 存 UserDefaults；
+    // 读不出来按空列表处理，不影响其他设置。
+    var subscriptionPlans: [SubscriptionPlan] {
+        get {
+            guard let data = defaults.data(forKey: DKey.subscriptionPlans),
+                  let plans = try? JSONDecoder().decode([SubscriptionPlan].self, from: data)
+            else { return [] }
+            return plans
+        }
+        set {
+            guard !newValue.isEmpty else {
+                defaults.removeObject(forKey: DKey.subscriptionPlans)
+                return
+            }
+            guard let data = try? JSONEncoder().encode(newValue) else { return }
+            defaults.set(data, forKey: DKey.subscriptionPlans)
+        }
     }
 
     var overviewHistoryRangeDays: Int {

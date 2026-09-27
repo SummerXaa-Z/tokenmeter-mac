@@ -147,6 +147,91 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // API 等价 / 订阅回本 / 模型明细覆盖说明的合成数据页：本机数据未必同时
+    // 出现缺价模型、人民币价、订阅月费与各倍数分支，用公开模型名固定覆盖。
+    private static func costFixture() -> some View {
+        func tokens(
+            _ input: Int, cached: Int = 0, write: Int = 0, output: Int, reasoning: Int = 0
+        ) -> APITokenBreakdown {
+            APITokenBreakdown(
+                newInputTokens: input, cachedInputTokens: cached, cacheCreationTokens: write,
+                outputTokens: output, reasoningOutputTokens: reasoning)
+        }
+        func summary(_ samples: [APICostSample]) -> APIReferenceCostSummary {
+            APIReferenceCostSummary(
+                samples: samples, estimator: APIReferencePricingCatalog.estimator,
+                referenceDate: APIReferencePricingCatalog.observedAt,
+                conversionRates: APIReferencePricingCatalog.conversionRatesToUSD)
+        }
+        let full = summary([
+            .init(model: "gpt-5.4 (xhigh)",
+                  tokens: tokens(2_000_000, cached: 6_000_000, output: 400_000, reasoning: 200_000),
+                  usageDate: "2026-09-24", source: .codex),
+            .init(model: "opus-5-5",
+                  tokens: tokens(300_000, cached: 9_000_000, write: 800_000, output: 500_000),
+                  usageDate: "2026-09-24", source: .claude),
+            .init(model: "k3-agent", tokens: tokens(500_000, cached: 1_500_000, output: 120_000),
+                  usageDate: "2026-09-23", source: .kimi),
+            .init(model: "doubao-seed-evolving",
+                  tokens: tokens(400_000, cached: 1_000_000, output: 80_000),
+                  usageDate: "2026-09-23", source: .opencode),
+            .init(model: "preview-coder-x", tokens: tokens(600_000, output: 50_000),
+                  usageDate: "2026-09-22", source: .qwen),
+            .init(model: "gemini-exp-lab", tokens: tokens(200_000, output: 20_000),
+                  usageDate: "2026-09-22", source: .gemini),
+        ])
+        // 大部分用量缺价：覆盖条转橙色
+        let sparse = summary([
+            .init(model: "glm-5.3", tokens: tokens(1_000_000, output: 200_000),
+                  usageDate: "2026-09-20", source: .claude),
+            .init(model: "preview-coder-x", tokens: tokens(3_000_000, output: 300_000),
+                  usageDate: "2026-09-20", source: .qwen),
+        ])
+        let rankings = PersonalUsageRankings(
+            history: [], enabledSources: HistorySource.codingAgents,
+            modelSamples: [
+                .init(source: .claude, model: "opus-5-5", totalTokens: 10_600_000),
+                .init(source: .codex, model: "gpt-5.4 (xhigh)", totalTokens: 8_600_000),
+                .init(source: .kimi, model: "k3-agent", totalTokens: 2_120_000),
+                .init(source: .opencode, model: "doubao-seed-evolving", totalTokens: 1_480_000),
+                .init(source: .qwen, model: "preview-coder-x", totalTokens: 650_000),
+            ])
+        let skills = PersonalSkillRankings(
+            samples: [
+                .init(source: .claude, name: "frontend-design", invocationCount: 12),
+                .init(source: .codex, name: "frontend-design", invocationCount: 4),
+                .init(source: .copilot, name: "pdf", invocationCount: 3),
+            ],
+            enabledSources: HistorySource.codingAgents)
+        let note = OverviewSnapshot.modelCoverageNote(since: "2026-09-20")
+        return ScrollView {
+            VStack(spacing: 10) {
+                // 回本 ≥ 1 倍 + 覆盖说明
+                OverviewAPICostCard(
+                    summary: full, range: .week,
+                    subscriptionValue: SubscriptionValueSummary(
+                        monthlyFeeUSD: 120, days: 7, apiValueUSD: full.total),
+                    coverageNote: note)
+                // 回本 < 1 倍：提示按 API 付费更省
+                OverviewAPICostCard(
+                    summary: full, range: .week,
+                    subscriptionValue: SubscriptionValueSummary(
+                        monthlyFeeUSD: 400, days: 7, apiValueUSD: full.total))
+                // 未填订阅：引导去设置
+                OverviewAPICostCard(summary: sparse, range: .all)
+                OverviewRankingsCard(
+                    rankings: rankings, skillRankings: skills, range: .month, coverageNote: note)
+                Card {
+                    SubscriptionPlansEditor(plans: .constant([
+                        SubscriptionPlan(name: "Claude Max", monthlyFee: 100),
+                        SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY"),
+                    ]))
+                }
+            }
+            .padding(14)
+        }
+    }
+
     // 用法：TokenMeter --ui-render=<dir>。为每个页面在亮/暗两种外观下
     // 生成 <page>-<appearance>.png 后退出。窗口放在屏幕外，用户无感。
     private func runUIRender(outputPath: String) {
@@ -184,13 +269,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 OverviewView(
                     range: .month, sources: Provider.allCases,
                     onOpenSource: { _ in }, onSettings: {}),
-                height: 1600)),
+                height: 2200)),
             // 1D 档总览:hero 的"今日 vs 近 7 天日均"等只在 1D 出现
             ("overview-day-full", hosting(
                 OverviewView(
                     range: .day, sources: Provider.allCases,
                     onOpenSource: { _ in }, onSettings: {}),
-                height: 1600)),
+                height: 2200)),
             // 来源页整页高度导出:600pt 视口下滚动区折叠线以下的内容
             // (如历史环比卡)在普通页面渲染里永远看不到
             ("claude-full", hosting(
@@ -212,6 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 额度节奏/余额可用天数的合成数据页:本机未必有实时配额与平台消费,
             // 用固定快照覆盖"会提前用完 / 撑得到重置 / 余额偏低"各分支
             ("pace-fixture", hosting(Self.paceFixture(), height: 1100)),
+            ("cost-fixture", hosting(Self.costFixture(), height: 2000)),
         ]
 
         var windows: [NSWindow] = []

@@ -48,6 +48,8 @@ struct GeminiUsageResult: Equatable {
     let days: [GeminiDayUsage]
     let models: [GeminiModelUsage]
     let todayHours: [GeminiHourUsage]
+    // 日期 → 模型 → 互斥五类 Token，落盘为按天模型明细
+    var dayModels: [String: [String: ModelTokenTally]] = [:]
 
     var today: GeminiDayUsage? { days.last }
     var weekTotal: Int { days.reduce(0) { $0 + $1.totalTokens } }
@@ -155,6 +157,7 @@ enum GeminiUsage {
 
         var days: [String: GeminiDayUsage] = [:]
         var models: [String: GeminiModelUsage] = [:]
+        var dayModels: [String: [String: ModelTokenTally]] = [:]
         var sessionsByDay: [String: Set<String>] = [:]
         var todayHours: [Int: Int] = [:]
         let todayKey = localDayKey(now, calendar: calendar)
@@ -184,6 +187,9 @@ enum GeminiUsage {
                 model.reasoningTokens += message.reasoningTokens
                 model.messageCount += 1
                 models[message.model] = model
+                dayModels[dayKey, default: [:]][message.model, default: .init()] += ModelTokenTally(
+                    input: message.inputTokens, cached: message.cachedTokens,
+                    output: message.outputTokens, reasoning: message.reasoningTokens)
             }
         }
 
@@ -201,7 +207,8 @@ enum GeminiUsage {
         let hourRows = (0..<24).map {
             GeminiHourUsage(hour: $0, totalTokens: todayHours[$0] ?? 0)
         }
-        return GeminiUsageResult(days: dayRows, models: modelRows, todayHours: hourRows)
+        return GeminiUsageResult(days: dayRows, models: modelRows, todayHours: hourRows,
+                                 dayModels: dayModels.compactMapValues(ModelTokenTally.nonEmpty))
     }
 
     private static func sessionFiles(in root: URL, modifiedSince cutoff: Date) -> [URL] {

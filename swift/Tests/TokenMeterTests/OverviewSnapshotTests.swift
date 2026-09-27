@@ -127,7 +127,10 @@ final class OverviewSnapshotTests: XCTestCase {
             models: [model],
             todayHours: (0..<24).map {
                 QwenCodeHourUsage(hour: $0, totalTokens: $0 == 9 ? 120 : 0)
-            }
+            },
+            dayModels: ["2026-08-12": [
+                "qwen3-coder": .init(input: 40, cached: 50, output: 20, reasoning: 10),
+            ]]
         )
         let history = [HistoryStore.DayPoint(
             date: "2026-08-12", bySource: [.qwen: 120, .codex: 0], cost: 0
@@ -444,7 +447,10 @@ final class OverviewSnapshotTests: XCTestCase {
             }()],
             todayHours: (0..<24).map {
                 KimiHourUsage(hour: $0, totalTokens: $0 == 9 ? 370 : 0)
-            }
+            },
+            dayModels: ["2026-08-12": [
+                "k3-agent": .init(input: 100, cached: 200, cacheWrite: 30, output: 40),
+            ]]
         )
         let snapshot = OverviewSnapshot(
             selection: OverviewSourceSelection(sources: [.kimi]),
@@ -547,6 +553,127 @@ final class OverviewSnapshotTests: XCTestCase {
         XCTAssertNil(result["2026-08-12"])
     }
 
+    // MARK: - 模型维度跟随范围
+
+    func testModelDimensionsFollowRangeAndPreferLiveScanOverPersistedDetail() throws {
+        let history = try makeHistory(start: "2026-08-27", count: 30) { _ in [.codex: 1] }
+        let persisted = [
+            ModelUsageDay(date: "2026-09-01", bySource: [.codex: ["gpt-5.4": .init(output: 1_000_000)]]),
+            ModelUsageDay(date: "2026-09-20", bySource: [.codex: [
+                "gpt-5.4": .init(cached: 2_000_000, output: 100_000),
+            ]]),
+            // 本次扫描已覆盖这一天：留存的旧值不能叠加进来
+            ModelUsageDay(date: "2026-09-25", bySource: [.codex: ["gpt-5.4": .init(input: 5_000_000)]]),
+        ]
+        let codex = codexResult(dayModels: [
+            "2026-09-25": ["gpt-5.4 (xhigh)": .init(input: 1_000_000)],
+        ])
+        func snapshot(_ range: UsageHistoryRange) -> OverviewSnapshot {
+            OverviewSnapshot(
+                selection: OverviewSourceSelection(sources: [.codex]),
+                range: range, history: range.slice(history), streakHistory: history,
+                deepSeek: nil, claude: nil, codex: codex, openCode: nil, gemini: nil,
+                copilot: nil, cursor: nil, modelHistory: persisted, todayKey: "2026-09-25")
+        }
+
+        let day = snapshot(.day)
+        XCTAssertEqual(day.apiReferenceCost.totalTokens, 1_000_000)
+        XCTAssertEqual(day.apiReferenceCost.total, 2.5, accuracy: 1e-9)
+        XCTAssertEqual(day.rankings.models.map(\.model), ["gpt-5.4 (xhigh)"])
+
+        let week = snapshot(.week)
+        XCTAssertEqual(week.apiReferenceCost.totalTokens, 3_100_000)
+        XCTAssertEqual(week.apiReferenceCost.total, 4.5, accuracy: 1e-9)
+        // 推理强度只是展示后缀：金额按基础模型合并
+        XCTAssertEqual(week.apiReferenceCost.modelAmounts.map(\.model), ["gpt-5.4"])
+        XCTAssertEqual(week.apiReferenceCost.modelAmounts.first?.source, .codex)
+        XCTAssertEqual(week.rankings.models.map(\.model), ["gpt-5.4", "gpt-5.4 (xhigh)"])
+        XCTAssertEqual(week.profile.cachedInputTokens, 2_000_000)
+        XCTAssertEqual(try XCTUnwrap(week.profile.cacheHitRate), 2.0 / 3.0, accuracy: 1e-9)
+
+        let month = snapshot(.month)
+        XCTAssertEqual(month.apiReferenceCost.totalTokens, 4_100_000)
+        XCTAssertEqual(month.apiReferenceCost.total, 19.5, accuracy: 1e-9)
+        XCTAssertEqual(month.modelCoverageStartDate, "2026-09-01")
+    }
+
+    func testModelDimensionsIgnoreFutureDaysDeselectedSourcesAndCursor() {
+        let persisted = [
+            ModelUsageDay(date: "2026-09-25", bySource: [
+                .codex: ["gpt-5.4": .init(input: 10)],
+                .claude: ["opus-5-5": .init(input: 20)],
+                .cursor: ["auto": .init(input: 30)],
+            ]),
+            ModelUsageDay(date: "2026-09-26", bySource: [.codex: ["gpt-5.4": .init(input: 40)]]),
+        ]
+        let snapshot = OverviewSnapshot(
+            selection: OverviewSourceSelection(sources: [.codex, .cursor]),
+            range: .all, history: [], streakHistory: [],
+            deepSeek: nil, claude: nil, codex: nil, openCode: nil, gemini: nil,
+            copilot: nil, cursor: nil, modelHistory: persisted, todayKey: "2026-09-25")
+
+        XCTAssertEqual(snapshot.rankings.models.map(\.model), ["gpt-5.4"])
+        XCTAssertEqual(snapshot.apiReferenceCost.totalTokens, 10)
+        XCTAssertEqual(snapshot.modelCoverageStartDate, "2026-09-25")
+    }
+
+    func testCoverageNoteOnlyWhenToolUsageStartsBeforeModelDetail() throws {
+        let history = try makeHistory(start: "2026-08-27", count: 30) { index in
+            index >= 14 ? [.codex: 5] : [:]   // 工具用量自 09-10 起
+        }
+        let persisted = [
+            ModelUsageDay(date: "2026-09-20", bySource: [.codex: ["gpt-5.4": .init(input: 10)]]),
+        ]
+        func snapshot(_ range: UsageHistoryRange) -> OverviewSnapshot {
+            OverviewSnapshot(
+                selection: OverviewSourceSelection(sources: [.codex]),
+                range: range, history: range.slice(history), streakHistory: history,
+                deepSeek: nil, claude: nil, codex: nil, openCode: nil, gemini: nil,
+                copilot: nil, cursor: nil, modelHistory: persisted, todayKey: "2026-09-25")
+        }
+
+        let month = snapshot(.month)
+        XCTAssertTrue(month.modelCoverageIsPartial)
+        XCTAssertEqual(month.modelCoverageNote, "模型明细自 9/20 起按天留存，更早的用量只计入工具合计。")
+        XCTAssertTrue(snapshot(.all).modelCoverageIsPartial)
+        // 近 7 天从 09-19 起，09-19 有工具用量但没有模型明细
+        XCTAssertTrue(snapshot(.week).modelCoverageIsPartial)
+        XCTAssertFalse(snapshot(.day).modelCoverageIsPartial)
+        XCTAssertNil(snapshot(.day).modelCoverageNote)
+    }
+
+    func testSubscriptionValueProratesMonthlyFeesOverCoveredDaysOnly() throws {
+        let persisted = [
+            ModelUsageDay(date: "2026-09-20", bySource: [.codex: ["gpt-5.4": .init(output: 1_000_000)]]),
+        ]
+        let plans = [
+            SubscriptionPlan(name: "ChatGPT Pro", monthlyFee: 100),
+            SubscriptionPlan(name: "Kimi 会员", monthlyFee: 69, currency: "CNY"),
+            SubscriptionPlan(name: "未填金额"),
+        ]
+        func snapshot(_ range: UsageHistoryRange, plans: [SubscriptionPlan]) -> OverviewSnapshot {
+            OverviewSnapshot(
+                selection: OverviewSourceSelection(sources: [.codex]),
+                range: range, history: [], streakHistory: [],
+                deepSeek: nil, claude: nil, codex: nil, openCode: nil, gemini: nil,
+                copilot: nil, cursor: nil, modelHistory: persisted,
+                subscriptionPlans: plans, todayKey: "2026-09-25")
+        }
+
+        // 近 7 天从 09-19 起，但明细 09-20 才开始：只摊 09-20…09-25 这 6 天
+        let week = try XCTUnwrap(snapshot(.week, plans: plans).subscriptionValue)
+        XCTAssertEqual(week.monthlyFeeUSD, 110, accuracy: 1e-9)
+        XCTAssertEqual(week.days, 6)
+        XCTAssertEqual(week.apiValueUSD, 15, accuracy: 1e-9)
+        XCTAssertEqual(week.proratedFeeUSD, 110 * 12 / 365 * 6, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(week.multiple), 15 / (110 * 12 / 365 * 6), accuracy: 1e-9)
+
+        XCTAssertEqual(snapshot(.day, plans: plans).subscriptionValue?.days, 1)
+        XCTAssertEqual(snapshot(.day, plans: plans).subscriptionValue?.apiValueUSD, 0)
+        XCTAssertNil(snapshot(.week, plans: []).subscriptionValue)
+        XCTAssertNil(snapshot(.week, plans: [SubscriptionPlan(name: "免费", monthlyFee: 0)]).subscriptionValue)
+    }
+
     private var claudeResult: ClaudeUsageResult {
         var day = ClaudeDayUsage(date: "2026-08-12")
         day.inputTokens = 100
@@ -594,6 +721,12 @@ final class OverviewSnapshotTests: XCTestCase {
             ],
             skills: [CodexSkillUsage(name: "shared-skill", invocationCount: 3)]
         )
+    }
+
+    private func codexResult(dayModels: [String: [String: ModelTokenTally]]) -> CodexUsageResult {
+        CodexUsageResult(
+            rateLimits: nil, allRateLimits: [], days: [], models: [], projects: [],
+            todayHours: [], skills: [], dayModels: dayModels)
     }
 
     private func makeHistory(

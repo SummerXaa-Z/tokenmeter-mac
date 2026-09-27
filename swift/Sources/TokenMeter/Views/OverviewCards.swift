@@ -592,7 +592,7 @@ struct OverviewProfileCard: View {
                 Divider()
                 if let rate = profile.cacheHitRate {
                     HStack {
-                        Text("近 7 天输入缓存复用")
+                        Text("\(range.scopeTitle)输入缓存复用")
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                         Spacer()
                         Text("\(Int((rate * 100).rounded()))%")
@@ -600,10 +600,10 @@ struct OverviewProfileCard: View {
                             .foregroundStyle(Theme.hit)
                     }
                     QuotaBar(progress: rate, tint: Theme.hit)
-                    Text("缓存读取 \(Fmt.tokensShort(profile.cachedInputTokens)) · 非缓存输入 \(Fmt.tokensShort(profile.nonCachedInputTokens)) · 当前统计 Claude / Codex / Kimi Code / OpenCode / Gemini / Copilot")
+                    Text("缓存读取 \(Fmt.tokensShort(profile.cachedInputTokens)) · 非缓存输入 \(Fmt.tokensShort(profile.nonCachedInputTokens)) · 按模型明细统计，不含 Cursor")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
                 } else {
-                    Text("刷新本地来源后生成近 7 天缓存画像；数据只保存在本机。")
+                    Text("\(range.scopeTitle)暂无输入缓存明细；刷新本地来源后生成，数据只保存在本机。")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
@@ -631,6 +631,8 @@ struct OverviewProfileCard: View {
 struct OverviewRankingsCard: View {
     let rankings: PersonalUsageRankings
     let skillRankings: PersonalSkillRankings
+    let range: UsageHistoryRange
+    var coverageNote: String? = nil
 
     var body: some View {
         Card {
@@ -638,7 +640,7 @@ struct OverviewRankingsCard: View {
                 Label("模型与 Skills", systemImage: "list.number")
                     .font(.system(size: 12, weight: .semibold))
 
-                header("模型榜", detail: "近 7 天 · 工具与模型分开统计")
+                header("模型榜", detail: "\(range.scopeTitle) · 工具与模型分开统计")
                 if rankings.models.isEmpty {
                     empty("刷新任一本地用量来源后生成")
                 } else {
@@ -655,8 +657,12 @@ struct OverviewRankingsCard: View {
                     }
                 }
 
-                Text("模型榜保留采集来源；Cursor 当前只有订阅周期聚合，暂不混入 7 天模型榜。")
+                Text("模型榜保留采集来源；Cursor 当前只有订阅周期聚合，暂不混入模型榜。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
+                if let coverageNote {
+                    Text(coverageNote)
+                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                }
 
                 Divider()
                 header("Skills 榜", detail: "近 7 天 · 只认明确调用证据")
@@ -749,13 +755,16 @@ struct OverviewRankingsCard: View {
 
 struct OverviewAPICostCard: View {
     let summary: APIReferenceCostSummary
+    let range: UsageHistoryRange
+    var subscriptionValue: SubscriptionValueSummary? = nil
+    var coverageNote: String? = nil
 
     var body: some View {
         let coverage = summary.coverage ?? 0
         Card {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Label("近 7 天 API 等价参考", systemImage: "dollarsign.circle")
+                    Label("\(range.scopeTitle) API 等价参考", systemImage: "dollarsign.circle")
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
                     Text(summary.amounts.isEmpty ? "暂无参考价" : Fmt.usd(summary.total))
@@ -770,18 +779,104 @@ struct OverviewAPICostCard: View {
                         .foregroundStyle(.secondary)
                 }
                 QuotaBar(progress: coverage, tint: coverage >= 0.95 ? Theme.hit : .orange)
-                if !summary.unpricedModels.isEmpty {
-                    Text("另有 \(summary.unpricedModels.count) 个模型缺少参考价，未计入金额。")
+
+                if !topAmounts.isEmpty {
+                    ForEach(Array(topAmounts.enumerated()), id: \.element.id) { index, amount in
+                        amountRow(rank: index + 1, amount: amount)
+                    }
+                }
+                if let unpricedText {
+                    Text(unpricedText)
                         .font(.system(size: 11)).foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if let conversionNote {
                     Text(conversionNote)
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
+
+                Divider()
+                subscriptionSection
+
                 Text(pricingPolicyText)
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let coverageNote {
+                    Text(coverageNote)
+                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                }
             }
         }
+    }
+
+    private var topAmounts: [APIReferenceCostSummary.ModelAmount] {
+        Array(summary.modelAmounts.prefix(3))
+    }
+
+    private func amountRow(rank: Int, amount: APIReferenceCostSummary.ModelAmount) -> some View {
+        let share = summary.total > 0 ? amount.total / summary.total : 0
+        return HStack(spacing: 7) {
+            Text("\(rank)")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(Theme.brand)
+                .frame(width: 14)
+            Circle()
+                .fill(amount.source?.overviewColor ?? Theme.brand)
+                .frame(width: 6, height: 6)
+            Text(amount.model).font(.system(size: 11, weight: .medium)).lineLimit(1)
+            if let source = amount.source {
+                Text(source.overviewName)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(source.overviewColor)
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(source.overviewColor.opacity(0.1), in: Capsule())
+            }
+            Spacer(minLength: 4)
+            Text("\(Fmt.usd(amount.total)) · \(Int((share * 100).rounded()))%")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var subscriptionSection: some View {
+        if let value = subscriptionValue {
+            HStack {
+                Text("订阅回本").font(.system(size: 11, weight: .semibold))
+                Spacer()
+                Text(value.multiple.map(Self.multipleText) ?? "—")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Theme.brand)
+            }
+            Text(subscriptionDetail(value))
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text("在「设置 → 订阅与费用」填写月费后，这里显示 API 等价是订阅费的几倍。")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func subscriptionDetail(_ value: SubscriptionValueSummary) -> String {
+        var text = "订阅月费 \(Fmt.usd(value.monthlyFeeUSD)) · 按 \(value.days) 天折算 \(Fmt.usd(value.proratedFeeUSD))"
+        if let multiple = value.multiple, multiple < 1 {
+            text += "；低于 1 倍表示按 API 用量付费会更省。"
+        }
+        return text
+    }
+
+    static func multipleText(_ multiple: Double) -> String {
+        if multiple >= 10 { return String(format: "约 %.0f 倍", multiple) }
+        return String(format: "约 %.1f 倍", multiple)
+    }
+
+    private var unpricedText: String? {
+        let names = summary.unpricedModels
+        guard !names.isEmpty else { return nil }
+        let listed = names.prefix(3).joined(separator: "、")
+        let suffix = names.count > 3 ? " 等" : ""
+        return "另有 \(names.count) 个模型缺少参考价，未计入金额：\(listed)\(suffix)"
     }
 
     private var conversionNote: String? {
@@ -801,7 +896,7 @@ struct OverviewAPICostCard: View {
         if summary.sourceLabels.isEmpty {
             sourceText = "价格规则为 OpenRouter 优先，缺价时采用模型官方公开价"
         } else {
-            sourceText = "按 \(summary.sourceLabels.joined(separator: " + ")) \(APIReferencePricingCatalog.observedAt) 价格快照重算"
+            sourceText = "按用量当日生效的 \(summary.sourceLabels.joined(separator: " + ")) 价格快照重算（最近核对 \(APIReferencePricingCatalog.observedAt)）"
         }
         return "\(sourceText)。仅表示 API 等价成本，不是订阅费、平台账单或历史成交价；运行时不联网。"
     }

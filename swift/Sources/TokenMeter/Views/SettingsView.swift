@@ -23,6 +23,7 @@ struct SettingsView: View {
     @State private var notificationsOn = true
     @State private var quotaPaceAlertOn = true
     @State private var balanceAlert = 0
+    @State private var subscriptionPlans: [SubscriptionPlan] = []
     @State private var diagnosticStatus = ""
     @State private var usageExportStatus = ""
     // 连接行的展开态：未配置的默认展开引导输入，已配置的收起成一行；
@@ -53,6 +54,9 @@ struct SettingsView: View {
 
                     sectionTitle("平台账户与额度")
                     accountsSection
+
+                    sectionTitle("订阅与费用")
+                    subscriptionsSection
 
                     sectionTitle("菜单栏与提醒")
                     displayAndAlertsSection
@@ -583,6 +587,17 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - 订阅与费用
+
+    private var subscriptionsSection: some View {
+        Card {
+            SubscriptionPlansEditor(plans: $subscriptionPlans)
+        }
+        .onChange(of: subscriptionPlans) { _, plans in
+            store.subscriptionPlans = plans
+        }
+    }
+
     // MARK: - 刷新与启动
 
     private var runtimeSection: some View {
@@ -658,7 +673,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 7) {
                     Label("用量导出", systemImage: "square.and.arrow.up")
                         .font(.system(size: 12, weight: .semibold))
-                    Text("按天导出本机已积累的全部来源 Token 与平台费用（CSV，纯本地生成）。")
+                    Text("按天导出本机已积累的全部来源 Token、平台费用与 API 等价（CSV，纯本地生成）。")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                     HStack {
                         Button("导出用量 CSV") { exportUsageCSV() }
@@ -738,7 +753,8 @@ struct SettingsView: View {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try UsageCSVExport.makeCSV(HistoryStore.all()).write(
+            let apiValues = UsageCSVExport.apiValueByDate(ModelUsageHistoryStore.shared.all())
+            try UsageCSVExport.makeCSV(HistoryStore.all(), apiValueByDate: apiValues).write(
                 to: url, atomically: true, encoding: .utf8)
             usageExportStatus = "已导出：\(url.lastPathComponent)"
         } catch {
@@ -789,6 +805,7 @@ struct SettingsView: View {
         notificationsOn = store.notificationsEnabled
         quotaPaceAlertOn = store.quotaPaceAlertEnabled
         balanceAlert = store.deepseekBalanceAlertThreshold
+        subscriptionPlans = store.subscriptionPlans
     }
 
     private func saveApiKey() {

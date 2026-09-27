@@ -54,6 +54,8 @@ struct OpenCodeUsageResult: Equatable {
     let days: [OpenCodeDayUsage]
     let models: [OpenCodeModelUsage]
     let todayHours: [OpenCodeHourUsage]
+    // 日期 → 模型 → 互斥五类 Token，落盘为按天模型明细
+    var dayModels: [String: [String: ModelTokenTally]] = [:]
 
     var today: OpenCodeDayUsage? { days.last }
     var weekTotal: Int { days.reduce(0) { $0 + $1.totalTokens } }
@@ -180,6 +182,7 @@ enum OpenCodeUsage {
 
         var days: [String: OpenCodeDayUsage] = [:]
         var models: [String: OpenCodeModelUsage] = [:]
+        var dayModels: [String: [String: ModelTokenTally]] = [:]
         var sessionsByDay: [String: Set<String>] = [:]
         var todayHours: [Int: Int] = [:]
         let todayKey = localDayKey(now, calendar: calendar)
@@ -232,6 +235,9 @@ enum OpenCodeUsage {
             model.messageCount += 1
             model.cost += cost
             models[modelName] = model
+            dayModels[dayKey, default: [:]][modelName, default: .init()] += ModelTokenTally(
+                input: input, cached: cacheRead, cacheWrite: cacheWrite,
+                output: output, reasoning: reasoning)
         }
 
         let dayRows = (0..<7).map { index -> OpenCodeDayUsage in
@@ -248,7 +254,8 @@ enum OpenCodeUsage {
         let hourRows = (0..<24).map {
             OpenCodeHourUsage(hour: $0, totalTokens: todayHours[$0] ?? 0)
         }
-        return OpenCodeUsageResult(days: dayRows, models: modelRows, todayHours: hourRows)
+        return OpenCodeUsageResult(days: dayRows, models: modelRows, todayHours: hourRows,
+                                   dayModels: dayModels.compactMapValues(ModelTokenTally.nonEmpty))
     }
 
     private static func text(_ stmt: OpaquePointer, _ column: Int32) -> String? {

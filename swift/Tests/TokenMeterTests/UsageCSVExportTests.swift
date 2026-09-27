@@ -11,7 +11,9 @@ final class UsageCSVExportTests: XCTestCase {
     }
 
     private func parseRows(_ csv: String) -> [[String]] {
-        csv.split(separator: "\n").map { $0.split(separator: ",").map(String.init) }
+        csv.split(separator: "\n").map {
+            $0.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+        }
     }
 
     func testHeaderListsCodingSourcesThenPlatformColumns() {
@@ -19,7 +21,7 @@ final class UsageCSVExportTests: XCTestCase {
         XCTAssertEqual(rows, [[
             "日期", "Claude", "Codex", "Kimi", "OpenCode", "Gemini",
             "Copilot", "Qwen Code", "Cursor", "Coding 合计",
-            "DeepSeek 平台", "平台费用(USD)",
+            "DeepSeek 平台", "平台费用(USD)", "API 等价(USD)",
         ]])
     }
 
@@ -45,6 +47,26 @@ final class UsageCSVExportTests: XCTestCase {
         XCTAssertEqual(rows[2][9], "100")
         XCTAssertEqual(rows[2][10], "40")
         XCTAssertEqual(rows[2][11], "1.50")
+    }
+
+    func testAPIValueColumnFillsOnlyDaysWithPricedModelDetail() {
+        let values = UsageCSVExport.apiValueByDate([
+            ModelUsageDay(date: "2026-09-24", bySource: [
+                .codex: ["gpt-5.4": .init(output: 1_000_000)],
+                .claude: ["opus-5-5": .init(input: 1_000_000)],
+            ]),
+            ModelUsageDay(date: "2026-09-25", bySource: [.qwen: ["private-model": .init(input: 5)]]),
+        ])
+        XCTAssertEqual(values.count, 1)
+        XCTAssertEqual(values["2026-09-24"] ?? 0, 19, accuracy: 1e-9)
+
+        let rows = parseRows(UsageCSVExport.makeCSV([
+            day("2026-09-24", bySource: [.codex: 1]),
+            day("2026-09-25", bySource: [.qwen: 5]),
+        ], apiValueByDate: values))
+        XCTAssertEqual(rows.map(\.count), [13, 13, 13])
+        XCTAssertEqual(rows[1][12], "19.00")
+        XCTAssertEqual(rows[2][12], "")          // 全部缺价：留空而不是 0
     }
 
     func testEndsWithNewline() {

@@ -205,7 +205,7 @@ final class APICostEstimatorTests: XCTestCase {
         ))
         let k26 = try XCTUnwrap(APIReferencePricingCatalog.estimator.estimate(
             model: "k2d6-agent",
-            usageDate: APIReferencePricingCatalog.observedAt,
+            usageDate: APIReferencePricingCatalog.firstObservedAt,
             tokens: .init(
                 newInputTokens: 1_000_000,
                 cachedInputTokens: 0,
@@ -262,7 +262,7 @@ final class APICostEstimatorTests: XCTestCase {
                 ),
             ],
             estimator: APIReferencePricingCatalog.estimator,
-            referenceDate: APIReferencePricingCatalog.observedAt,
+            referenceDate: APIReferencePricingCatalog.firstObservedAt,
             conversionRates: APIReferencePricingCatalog.conversionRatesToUSD
         )
 
@@ -382,5 +382,116 @@ final class APICostEstimatorTests: XCTestCase {
         XCTAssertEqual(summary.amounts, [])
         XCTAssertEqual(summary.matchedTokens, 0)
         XCTAssertEqual(summary.unpricedModels, ["unknown-model"])
+    }
+
+    // MARK: - 价格目录刷新（2026-09-25）
+
+    private func million(
+        input: Int = 0, cached: Int = 0, cacheWrite: Int = 0, output: Int = 0, reasoning: Int = 0
+    ) -> APITokenBreakdown {
+        .init(newInputTokens: input * 1_000_000, cachedInputTokens: cached * 1_000_000,
+              cacheCreationTokens: cacheWrite * 1_000_000, outputTokens: output * 1_000_000,
+              reasoningOutputTokens: reasoning * 1_000_000)
+    }
+
+    private func catalogTotal(_ model: String, on date: String, _ tokens: APITokenBreakdown) -> Double? {
+        APIReferencePricingCatalog.estimator.estimate(model: model, usageDate: date, tokens: tokens)?.total
+    }
+
+    func testRepricedModelsKeepTheOldPriceBeforeTheObservationDay() throws {
+        let tokens = million(input: 1, output: 1)
+        XCTAssertEqual(try XCTUnwrap(catalogTotal("gpt-5.6-sol", on: "2026-09-24", tokens)), 35, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(catalogTotal("gpt-5.6-sol", on: "2026-09-25", tokens)), 12, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(catalogTotal("gpt-5.6-terra", on: "2026-09-25", tokens)), 14, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(catalogTotal("k2d6-agent", on: "2026-09-25", tokens)), 4.95, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(catalogTotal("V4 Flash", on: "2026-09-24", tokens)), 0.42, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(catalogTotal("V4 Flash", on: "2026-09-25", tokens)), 0.147, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(catalogTotal("V4 Pro", on: "2026-09-25", tokens)), 2.349, accuracy: 1e-9)
+    }
+
+    func testLocalClaudeCodeModelIdsResolveToTheRefreshedCatalog() throws {
+        let tokens = million(input: 1, cached: 1, cacheWrite: 1, output: 1)
+        // ClaudeUsage.displayModel 去掉 claude- 前缀后是 opus-5-5
+        XCTAssertEqual(try XCTUnwrap(catalogTotal("opus-5-5", on: "2026-09-25", tokens)), 29.2, accuracy: 1e-9)
+        XCTAssertNotNil(catalogTotal("claude-opus-5-5", on: "2026-09-25", tokens))
+        XCTAssertNotNil(catalogTotal("claude-opus-5.5", on: "2026-09-25", tokens))
+        // 未单列 cache write 价的 GLM 按普通输入计缓存创建
+        XCTAssertEqual(try XCTUnwrap(catalogTotal("glm-5.3", on: "2026-09-19", tokens)), 7.46, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(catalogTotal("GLM-5.3-Flash", on: "2026-09-19", tokens)), 0.24, accuracy: 1e-9)
+        XCTAssertNotNil(catalogTotal("fable-5-1", on: "2026-09-25", tokens))
+        XCTAssertNotNil(catalogTotal("qwen3-coder", on: "2026-09-25", tokens))
+        XCTAssertNotNil(catalogTotal("gemini-3.8-flash", on: "2026-09-25", tokens))
+    }
+
+    func testNewlyListedModelsStayUnpricedBeforeTheirListingDate() {
+        let tokens = million(input: 1)
+        XCTAssertNil(catalogTotal("opus-5-5", on: "2026-09-21", tokens))
+        XCTAssertNotNil(catalogTotal("opus-5-5", on: "2026-09-22", tokens))
+        XCTAssertNil(catalogTotal("glm-5.3", on: "2026-08-17", tokens))
+        XCTAssertNotNil(catalogTotal("glm-5.3", on: "2026-08-18", tokens))
+        XCTAssertNil(catalogTotal("glm-5.3-flash", on: "2026-08-25", tokens))
+        // 已收录的老模型在首个观测日前也不外推
+        XCTAssertNil(catalogTotal("glm-4.6", on: "2026-08-11", tokens))
+    }
+
+    func testGeminiReasoningUsesItsOwnListedRate() throws {
+        let estimate = try XCTUnwrap(APIReferencePricingCatalog.estimator.estimate(
+            model: "gemini-3.8-flash", usageDate: "2026-09-25", tokens: million(reasoning: 2)))
+        XCTAssertEqual(estimate.components.reasoningOutput, 7.5, accuracy: 1e-9)
+        XCTAssertEqual(estimate.components.output, 0)
+    }
+
+    func testSummaryPricesEachSampleOnItsOwnUsageDateAndGroupsByModel() throws {
+        let summary = APIReferenceCostSummary(
+            samples: [
+                .init(model: "gpt-5.6-sol (xhigh)", tokens: million(input: 1),
+                      usageDate: "2026-09-24", source: .codex),
+                .init(model: "GPT-5.6-sol", tokens: million(input: 1),
+                      usageDate: "2026-09-25", source: .codex),
+                .init(model: "gpt-5.6-sol", tokens: million(input: 1),
+                      usageDate: "2026-09-25", source: .opencode),
+                .init(model: "private-model (high)", tokens: million(input: 1),
+                      usageDate: "2026-09-25", source: .codex),
+                .init(model: "Private-Model", tokens: million(input: 1),
+                      usageDate: "2026-09-25", source: .qwen),
+            ],
+            estimator: APIReferencePricingCatalog.estimator,
+            referenceDate: APIReferencePricingCatalog.observedAt,
+            conversionRates: APIReferencePricingCatalog.conversionRatesToUSD
+        )
+
+        XCTAssertEqual(summary.total, 5 + 2 + 2, accuracy: 1e-9)
+        XCTAssertEqual(summary.matchedTokens, 3_000_000)
+        XCTAssertEqual(summary.totalTokens, 5_000_000)
+        XCTAssertEqual(summary.unpricedModels, ["private-model"])
+        XCTAssertEqual(summary.modelAmounts.map(\.source), [.codex, .opencode])
+        let codex = try XCTUnwrap(summary.modelAmounts.first)
+        XCTAssertEqual(codex.model, "gpt-5.6-sol")
+        XCTAssertEqual(codex.total, 7, accuracy: 1e-9)
+        XCTAssertEqual(codex.tokens, 2_000_000)
+    }
+
+    func testModelAmountsConvertCurrencyAndSkipAmountsWithoutRate() throws {
+        let samples: [APICostSample] = [
+            .init(model: "agent-plan/doubao-seed-evolving", tokens: million(input: 1), source: .kimi),
+        ]
+        let converted = APIReferenceCostSummary(
+            samples: samples, estimator: APIReferencePricingCatalog.estimator,
+            referenceDate: APIReferencePricingCatalog.observedAt,
+            conversionRates: APIReferencePricingCatalog.conversionRatesToUSD)
+        XCTAssertEqual(try XCTUnwrap(converted.modelAmounts.first).total, 6 / 6.9, accuracy: 1e-9)
+
+        let noRate = APIReferenceCostSummary(
+            samples: samples, estimator: APIReferencePricingCatalog.estimator,
+            referenceDate: APIReferencePricingCatalog.observedAt)
+        XCTAssertEqual(noRate.modelAmounts, [])
+        XCTAssertEqual(noRate.amounts, [.init(currency: "CNY", total: 6)])
+        XCTAssertEqual(noRate.total, 0)
+    }
+
+    func testBaseModelStripsEffortButKeepsCase() {
+        XCTAssertEqual(APICostEstimator.baseModel("  GPT-5.6-Sol (xhigh) "), "GPT-5.6-Sol")
+        XCTAssertEqual(APICostEstimator.canonicalModel("  GPT-5.6-Sol (xhigh) "), "gpt-5.6-sol")
+        XCTAssertEqual(APICostEstimator.baseModel("model(x)"), "model(x)")
     }
 }

@@ -55,6 +55,8 @@ struct KimiUsageResult: Equatable {
     let days: [KimiDayUsage]
     let models: [KimiModelUsage]
     let todayHours: [KimiHourUsage]
+    // 日期 → 模型 → 互斥五类 Token，落盘为按天模型明细
+    var dayModels: [String: [String: ModelTokenTally]] = [:]
 
     var today: KimiDayUsage? { days.last }
     var weekTotal: Int { days.reduce(0) { kimiSaturatedAdd($0, $1.totalTokens) } }
@@ -245,6 +247,7 @@ enum KimiUsage {
 
         var days: [String: KimiDayUsage] = [:]
         var models: [String: KimiModelUsage] = [:]
+        var dayModels: [String: [String: ModelTokenTally]] = [:]
         var sessionsByDay: [String: Set<String>] = [:]
         var todayHours: [Int: Int] = [:]
         let todayKey = localDayKey(now, calendar: calendar)
@@ -282,6 +285,9 @@ enum KimiUsage {
                     model.outputTokens = kimiSaturatedAdd(model.outputTokens, record.output)
                     model.messageCount = kimiSaturatedAdd(model.messageCount, 1)
                     models[record.model] = model
+                    dayModels[dayKey, default: [:]][record.model, default: .init()] += ModelTokenTally(
+                        input: record.input, cached: record.cached,
+                        cacheWrite: record.cacheCreation, output: record.output)
                 }
             }
         }
@@ -300,7 +306,8 @@ enum KimiUsage {
         let hourRows = (0..<24).map {
             KimiHourUsage(hour: $0, totalTokens: todayHours[$0] ?? 0)
         }
-        return KimiUsageResult(days: dayRows, models: modelRows, todayHours: hourRows)
+        return KimiUsageResult(days: dayRows, models: modelRows, todayHours: hourRows,
+                               dayModels: dayModels.compactMapValues(ModelTokenTally.nonEmpty))
     }
 
     // MARK: - 路径发现

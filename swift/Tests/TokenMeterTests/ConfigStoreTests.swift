@@ -232,6 +232,28 @@ final class ConfigStoreTests: XCTestCase {
         XCTAssertEqual(ConfigStore(defaults: defaults).zhipuQuotaDomain, .china)
     }
 
+    func testSubscriptionPlansRoundTripAndTolerateCorruptData() throws {
+        let suiteName = "TokenMeterTests.ConfigStore.Subscriptions.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = ConfigStore(defaults: defaults)
+        XCTAssertEqual(store.subscriptionPlans, [])
+
+        let plans = [
+            SubscriptionPlan(name: "Claude Max", monthlyFee: 100),
+            SubscriptionPlan(name: "Kimi 会员", monthlyFee: 69, currency: "CNY"),
+        ]
+        store.subscriptionPlans = plans
+        XCTAssertEqual(ConfigStore(defaults: defaults).subscriptionPlans, plans)
+
+        store.subscriptionPlans = []
+        XCTAssertNil(defaults.object(forKey: "subscriptionPlans"))
+
+        defaults.set(Data("not json".utf8), forKey: "subscriptionPlans")
+        XCTAssertEqual(ConfigStore(defaults: defaults).subscriptionPlans, [])
+    }
+
     private func makeCredentialStore(
         get: @escaping (SecretSlot) -> String? = { _ in nil },
         set: @escaping (String, SecretSlot) -> OSStatus = { _, _ in errSecSuccess },

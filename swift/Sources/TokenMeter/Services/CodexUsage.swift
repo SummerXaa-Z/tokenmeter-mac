@@ -76,6 +76,8 @@ struct CodexUsageResult: Equatable {
     let projects: [CodexProjectUsage] // 7 天窗口按项目聚合，按量降序
     let todayHours: [CodexHourUsage]  // 今日 24 小时分布
     let skills: [CodexSkillUsage]     // 近 7 天实际读取 SKILL.md 的工具调用
+    // 日期 → 模型 → 互斥五类 Token（已从 input 扣缓存、从 output 扣 reasoning）
+    var dayModels: [String: [String: ModelTokenTally]] = [:]
     var today: CodexDayUsage? { days.last }
     var weekTotal: Int { days.reduce(0) { $0 + $1.totalTokens } }
     var weekSessions: Int { days.reduce(0) { $0 + $1.sessionCount } }
@@ -211,6 +213,7 @@ enum CodexUsage {
 
         var limitsByChannel: [String: CodexRateLimits] = [:]
         var modelMap: [String: CodexModelUsage] = [:]
+        var dayModels: [String: [String: ModelTokenTally]] = [:]
         var projectMap: [String: CodexProjectUsage] = [:]
         var skillMap: [String: Int] = [:]
         var hourMap: [Int: Int] = [:]
@@ -260,6 +263,11 @@ enum CodexUsage {
                     m.outputTokens += tokens.output
                     m.reasoningTokens += tokens.reasoning
                     modelMap[model] = m
+                    // Codex 的 input 含缓存、output 含 reasoning，换成互斥口径
+                    dayModels[date, default: [:]][model, default: .init()] += ModelTokenTally(
+                        input: max(tokens.input - tokens.cached, 0), cached: tokens.cached,
+                        output: max(tokens.output - tokens.reasoning, 0),
+                        reasoning: tokens.reasoning)
                 }
             }
             let proj = summary.project ?? "(其他)"
@@ -290,7 +298,8 @@ enum CodexUsage {
         }
         return CodexUsageResult(rateLimits: channels.first, allRateLimits: channels, days: days,
                                 models: models, projects: projects, todayHours: todayHours,
-                                skills: skills)
+                                skills: skills,
+                                dayModels: dayModels.compactMapValues(ModelTokenTally.nonEmpty))
     }
 
     // MARK: - 单文件流式扫描（带缓存）

@@ -340,6 +340,8 @@ final class AppState: ObservableObject {
             // token 仍属于 Claude 工具用量。DeepSeek 平台账户是独立账户口径，
             // 不得用它与 Claude 模型子集做跨源扣减。
             HistoryStore.reconcile(.claude, authoritativeDays: Self.claudeHistoryDays(from: r))
+            recordModelHistory(.claude, windowDates: r.days.map(\.date),
+                               dayModels: r.dayModels, authoritative: true)
             historyRevision &+= 1
 
             guard claudeRefresh.finish() else { break }
@@ -348,6 +350,19 @@ final class AppState: ObservableObject {
                 break
             }
         }
+    }
+
+    // 按天模型明细与 HistoryStore 同口径落盘：权威重扫的来源（与
+    // HistoryStore.reconcile 对应）会删除窗口内已确认无用量的天。
+    private func recordModelHistory(
+        _ source: HistorySource,
+        windowDates: [String],
+        dayModels: [String: [String: ModelTokenTally]],
+        authoritative: Bool
+    ) {
+        ModelUsageHistoryStore.shared.write(
+            source, windowDates: windowDates, days: dayModels,
+            deletesEmptyDays: authoritative)
     }
 
     nonisolated static func claudeHistoryDays(
@@ -382,13 +397,15 @@ final class AppState: ObservableObject {
                 r = CodexUsageResult(rateLimits: liveLimits.first, allRateLimits: liveLimits,
                                      days: r.days, models: r.models,
                                      projects: r.projects, todayHours: r.todayHours,
-                                     skills: r.skills)
+                                     skills: r.skills, dayModels: r.dayModels)
             }
             codex.result = r
             codex.loadedAt = Date()
             HistoryStore.record(.codex, days: r.days.map {
                 (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
             })
+            recordModelHistory(.codex, windowDates: r.days.map(\.date),
+                               dayModels: r.dayModels, authoritative: false)
             historyRevision &+= 1
 
             guard codexRefresh.finish() else { break }
@@ -424,6 +441,8 @@ final class AppState: ObservableObject {
                 HistoryStore.reconcile(.kimi, authoritativeDays: result.days.map {
                     (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
                 })
+                recordModelHistory(.kimi, windowDates: result.days.map(\.date),
+                                   dayModels: result.dayModels, authoritative: true)
                 historyRevision &+= 1
             } catch {
                 kimi.result = nil
@@ -464,6 +483,8 @@ final class AppState: ObservableObject {
                 HistoryStore.record(.opencode, days: result.days.map {
                     (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
                 })
+                recordModelHistory(.opencode, windowDates: result.days.map(\.date),
+                                   dayModels: result.dayModels, authoritative: false)
                 historyRevision &+= 1
             } catch {
                 opencode.result = nil
@@ -504,6 +525,8 @@ final class AppState: ObservableObject {
                 HistoryStore.record(.gemini, days: result.days.map {
                     (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
                 })
+                recordModelHistory(.gemini, windowDates: result.days.map(\.date),
+                                   dayModels: result.dayModels, authoritative: false)
                 historyRevision &+= 1
             } catch {
                 gemini.result = nil
@@ -544,6 +567,8 @@ final class AppState: ObservableObject {
                 HistoryStore.record(.copilot, days: result.days.map {
                     (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
                 })
+                recordModelHistory(.copilot, windowDates: result.days.map(\.date),
+                                   dayModels: result.dayModels, authoritative: false)
                 historyRevision &+= 1
             } catch {
                 copilot.result = nil
@@ -584,6 +609,8 @@ final class AppState: ObservableObject {
                 HistoryStore.reconcile(.qwen, authoritativeDays: result.days.map {
                     (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
                 })
+                recordModelHistory(.qwen, windowDates: result.days.map(\.date),
+                                   dayModels: result.dayModels, authoritative: true)
                 historyRevision &+= 1
             } catch {
                 qwen.result = nil
