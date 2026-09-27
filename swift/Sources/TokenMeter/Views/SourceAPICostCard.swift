@@ -8,6 +8,8 @@ import SwiftUI
 struct SourceAPICostCard: View {
     let source: HistorySource
     let liveDayModels: [String: [String: ModelTokenTally]]?
+    // 测试/渲染注入用；nil 时读本机设置（自包含，与 persisted 留存同思路）
+    var subscriptionPlans: [SubscriptionPlan]? = nil
     @State private var period: PeriodCompare.Period = .week
 
     var body: some View {
@@ -24,6 +26,10 @@ struct SourceAPICostCard: View {
             source: source, liveDayModels: liveDayModels, period: period)
         let prior = SourceAPICost.priorSummary(
             source: source, liveDayModels: liveDayModels, period: period)
+        let plans = subscriptionPlans ?? ConfigStore.shared.subscriptionPlans
+        let subscription = SourceAPICost.subscriptionValue(
+            source: source, liveDayModels: liveDayModels,
+            period: period, plans: plans)
         return Card {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -40,7 +46,7 @@ struct SourceAPICostCard: View {
                     .frame(width: 104)
                 }
                 if let summary {
-                    detail(summary, prior: prior)
+                    detail(summary, prior: prior, subscription: subscription)
                 } else if let prior, prior.total > 0 {
                     // 有历史但所选周期暂无明细（如本周还没用过）：带上期金额
                     // 做参照，切档后数字自然回来（与环比卡同语义）
@@ -56,7 +62,8 @@ struct SourceAPICostCard: View {
 
     private func detail(
         _ summary: APIReferenceCostSummary,
-        prior: APIReferenceCostSummary?
+        prior: APIReferenceCostSummary?,
+        subscription: SubscriptionValueSummary?
     ) -> some View {
         let coverage = summary.coverage ?? 0
         let priorText: String = {
@@ -95,6 +102,21 @@ struct SourceAPICostCard: View {
             if let conversion = conversionNote(summary) {
                 Text(conversion)
                     .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            if let subscription {
+                // 与总览 API 等价卡的订阅回本同款式；只在设置为该来源
+                // 填写过订阅时出现，未拆分的来源不打扰
+                Divider()
+                HStack {
+                    Text("订阅回本").font(.system(size: 11, weight: .semibold))
+                    Spacer()
+                    Text(subscription.multiple.map(SubscriptionValueSummary.multipleText) ?? "—")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Theme.brand)
+                }
+                Text(subscription.detailText)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Text(policyText(summary))
                 .font(.system(size: 10)).foregroundStyle(.tertiary)
@@ -243,6 +265,56 @@ enum SourceAPICost {
             }
         }
         return result
+    }
+
+    /// 该来源当前周期的订阅回本：分母是设置里归属到该来源的订阅月费
+    /// 合计，按窗口内自该来源明细覆盖起点以来的自然日折算（与总览的
+    /// 摊法同思路——不拿没明细的天去摊成本）。未归属订阅或本期无明细
+    /// 返回 nil，来源页不显示该区块。
+    static func subscriptionValue(
+        source: HistorySource,
+        liveDayModels: [String: [String: ModelTokenTally]]?,
+        period: PeriodCompare.Period = .rolling7,
+        plans: [SubscriptionPlan],
+        persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
+        todayKey: String = DateUtil.today(),
+        calendar: Calendar = .current
+    ) -> SubscriptionValueSummary? {
+        let monthlyFee = SubscriptionPlan.monthlyTotalUSD(plans, tagged: source)
+        guard monthlyFee > 0,
+              let today = DateUtil.date(from: todayKey),
+              let summary = summary(
+                source: source, liveDayModels: liveDayModels, period: period,
+                persisted: persisted, todayKey: todayKey, calendar: calendar),
+              let window = windowKeys(
+                period: period, today: today, calendar: calendar, prior: false),
+              let windowStart = window.min(),
+              let coverageStart = coverageStart(
+                source: source, liveDayModels: liveDayModels, persisted: persisted),
+              let startDate = DateUtil.date(from: max(windowStart, coverageStart))
+        else { return nil }
+        let days = calendar.dateComponents([.day], from: startDate, to: today).day ?? 0
+        return SubscriptionValueSummary(
+            monthlyFeeUSD: monthlyFee, days: days + 1, apiValueUSD: summary.total)
+    }
+
+    /// 该来源最早有模型明细的一天（实时 + 留存合并取最早）：订阅费折算
+    /// 天数的起点钳制，新装来源不满整周/整月时不拿空白天摊成本。
+    private static func coverageStart(
+        source: HistorySource,
+        liveDayModels: [String: [String: ModelTokenTally]]?,
+        persisted: [ModelUsageDay]
+    ) -> String? {
+        let persistedStart = persisted
+            .filter { !($0.bySource[source]?.models.isEmpty ?? true) }
+            .map(\.date).min()
+        let liveStart = (liveDayModels ?? [:])
+            .filter { date, models in
+                ModelUsageHistoryStore.isDateKey(date)
+                    && !(ModelTokenTally.nonEmpty(models)?.isEmpty ?? true)
+            }
+            .keys.min()
+        return [persistedStart, liveStart].compactMap { $0 }.min()
     }
 
     /// 窗口内合并后的逐日模型明细：实时采集的 dayModels 覆盖留存明细的

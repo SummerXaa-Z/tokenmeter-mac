@@ -212,6 +212,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ],
             enabledSources: HistorySource.codingAgents)
         let note = OverviewSnapshot.modelCoverageNote(since: "2026-09-20")
+        // 来源页订阅回本 fixture：日期随真实时钟取最近几天，保证落在
+        // 当前 周/近7天 窗口内（合成数据只存在于此页，不落盘）
+        let fixturePlans = [
+            SubscriptionPlan(name: "Claude Max", monthlyFee: 100, source: .claude),
+            SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY", source: .kimi),
+            SubscriptionPlan(name: "ChatGPT Pro", monthlyFee: 200),
+        ]
+        func dayKey(_ daysAgo: Int) -> String {
+            Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date())
+                .map(DateUtil.key) ?? DateUtil.today()
+        }
         return ScrollView {
             VStack(spacing: 10) {
                 // 回本 ≥ 1 倍 + 覆盖说明 + 上期对比
@@ -237,13 +248,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         monthlyFeeUSD: 400, days: 7, apiValueUSD: full.total))
                 // 未填订阅：引导去设置
                 OverviewAPICostCard(summary: sparse, range: .all)
+                // 来源页 API 等价卡 + 归属订阅回本：≥1 倍与 <1 倍两分支
+                SourceAPICostCard(
+                    source: .claude,
+                    liveDayModels: [
+                        dayKey(0): ["opus-5-5": .init(
+                            cached: 9_000_000, cacheWrite: 800_000, output: 500_000)],
+                        dayKey(1): ["opus-5-5": .init(cached: 4_000_000, output: 300_000)],
+                    ],
+                    subscriptionPlans: fixturePlans)
+                SourceAPICostCard(
+                    source: .kimi,
+                    liveDayModels: [
+                        dayKey(0): ["kimi-k2.6": .init(output: 120_000)],
+                    ],
+                    subscriptionPlans: fixturePlans)
                 OverviewRankingsCard(
                     rankings: rankings, skillRankings: skills, range: .month, coverageNote: note)
                 Card {
-                    SubscriptionPlansEditor(plans: .constant([
-                        SubscriptionPlan(name: "Claude Max", monthlyFee: 100),
-                        SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY"),
-                    ]))
+                    SubscriptionPlansEditor(plans: .constant(fixturePlans))
                 }
             }
             .padding(14)
@@ -315,7 +338,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 额度节奏/余额可用天数的合成数据页:本机未必有实时配额与平台消费,
             // 用固定快照覆盖"会提前用完 / 撑得到重置 / 余额偏低"各分支
             ("pace-fixture", hosting(Self.paceFixture(), height: 1100)),
-            ("cost-fixture", hosting(Self.costFixture(), height: 2000)),
+            ("cost-fixture", hosting(Self.costFixture(), height: 2700)),
         ]
 
         var windows: [NSWindow] = []

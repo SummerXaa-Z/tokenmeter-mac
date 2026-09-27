@@ -254,6 +254,28 @@ final class ConfigStoreTests: XCTestCase {
         XCTAssertEqual(ConfigStore(defaults: defaults).subscriptionPlans, [])
     }
 
+    func testSubscriptionPlansDecodeLegacyJSONWithoutSource() throws {
+        // 旧版本落盘的订阅没有 source 键：解码为 nil（计入总览、不归属来源页）
+        let legacy = """
+        [{"id":"12345678-1234-1234-1234-123456789ABC","name":"Claude Max","monthlyFee":100,"currency":"USD"}]
+        """
+        let decoded = try JSONDecoder().decode([SubscriptionPlan].self, from: Data(legacy.utf8))
+        XCTAssertNil(decoded.first?.source)
+        XCTAssertEqual(decoded.first?.name, "Claude Max")
+        XCTAssertEqual(decoded.first?.monthlyFeeUSD ?? 0, 100)
+
+        // 打标订阅正常往返，人民币折算进归属合计
+        let tagged = [
+            SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY", source: .kimi),
+            SubscriptionPlan(name: "Claude Max", monthlyFee: 100, source: .claude),
+        ]
+        XCTAssertEqual(SubscriptionPlan.monthlyTotalUSD(tagged, tagged: .kimi), 20, accuracy: 0.001)
+        XCTAssertEqual(SubscriptionPlan.monthlyTotalUSD(tagged, tagged: .claude), 100, accuracy: 0.001)
+        XCTAssertEqual(SubscriptionPlan.monthlyTotalUSD(tagged, tagged: .codex), 0, accuracy: 0.001)
+        // 总览口径不变：全部计入
+        XCTAssertEqual(SubscriptionPlan.monthlyTotalUSD(tagged), 120, accuracy: 0.001)
+    }
+
     func testModelDetailBackfillMarkerRoundTrip() throws {
         let suiteName = "TokenMeterTests.ConfigStore.Backfill.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

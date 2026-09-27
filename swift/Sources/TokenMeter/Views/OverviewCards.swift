@@ -872,11 +872,11 @@ struct OverviewAPICostCard: View {
             HStack {
                 Text("订阅回本").font(.system(size: 11, weight: .semibold))
                 Spacer()
-                Text(value.multiple.map(Self.multipleText) ?? "—")
+                Text(value.multiple.map(SubscriptionValueSummary.multipleText) ?? "—")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundStyle(Theme.brand)
             }
-            Text(subscriptionDetail(value))
+            Text(value.detailText)
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
@@ -884,19 +884,6 @@ struct OverviewAPICostCard: View {
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private func subscriptionDetail(_ value: SubscriptionValueSummary) -> String {
-        var text = "订阅月费 \(Fmt.usd(value.monthlyFeeUSD)) · 按 \(value.days) 天折算 \(Fmt.usd(value.proratedFeeUSD))"
-        if let multiple = value.multiple, multiple < 1 {
-            text += "；低于 1 倍表示按 API 用量付费会更省。"
-        }
-        return text
-    }
-
-    static func multipleText(_ multiple: Double) -> String {
-        if multiple >= 10 { return String(format: "约 %.0f 倍", multiple) }
-        return String(format: "约 %.1f 倍", multiple)
     }
 
     private var unpricedText: String? {

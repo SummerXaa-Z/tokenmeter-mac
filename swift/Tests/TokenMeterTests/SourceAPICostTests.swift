@@ -218,4 +218,74 @@ final class SourceAPICostTests: XCTestCase {
         XCTAssertEqual(values["2026-09-26"] ?? 0, 4.0, accuracy: 0.001)
         XCTAssertNil(values["2026-09-25"])
     }
+
+    // MARK: - 订阅回本（归属来源的月费折算）
+
+    private func subscriptionValue(
+        persisted: [ModelUsageDay], plans: [SubscriptionPlan],
+        period: PeriodCompare.Period = .week,
+        todayKey: String = "2026-09-27"
+    ) -> SubscriptionValueSummary? {
+        SourceAPICost.subscriptionValue(
+            source: .kimi, liveDayModels: nil, period: period, plans: plans,
+            persisted: persisted, todayKey: todayKey, calendar: calendar)
+    }
+
+    func testSubscriptionValueProratesTaggedPlanOverClampedDays() throws {
+        // 今天 09-27 周日：本周 = 09-21..27；明细 09-25 起 → 只摊 3 天，
+        // 不拿没明细的 09-21..24 摊订阅费
+        let value = try XCTUnwrap(subscriptionValue(
+            persisted: [
+                day("2026-09-25", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+                day("2026-09-26", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+            ],
+            plans: [SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY", source: .kimi)]))
+        XCTAssertEqual(value.monthlyFeeUSD, 20, accuracy: 0.001)
+        XCTAssertEqual(value.days, 3)
+        XCTAssertEqual(value.apiValueUSD, 8, accuracy: 0.001)
+        XCTAssertEqual(value.proratedFeeUSD, 20 * 12.0 / 365 * 3, accuracy: 0.001)
+        XCTAssertEqual(value.multiple ?? 0, 8 / (20 * 12.0 / 365 * 3), accuracy: 0.001)
+        XCTAssertEqual(SubscriptionValueSummary.multipleText(value.multiple ?? 0), "约 4.1 倍")
+        XCTAssertTrue(value.detailText.contains("按 3 天折算"))
+    }
+
+    func testSubscriptionValueUsesFullWindowWhenCoveragePredatesIt() throws {
+        // 明细早于本周起点：整周 7 天都摊
+        let value = try XCTUnwrap(subscriptionValue(
+            persisted: [
+                day("2026-09-19", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+                day("2026-09-26", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+            ],
+            plans: [SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY", source: .kimi)]))
+        XCTAssertEqual(value.days, 7)
+        XCTAssertEqual(value.proratedFeeUSD, 20 * 12.0 / 365 * 7, accuracy: 0.001)
+        // 本周金额只含 09-26（09-19 在上周）
+        XCTAssertEqual(value.apiValueUSD, 4, accuracy: 0.001)
+    }
+
+    func testSubscriptionValueNilCases() {
+        let days = [
+            day("2026-09-25", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+        ]
+        // 未归属 / 归属别的来源的订阅：该来源页不显示回本
+        XCTAssertNil(subscriptionValue(persisted: days, plans: []))
+        XCTAssertNil(subscriptionValue(persisted: days, plans: [
+            SubscriptionPlan(name: "Claude Max", monthlyFee: 100),
+        ]))
+        XCTAssertNil(subscriptionValue(persisted: days, plans: [
+            SubscriptionPlan(name: "Claude Max", monthlyFee: 100, source: .claude),
+        ]))
+        // 归属了订阅但本期没有明细（都在上周）：无金额可言
+        XCTAssertNil(subscriptionValue(
+            persisted: [
+                day("2026-09-16", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+            ],
+            plans: [SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY", source: .kimi)]))
+    }
+
+    func testSubscriptionValueMultipleTextThreshold() {
+        XCTAssertEqual(SubscriptionValueSummary.multipleText(12.34), "约 12 倍")
+        XCTAssertEqual(SubscriptionValueSummary.multipleText(9.96), "约 10.0 倍")
+        XCTAssertEqual(SubscriptionValueSummary.multipleText(0.7), "约 0.7 倍")
+    }
 }
