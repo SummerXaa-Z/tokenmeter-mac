@@ -1,61 +1,84 @@
 import SwiftUI
 
-// 来源页通用的「近 7 天 API 等价参考」卡。与总览同价格口径（按用量当日
-// 生效的快照重算），数据来自实时采集的 dayModels + 本机留存的按天明细：
-// 自包含读取、不依赖实时采集成功——工具没跑、本地路径暂时缺失时依然可见，
-// 从未有过明细时整卡隐藏（同 SourceWeekCompareCard 的承诺）。
+// 来源页通用的「API 等价参考」卡，支持 周|近7天|月 切换（与同页历史环比
+// 卡同窗口口径）。价格与总览同口径（按用量当日生效的快照重算），数据来自
+// 实时采集的 dayModels + 本机留存的按天明细：自包含读取、不依赖实时采集
+// 成功——工具没跑、本地路径暂时缺失时依然可见，从未有过明细时整卡隐藏
+// （同 SourceWeekCompareCard 的承诺）。
 struct SourceAPICostCard: View {
     let source: HistorySource
     let liveDayModels: [String: [String: ModelTokenTally]]?
+    @State private var period: PeriodCompare.Period = .week
 
     var body: some View {
-        Group {
-            if let summary = SourceAPICost.summary(
-                source: source, liveDayModels: liveDayModels)
-            {
-                content(summary)
+        let used = SourceAPICost.everUsed(source: source, liveDayModels: liveDayModels)
+        return Group {
+            if used {
+                content
             }
         }
     }
 
-    private func content(_ summary: APIReferenceCostSummary) -> some View {
-        let coverage = summary.coverage ?? 0
+    private var content: some View {
+        let summary = SourceAPICost.summary(
+            source: source, liveDayModels: liveDayModels, period: period)
         return Card {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Label("API 等价参考（近 7 天）", systemImage: "dollarsign.circle")
+                    Label("API 等价参考（\(period.shortTitle)）", systemImage: "dollarsign.circle")
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
-                    Text(summary.amounts.isEmpty ? "暂无参考价" : Fmt.usd(summary.total))
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundStyle(Theme.brand)
+                    Picker("周期", selection: $period) {
+                        Text("周").tag(PeriodCompare.Period.week)
+                        Text("近7天").tag(PeriodCompare.Period.rolling7)
+                        Text("月").tag(PeriodCompare.Period.month)
+                    }
+                    .pickerStyle(.segmented)
+                    .controlSize(.mini)
+                    .frame(width: 104)
                 }
-                HStack {
-                    Text("价格覆盖").font(.system(size: 11)).foregroundStyle(.secondary)
-                    Spacer()
-                    Text("\(Int((coverage * 100).rounded()))% · \(Fmt.tokensShort(summary.matchedTokens)) tokens")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }
-                QuotaBar(progress: coverage, tint: coverage >= 0.95 ? Theme.hit : .orange)
-
-                ForEach(Array(summary.modelAmounts.prefix(3).enumerated()), id: \.element.id) {
-                    index, amount in
-                    amountRow(rank: index + 1, amount: amount, total: summary.total)
-                }
-                if let names = unpricedText(summary) {
-                    Text(names)
-                        .font(.system(size: 11)).foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if let conversion = conversionNote(summary) {
-                    Text(conversion)
+                if let summary {
+                    detail(summary)
+                } else {
+                    // 有历史但所选周期暂无明细（如本周还没用过）：提示而非
+                    // 整卡消失，切档后数字自然回来（与环比卡同语义）
+                    Text("本周期暂无该来源用量明细")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
-                Text(policyText(summary))
-                    .font(.system(size: 10)).foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private func detail(_ summary: APIReferenceCostSummary) -> some View {
+        let coverage = summary.coverage ?? 0
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(summary.amounts.isEmpty ? "暂无参考价" : Fmt.usd(summary.total))
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.brand)
+                Spacer()
+                Text("价格覆盖 \(Int((coverage * 100).rounded()))% · \(Fmt.tokensShort(summary.matchedTokens)) tokens")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            QuotaBar(progress: coverage, tint: coverage >= 0.95 ? Theme.hit : .orange)
+
+            ForEach(Array(summary.modelAmounts.prefix(3).enumerated()), id: \.element.id) {
+                index, amount in
+                amountRow(rank: index + 1, amount: amount, total: summary.total)
+            }
+            if let names = unpricedText(summary) {
+                Text(names)
+                    .font(.system(size: 11)).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if let conversion = conversionNote(summary) {
+                Text(conversion)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Text(policyText(summary))
+                .font(.system(size: 10)).foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -101,21 +124,26 @@ struct SourceAPICostCard: View {
         } else {
             sourceText = "按用量当日生效的 \(summary.sourceLabels.joined(separator: " + ")) 价格快照重算（最近核对 \(APIReferencePricingCatalog.observedAt)）"
         }
-        return "\(sourceText)。仅表示该来源的 API 等价成本，不是订阅费或平台账单；运行时不联网。"
+        return "\(period.footnote)；\(sourceText)。仅表示该来源的 API 等价成本，不是订阅费或平台账单；运行时不联网。"
     }
 }
 
-// 近 7 天单来源的 API 等价汇总：实时采集的 dayModels 覆盖留存明细的同一
-// 天（不叠加），其余天取本机留存；首个价格快照之前的用量按首个快照计价。
+// 单来源的 API 等价汇总：窗口口径与来源页历史环比卡一致（周=ISO 日历周、
+// 月=自然月，本期均截至今天；近 7 天为滚动窗口），实时采集的 dayModels
+// 覆盖留存明细的同一天（不叠加），其余天取本机留存；首个价格快照之前的
+// 用量按首个快照计价。
 enum SourceAPICost {
     static func summary(
         source: HistorySource,
         liveDayModels: [String: [String: ModelTokenTally]]?,
+        period: PeriodCompare.Period = .rolling7,
         persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
-        todayKey: String = DateUtil.today()
+        todayKey: String = DateUtil.today(),
+        calendar: Calendar = .current
     ) -> APIReferenceCostSummary? {
-        guard let today = DateUtil.date(from: todayKey) else { return nil }
-        let window = Set((0..<7).map { DateUtil.key(DateUtil.addDays(today, -$0)) })
+        guard let today = DateUtil.date(from: todayKey),
+              let window = windowKeys(period: period, today: today, calendar: calendar)
+        else { return nil }
 
         var merged: [String: [String: ModelTokenTally]] = [:]
         for day in persisted
@@ -145,5 +173,39 @@ enum SourceAPICost {
             estimator: APIReferencePricingCatalog.estimator,
             referenceDate: APIReferencePricingCatalog.observedAt,
             conversionRates: APIReferencePricingCatalog.conversionRatesToUSD)
+    }
+
+    /// 该来源是否曾有过模型明细（不限窗口）：决定整卡是否隐藏。某档窗口
+    /// 暂无明细不算从未使用——切档或等到下周数字会回来，提示而非消失。
+    static func everUsed(
+        source: HistorySource,
+        liveDayModels: [String: [String: ModelTokenTally]]?,
+        persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all()
+    ) -> Bool {
+        if let live = liveDayModels, live.values.contains(where: { !$0.isEmpty }) {
+            return true
+        }
+        return persisted.contains { !($0.bySource[source]?.models.isEmpty ?? true) }
+    }
+
+    /// 本期窗口的日期键集合：从区间起点逐日到今天（日历周/月是截至今天
+    /// 的部分周期，不包含未来日）。
+    private static func windowKeys(
+        period: PeriodCompare.Period,
+        today: Date,
+        calendar: Calendar
+    ) -> Set<String>? {
+        guard let interval = PeriodCompare.intervals(
+            of: period, today: today, calendar: calendar)?.this
+        else { return nil }
+        let todayStart = calendar.startOfDay(for: today)
+        var keys = Set<String>()
+        var cursor = calendar.startOfDay(for: interval.start)
+        while cursor <= todayStart {
+            keys.insert(DateUtil.key(cursor))
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+        return keys.isEmpty ? nil : keys
     }
 }

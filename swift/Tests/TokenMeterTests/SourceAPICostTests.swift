@@ -96,4 +96,67 @@ final class SourceAPICostTests: XCTestCase {
         XCTAssertEqual(result.amounts.first?.total ?? 0, 30, accuracy: 0.001)
         XCTAssertEqual(result.total, 30 / 6.9, accuracy: 0.001)
     }
+
+    // MARK: - 周|近7天|月 窗口切换（与来源页历史环比卡同口径）
+
+    private var calendar: Calendar {
+        var c = Calendar(identifier: .iso8601)
+        c.firstWeekday = 2   // 周一起始，与 zh-CN 本地周一致
+        return c
+    }
+
+    private func summary(
+        persisted: [ModelUsageDay], live: [String: [String: ModelTokenTally]]? = nil,
+        period: PeriodCompare.Period, todayKey: String
+    ) -> APIReferenceCostSummary? {
+        SourceAPICost.summary(
+            source: .kimi, liveDayModels: live, period: period,
+            persisted: persisted, todayKey: todayKey, calendar: calendar)
+    }
+
+    // 2026-09-24 是周四：本周 = 09-21..24，近 7 天 = 09-18..24
+    func testWeekWindowCutsAtCalendarWeekStart() throws {
+        let days = [
+            day("2026-09-19", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+            day("2026-09-24", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+        ]
+        let week = try XCTUnwrap(summary(persisted: days, period: .week, todayKey: "2026-09-24"))
+        XCTAssertEqual(week.total, 2.44, accuracy: 0.001)   // 只含本周四那天
+        let rolling = try XCTUnwrap(summary(persisted: days, period: .rolling7, todayKey: "2026-09-24"))
+        XCTAssertEqual(rolling.total, 4.88, accuracy: 0.001) // 上周六也进滚动窗口
+    }
+
+    func testMonthWindowStartsAtFirstOfMonth() throws {
+        let days = [
+            day("2026-09-05", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+            day("2026-09-24", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+        ]
+        let month = try XCTUnwrap(summary(persisted: days, period: .month, todayKey: "2026-09-24"))
+        XCTAssertEqual(month.total, 4.88, accuracy: 0.001)   // 1 号起整个本月都算
+        let week = try XCTUnwrap(summary(persisted: days, period: .week, todayKey: "2026-09-24"))
+        XCTAssertEqual(week.total, 2.44, accuracy: 0.001)    // 9/5 在本周之外
+    }
+
+    func testMonthMergesLiveAndPersistedDays() throws {
+        let result = try XCTUnwrap(summary(
+            persisted: [
+                day("2026-09-05", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+            ],
+            live: ["2026-09-23": ["kimi-k2.6": .init(output: 1_000_000)]],
+            period: .month, todayKey: "2026-09-24"))
+        XCTAssertEqual(result.total, 4.88, accuracy: 0.001)
+        XCTAssertEqual(result.totalTokens, 2_000_000)
+    }
+
+    func testEmptyPeriodShowsNilSummaryButCardStaysVisible() {
+        // 本周还没用过（明细都在上周/更早）：当前档无汇总，但整卡不该消失
+        let days = [
+            day("2026-09-13", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+        ]
+        XCTAssertNil(summary(persisted: days, period: .week, todayKey: "2026-09-24"))
+        XCTAssertTrue(SourceAPICost.everUsed(source: .kimi, liveDayModels: nil, persisted: days))
+        XCTAssertFalse(SourceAPICost.everUsed(source: .kimi, liveDayModels: nil, persisted: [
+            day("2026-09-13", source: .kimi, [:]),
+        ]))
+    }
 }

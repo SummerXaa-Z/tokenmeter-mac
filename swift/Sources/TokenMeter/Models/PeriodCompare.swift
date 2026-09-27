@@ -17,6 +17,15 @@ enum PeriodCompare {
             }
         }
 
+        // 卡片标题用的单期短名（来源页 API 等价卡等）
+        var shortTitle: String {
+            switch self {
+            case .week: return "本周"
+            case .rolling7: return "近 7 天"
+            case .month: return "本月"
+            }
+        }
+
         var footnote: String {
             switch self {
             case .week: return "日历周口径，本周截至今天"
