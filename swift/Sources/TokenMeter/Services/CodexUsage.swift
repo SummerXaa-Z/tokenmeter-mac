@@ -212,12 +212,17 @@ enum CodexUsage {
     // 全树扫描，按 mtime 过滤：长期复用的 session（Codex Desktop 可挂数周）
     // 落在很老的日期目录里，但只要还在写 mtime 就是新的，按目录日期扫会漏掉。
     // mtime 早于 7 天窗起点的文件不可能含窗内事件，直接跳过。
-    static func load(sessionsDirectory: URL = sessionsDir, now: Date = Date()) -> CodexUsageResult {
+    static func load(
+        sessionsDirectory: URL = sessionsDir,
+        now: Date = Date(),
+        windowDays: Int = 7
+    ) -> CodexUsageResult {
         let fm = FileManager.default
+        let span = max(windowDays, 1)
         var dayMap: [String: CodexDayUsage] = [:]
-        let window: Set<String> = Set((0..<7).map { DateUtil.key(DateUtil.addDays(now, -$0)) })
+        let window: Set<String> = Set((0..<span).map { DateUtil.key(DateUtil.addDays(now, -$0)) })
         for key in window { dayMap[key] = CodexDayUsage(date: key) }
-        let windowStart = Calendar.current.startOfDay(for: DateUtil.addDays(now, -6))
+        let windowStart = Calendar.current.startOfDay(for: DateUtil.addDays(now, 1 - span))
 
         var limitsByChannel: [String: CodexRateLimits] = [:]
         var modelMap: [String: CodexModelUsage] = [:]

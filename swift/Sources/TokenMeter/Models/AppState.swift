@@ -376,6 +376,88 @@ final class AppState: ObservableObject {
             deletesEmptyDays: authoritative)
     }
 
+    // 启动后低优先级调用（见 DetailBackfill）：把实时 7 天窗之外的本地会话
+    // 回填进按天明细，让 30D/全部 在升级当天就有完整回溯。加载逐来源串行、
+    // utility 优先级，不与实时刷新抢主线程；任一来源失败只跳过该来源。
+    func backfillModelDetail(now: Date = Date()) async {
+        let todayKey = DateUtil.key(now)
+        guard DetailBackfill.shouldRun(
+            markerDay: ConfigStore.shared.lastModelDetailBackfillDay,
+            todayKey: todayKey
+        ) else { return }
+
+        let span = DetailBackfill.windowDays
+        if claudeEnabled, ClaudeUsage.isAvailable {
+            let r = await Task.detached(priority: .utility) {
+                ClaudeUsage.load(windowDays: span)
+            }.value
+            recordModelHistory(.claude, windowDates: r.days.map(\.date),
+                               dayModels: r.dayModels, daySkills: r.daySkills,
+                               daySessions: r.daySessions, authoritative: true)
+        }
+        if codexEnabled, CodexUsage.isAvailable {
+            let r = await Task.detached(priority: .utility) {
+                CodexUsage.load(windowDays: span)
+            }.value
+            recordModelHistory(.codex, windowDates: r.days.map(\.date),
+                               dayModels: r.dayModels, daySkills: r.daySkills,
+                               daySessions: r.daySessions, authoritative: false)
+        }
+        if kimiEnabled, KimiUsage.isAvailable {
+            let r = try? await Task.detached(priority: .utility) {
+                try KimiUsage.load(windowDays: span)
+            }.value
+            if let r {
+                recordModelHistory(.kimi, windowDates: r.days.map(\.date),
+                                   dayModels: r.dayModels,
+                                   daySessions: r.daySessions, authoritative: true)
+            }
+        }
+        if opencodeEnabled, OpenCodeUsage.isAvailable {
+            let r = try? await Task.detached(priority: .utility) {
+                try OpenCodeUsage.load(windowDays: span)
+            }.value
+            if let r {
+                recordModelHistory(.opencode, windowDates: r.days.map(\.date),
+                                   dayModels: r.dayModels,
+                                   daySessions: r.daySessions, authoritative: false)
+            }
+        }
+        if geminiEnabled, GeminiUsage.isAvailable {
+            let r = try? await Task.detached(priority: .utility) {
+                try GeminiUsage.load(windowDays: span)
+            }.value
+            if let r {
+                recordModelHistory(.gemini, windowDates: r.days.map(\.date),
+                                   dayModels: r.dayModels,
+                                   daySessions: r.daySessions, authoritative: false)
+            }
+        }
+        if copilotEnabled, CopilotUsage.isAvailable {
+            let r = try? await Task.detached(priority: .utility) {
+                try CopilotUsage.load(windowDays: span)
+            }.value
+            if let r {
+                recordModelHistory(.copilot, windowDates: r.days.map(\.date),
+                                   dayModels: r.dayModels, daySkills: r.daySkills,
+                                   daySessions: r.daySessions, authoritative: false)
+            }
+        }
+        if qwenEnabled, QwenCodeUsage.isAvailable {
+            let r = try? await Task.detached(priority: .utility) {
+                try QwenCodeUsage.load(windowDays: span)
+            }.value
+            if let r {
+                recordModelHistory(.qwen, windowDates: r.days.map(\.date),
+                                   dayModels: r.dayModels,
+                                   daySessions: r.daySessions, authoritative: true)
+            }
+        }
+
+        ConfigStore.shared.lastModelDetailBackfillDay = todayKey
+        historyRevision &+= 1
+    }
+
     nonisolated static func claudeHistoryDays(
         from result: ClaudeUsageResult
     ) -> [(date: String, totalTokens: Int, cost: Double?)] {

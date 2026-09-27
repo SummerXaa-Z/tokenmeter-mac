@@ -189,14 +189,20 @@ enum ClaudeUsage {
 
     // MARK: - 入口
 
-    static func load(projectsDirectory: URL = projectsDir, now: Date = Date()) -> ClaudeUsageResult {
+    static func load(
+        projectsDirectory: URL = projectsDir,
+        now: Date = Date(),
+        windowDays: Int = 7
+    ) -> ClaudeUsageResult {
         let fm = FileManager.default
+        let span = max(windowDays, 1)
         var dayMap: [String: ClaudeDayUsage] = [:]
-        let window: Set<String> = Set((0..<7).map { DateUtil.key(DateUtil.addDays(now, -$0)) })
+        let window: Set<String> = Set((0..<span).map { DateUtil.key(DateUtil.addDays(now, -$0)) })
+        // 上周环比基期仍取 7..14 天；扫描窗按两者较宽者
         let lastWeek: Set<String> = Set((7..<14).map { DateUtil.key(DateUtil.addDays(now, -$0)) })
         for key in window { dayMap[key] = ClaudeDayUsage(date: key) }
-        // 扫 14 天：本周展示 + 上周做环比基期
-        let windowStart = Calendar.current.startOfDay(for: DateUtil.addDays(now, -13))
+        let windowStart = Calendar.current.startOfDay(
+            for: DateUtil.addDays(now, 1 - max(span, 14)))
 
         var modelMap: [String: ClaudeModelUsage] = [:]
         var dayModels: [String: [String: ModelTokenTally]] = [:]

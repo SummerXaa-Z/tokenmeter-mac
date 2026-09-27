@@ -51,6 +51,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         appState.rearmTimer()
 
+        // 启动 10s 后低优先级回填按天明细（每约 7 天一次，见 DetailBackfill）：
+        // 把实时 7 天窗之外的本地会话补进 model-history，让 30D/全部 立即可回溯
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            guard let self else { return }
+            Task { await self.appState.backfillModelDetail() }
+        }
+
         // 仅在用户开启通知时申请权限；关闭状态重启不能再次打扰用户。
         Notifier.requestAuthorizationIfEnabled(ConfigStore.shared.notificationsEnabled)
 

@@ -160,6 +160,7 @@ enum OpenCodeUsage {
     static func load(
         databaseURL: URL = databaseURL,
         now: Date = Date(),
+        windowDays: Int = 7,
         calendar: Calendar = .current
     ) throws -> OpenCodeUsageResult {
         guard FileManager.default.fileExists(atPath: databaseURL.path) else {
@@ -182,7 +183,8 @@ enum OpenCodeUsage {
         }
         defer { sqlite3_finalize(stmt) }
 
-        let oldestDate = calendar.date(byAdding: .day, value: -6, to: now) ?? now
+        let span = max(windowDays, 1)
+        let oldestDate = calendar.date(byAdding: .day, value: 1 - span, to: now) ?? now
         let oldestDay = calendar.startOfDay(for: oldestDate)
         sqlite3_bind_int64(stmt, 1, Int64(oldestDay.timeIntervalSince1970 * 1_000))
 
@@ -246,8 +248,8 @@ enum OpenCodeUsage {
                 output: output, reasoning: reasoning)
         }
 
-        let dayRows = (0..<7).map { index -> OpenCodeDayUsage in
-            let date = calendar.date(byAdding: .day, value: index - 6, to: now) ?? now
+        let dayRows = (0..<span).map { index -> OpenCodeDayUsage in
+            let date = calendar.date(byAdding: .day, value: index + 1 - span, to: now) ?? now
             let key = localDayKey(date, calendar: calendar)
             var day = days[key] ?? OpenCodeDayUsage(date: key)
             day.sessionCount = sessionsByDay[key]?.count ?? 0

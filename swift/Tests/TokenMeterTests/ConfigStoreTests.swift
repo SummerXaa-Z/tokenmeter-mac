@@ -254,6 +254,18 @@ final class ConfigStoreTests: XCTestCase {
         XCTAssertEqual(ConfigStore(defaults: defaults).subscriptionPlans, [])
     }
 
+    func testModelDetailBackfillMarkerRoundTrip() throws {
+        let suiteName = "TokenMeterTests.ConfigStore.Backfill.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = ConfigStore(defaults: defaults)
+        XCTAssertNil(store.lastModelDetailBackfillDay)
+
+        store.lastModelDetailBackfillDay = "2026-09-27"
+        XCTAssertEqual(ConfigStore(defaults: defaults).lastModelDetailBackfillDay, "2026-09-27")
+    }
+
     private func makeCredentialStore(
         get: @escaping (SecretSlot) -> String? = { _ in nil },
         set: @escaping (String, SecretSlot) -> OSStatus = { _, _ in errSecSuccess },

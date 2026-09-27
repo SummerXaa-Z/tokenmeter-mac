@@ -109,6 +109,7 @@ enum QwenCodeUsage {
     static func load(
         usageRecordURL: URL = usageRecordURL,
         now: Date = Date(),
+        windowDays: Int = 7,
         calendar: Calendar = .current
     ) throws -> QwenCodeUsageResult {
         guard FileManager.default.fileExists(atPath: usageRecordURL.path) else {
@@ -116,7 +117,8 @@ enum QwenCodeUsage {
         }
 
         let records = scan(usageRecordURL)
-        let oldestDate = calendar.date(byAdding: .day, value: -6, to: now) ?? now
+        let span = max(windowDays, 1)
+        let oldestDate = calendar.date(byAdding: .day, value: 1 - span, to: now) ?? now
         let oldestDay = calendar.startOfDay(for: oldestDate)
         let todayKey = localDayKey(now, calendar: calendar)
         var days: [String: QwenCodeDayUsage] = [:]
@@ -175,8 +177,8 @@ enum QwenCodeUsage {
             sessionsByDay[dayKey, default: []].insert(sessionID)
         }
 
-        let dayRows = (0..<7).map { index -> QwenCodeDayUsage in
-            let date = calendar.date(byAdding: .day, value: index - 6, to: now) ?? now
+        let dayRows = (0..<span).map { index -> QwenCodeDayUsage in
+            let date = calendar.date(byAdding: .day, value: index + 1 - span, to: now) ?? now
             let key = localDayKey(date, calendar: calendar)
             var day = days[key] ?? QwenCodeDayUsage(date: key)
             day.sessionCount = sessionsByDay[key]?.count ?? 0

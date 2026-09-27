@@ -129,6 +129,7 @@ final class ConfigStore {
         static let deepseekBalanceAlert = "deepseekBalanceAlertThreshold"
         static let overviewHistoryRange = "overviewHistoryRangeDays"
         static let subscriptionPlans = "subscriptionPlans"
+        static let modelDetailBackfillDay = "modelDetailBackfillDay"
     }
 
     // 用户手填的订阅月费（见 SubscriptionPlan），JSON 存 UserDefaults；
@@ -148,6 +149,12 @@ final class ConfigStore {
             guard let data = try? JSONEncoder().encode(newValue) else { return }
             defaults.set(data, forKey: DKey.subscriptionPlans)
         }
+    }
+
+    // 上次按天明细回填完成日（YYYY-MM-DD），见 DetailBackfill；nil 表示从未跑过
+    var lastModelDetailBackfillDay: String? {
+        get { defaults.string(forKey: DKey.modelDetailBackfillDay) }
+        set { defaults.set(newValue, forKey: DKey.modelDetailBackfillDay) }
     }
 
     var overviewHistoryRangeDays: Int {

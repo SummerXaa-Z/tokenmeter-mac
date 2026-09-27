@@ -151,6 +151,40 @@ final class QwenCodeUsageTests: XCTestCase {
         }
     }
 
+    func testWiderWindowBackfillsOlderDays() throws {
+        let fixture = try makeFixture(lines: [
+            record(
+                sessionID: "old-session",
+                timestamp: milliseconds("2026-08-08T09:00:00Z"),   // 默认 7 天窗之外
+                models: ["qwen3-coder": model(requests: 1, input: 100, output: 20)]
+            ),
+            record(
+                sessionID: "today-session",
+                timestamp: milliseconds("2026-08-20T10:00:00Z"),
+                models: ["qwen3-max": model(requests: 1, input: 30, output: 5)]
+            ),
+        ])
+        defer { try? FileManager.default.removeItem(at: fixture.deletingLastPathComponent()) }
+
+        // 默认窗口只有最近 7 天
+        let live = try QwenCodeUsage.load(
+            usageRecordURL: fixture,
+            now: date("2026-08-20T12:00:00Z"),
+            calendar: utcCalendar())
+        XCTAssertEqual(live.daySessions, ["2026-08-20": 1])
+
+        // 回填窗口把 8 天前的明细捡回来
+        let backfill = try QwenCodeUsage.load(
+            usageRecordURL: fixture,
+            now: date("2026-08-20T12:00:00Z"),
+            windowDays: 15,
+            calendar: utcCalendar())
+        XCTAssertEqual(backfill.daySessions.count, 2)
+        XCTAssertEqual(backfill.daySessions["2026-08-08"], 1)
+        XCTAssertEqual(backfill.dayModels["2026-08-08"]?["qwen3-coder"]?.input, 100)
+        XCTAssertEqual(backfill.days.count, 15)
+    }
+
     private func makeFixture(lines: [String], finalNewline: Bool = true) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("TokenMeter-QwenTests-\(UUID().uuidString)", isDirectory: true)

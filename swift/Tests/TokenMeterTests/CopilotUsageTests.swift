@@ -145,6 +145,38 @@ final class CopilotUsageTests: XCTestCase {
         XCTAssertTrue(result.models.isEmpty)
     }
 
+    func testWiderWindowBackfillsOlderSessions() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let old = try makeSession(root: root, name: "old")
+        let now = try fixedNow
+
+        try writeJSONLines([
+            shutdown(
+                id: "old-shutdown",
+                parent: nil,
+                timestamp: "2026-08-05T23:59:59Z",   // 默认 7 天窗之外
+                modelMetrics: ["gpt-5.4": metric(requests: 1, input: 500)],
+                linesAdded: 1,
+                linesRemoved: 0
+            ),
+        ], to: old)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: old.path)
+
+        // 默认窗口看不到旧会话
+        let live = try CopilotUsage.load(
+            sessionsRoot: root, now: now, calendar: try utcCalendar)
+        XCTAssertEqual(live.weekSessions, 0)
+        XCTAssertTrue(live.daySessions.isEmpty)
+
+        // 回填窗口把它捡回来，按天明细随之生成
+        let backfill = try CopilotUsage.load(
+            sessionsRoot: root, now: now, windowDays: 12, calendar: try utcCalendar)
+        XCTAssertEqual(backfill.daySessions, ["2026-08-05": 1])
+        XCTAssertEqual(backfill.dayModels["2026-08-05"]?["gpt-5.4"]?.input, 500)
+        XCTAssertEqual(backfill.days.count, 12)
+    }
+
     func testCollectorRegistryIncludesGitHubCopilotCLI() throws {
         let descriptor = try XCTUnwrap(LocalUsageCollectorRegistry.collector(for: .copilot))
         XCTAssertEqual(descriptor.displayName, "GitHub Copilot")
