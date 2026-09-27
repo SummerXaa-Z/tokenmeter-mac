@@ -31,9 +31,27 @@ struct SubscriptionPlansEditor: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Text("金额只存本机、不联网，只用于回本倍数对比；总览始终计入全部订阅，归属来源只影响来源页。人民币按固定参考汇率 $1 = ¥\(String(format: "%.2f", APIReferencePricingCatalog.cnyPerUSD)) 折算。")
+            Text("金额只存本机、不联网，只用于回本倍数对比；人民币按固定参考汇率 $1 = ¥\(String(format: "%.2f", APIReferencePricingCatalog.cnyPerUSD)) 折算，不联网更新。")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Divider()
+            VStack(alignment: .leading, spacing: 3) {
+                Text("折算口径小抄")
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                // 各处天数口径与代码一一对应:总览 OverviewSnapshot、来源页
+                // SourceAPICostCard、周报 WeeklyDigest、导出 UsageCSVExport
+                Group {
+                    Text("· 折算订阅费 = 月费 × 12 ÷ 365 × 天数；回本倍数 = 同窗口 API 等价 ÷ 折算订阅费，低于 1 倍表示按 API 用量付费更省。")
+                    Text("· API 等价按用量当日生效的价格快照重算，缺价模型不计入——倍数只会偏低，不会虚高。")
+                    Text("· 天数 = 所选窗口的自然日，并从本机按天明细留存的第一天起算（更早的天没有金额，不摊订阅费）：")
+                    Text("· 　总览：始终计入全部订阅；1D/7D/30D 为滚动窗口，「全部」自留存起点到今天。")
+                    Text("· 　来源页：只计入归属该来源的订阅；「周」自本周一到今天、「近7天」为滚动 7 天、「月」自本月 1 日到今天。")
+                    Text("· 　周报与「导出上周 CSV」：上周整周（周一到周日）。")
+                    Text("· 　导出「全部/近 N 天」按导出数据的首末行日期；「自定义起止」按所选整段自然日。")
+                }
+                .font(.system(size: 10)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
