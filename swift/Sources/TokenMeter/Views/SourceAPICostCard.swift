@@ -170,15 +170,18 @@ struct SourceAPICostCard: View {
     }
 }
 
-// 来源页 7 天趋势图共用的悬停金额闭包：mmdd label → 当日 API 等价金额文本。
-// 数据走 SourceAPICost.dailyValues（实时 dayModels 覆盖留存同一天）。
+// 来源页 7|30 天趋势图共用的悬停金额闭包：mmdd label → 当日 API 等价金额
+// 文本。数据走 SourceAPICost.dailyValues（实时 dayModels 覆盖留存同一天），
+// windowDays 与图表档位一致（7 天或 30 天）。
 enum SourceHoverAmount {
     static func make(
         source: HistorySource,
         liveDayModels: [String: [String: ModelTokenTally]]?,
-        days: [String]   // 图中各桶的自然日键(YYYY-MM-DD)
+        days: [String],   // 图中各桶的自然日键(YYYY-MM-DD)
+        windowDays: Int = 7
     ) -> (String) -> String? {
-        let values = SourceAPICost.dailyValues(source: source, liveDayModels: liveDayModels)
+        let values = SourceAPICost.dailyValues(
+            source: source, liveDayModels: liveDayModels, windowDays: windowDays)
         let labels = Dictionary(uniqueKeysWithValues: days.map { (Fmt.mmdd($0), $0) })
         return { label in
             guard let key = labels[label], let value = values[key], value > 0 else { return nil }
@@ -240,19 +243,21 @@ enum SourceAPICost {
         return summary
     }
 
-    /// 近 7 天逐日 API 等价美元金额（自然日键 → USD）：来源页 7 天趋势图
-    /// 悬停说明行显示当日金额。合并口径与 summary 一致，缺价模型不计入
-    /// （该日金额为 0 时不建条目，说明行自然不显示）。
+    /// 近 N 个自然日（含今天）逐日 API 等价美元金额（自然日键 → USD）：
+    /// 来源页趋势图（7|30 天档）悬停说明行显示当日金额。合并口径与
+    /// summary 一致，缺价模型不计入（该日金额为 0 时不建条目，说明行
+    /// 自然不显示）。
     static func dailyValues(
         source: HistorySource,
         liveDayModels: [String: [String: ModelTokenTally]]?,
         persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
         todayKey: String = DateUtil.today(),
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        windowDays: Int = 7
     ) -> [String: Double] {
         guard let today = DateUtil.date(from: todayKey),
-              let window = windowKeys(
-                period: .rolling7, today: today, calendar: calendar, prior: false),
+              let window = dayWindowKeys(
+                today: today, windowDays: windowDays, calendar: calendar),
               let merged = mergedDays(
                 source: source, liveDayModels: liveDayModels,
                 persisted: persisted, window: window)
@@ -265,6 +270,22 @@ enum SourceAPICost {
             }
         }
         return result
+    }
+
+    /// 近 N 个自然日（含今天）的日期键集合：滚动窗口，不受日历周/月
+    /// 边界影响。
+    private static func dayWindowKeys(
+        today: Date, windowDays: Int, calendar: Calendar
+    ) -> Set<String>? {
+        guard windowDays > 0 else { return nil }
+        let todayStart = calendar.startOfDay(for: today)
+        var keys = Set<String>()
+        for offset in 0..<windowDays {
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: todayStart)
+            else { continue }
+            keys.insert(DateUtil.key(date))
+        }
+        return keys.isEmpty ? nil : keys
     }
 
     /// 该来源当前周期的订阅回本：分母是设置里归属到该来源的订阅月费

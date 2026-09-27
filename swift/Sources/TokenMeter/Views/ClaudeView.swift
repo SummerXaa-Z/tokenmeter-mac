@@ -5,7 +5,6 @@ import Charts
 // 数据全部来自本地 ~/.claude/projects，刷新即重扫（带缓存）。
 struct ClaudeView: View {
     @EnvironmentObject var state: AppState
-    @State private var weekHover: String?
     var onBack: () -> Void
     var onSettings: () -> Void
 
@@ -88,56 +87,19 @@ struct ClaudeView: View {
         }
     }
 
-    // MARK: - 7 天柱图
+    // MARK: - 7|30 天柱图
     private func weekChartCard(_ r: ClaudeUsageResult) -> some View {
-        Card {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("最近 7 天 Token", systemImage: "chart.bar.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                ChartHover.caption(hover: weekHover, amountFor: SourceHoverAmount.make(source: .claude, liveDayModels: r.dayModels, days: r.days.map(\.date)), buckets: r.days.map { day in
-                    (
-                        label: Fmt.mmdd(day.date),
-                        total: day.cacheReadTokens + day.cacheCreationTokens
-                            + day.inputTokens + day.outputTokens,
-                        parts: [
-                            ("缓存读取", day.cacheReadTokens, Theme.hit),
-                            ("缓存写入", day.cacheCreationTokens, Theme.miss),
-                            ("新输入", day.inputTokens, Theme.input),
-                            ("输出", day.outputTokens, Theme.response),
-                        ]
-                    )
-                })
-                Chart {
-                    ForEach(r.days) { day in
-                        BarMark(
-                            x: .value("日期", Fmt.mmdd(day.date)),
-                            y: .value("缓存读取", day.cacheReadTokens))
-                        .foregroundStyle(by: .value("类型", "缓存读取"))
-                        BarMark(
-                            x: .value("日期", Fmt.mmdd(day.date)),
-                            y: .value("缓存写入", day.cacheCreationTokens))
-                        .foregroundStyle(by: .value("类型", "缓存写入"))
-                        BarMark(
-                            x: .value("日期", Fmt.mmdd(day.date)),
-                            y: .value("新输入", day.inputTokens))
-                        .foregroundStyle(by: .value("类型", "新输入"))
-                        BarMark(
-                            x: .value("日期", Fmt.mmdd(day.date)),
-                            y: .value("输出", day.outputTokens))
-                        .foregroundStyle(by: .value("类型", "输出"))
-                    }
-                    HoverDateRule(date: weekHover)
-                }
-                .chartXSelection(value: $weekHover)
-                .chartForegroundStyleScale([
-                    "缓存读取": Theme.hit, "缓存写入": Theme.miss,
-                    "新输入": Theme.input, "输出": Theme.response,
+        SourceTrendCard(
+            source: .claude,
+            weekDays: r.days.map { day in
+                .init(date: day.date, parts: [
+                    ("缓存读取", day.cacheReadTokens, Theme.hit),
+                    ("缓存写入", day.cacheCreationTokens, Theme.miss),
+                    ("新输入", day.inputTokens, Theme.input),
+                    ("输出", day.outputTokens, Theme.response),
                 ])
-                .chartLegend(position: .bottom, spacing: 4)
-                .tokenYAxis()
-                .frame(height: 150)
-            }
-        }
+            },
+            liveDayModels: r.dayModels)
     }
 
     // MARK: - 周趋势（本周 vs 上周）

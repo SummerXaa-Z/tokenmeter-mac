@@ -5,7 +5,6 @@ import SwiftUI
 // 持久化 shutdown，因此会在正常退出/落盘后出现，不尝试读取账号或远端配额。
 struct CopilotView: View {
     @EnvironmentObject var state: AppState
-    @State private var weekHover: String?
     var onBack: () -> Void
     var onSettings: () -> Void
 
@@ -78,56 +77,17 @@ struct CopilotView: View {
     }
 
     private func weekChartCard(_ result: CopilotUsageResult) -> some View {
-        Card {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("最近 7 天 Token（按会话结束日）", systemImage: "chart.bar.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                ChartHover.caption(hover: weekHover, amountFor: SourceHoverAmount.make(source: .copilot, liveDayModels: result.dayModels, days: result.days.map(\.date)), buckets: result.days.map { day in
-                    (
-                        label: Fmt.mmdd(day.date),
-                        total: day.cachedInputTokens + day.cacheWriteTokens
-                            + day.inputTokens + day.outputTokens + day.reasoningTokens,
-                        parts: [
-                            ("缓存读取", day.cachedInputTokens, Theme.hit),
-                            ("缓存写入", day.cacheWriteTokens, Theme.miss),
-                            ("新输入", day.inputTokens, Theme.input),
-                            ("输出", day.outputTokens + day.reasoningTokens, Theme.response),
-                        ]
-                    )
-                })
-                Chart {
-                    ForEach(result.days) { day in
-                        BarMark(
-                            x: .value("日期", Fmt.mmdd(day.date)),
-                            y: .value("缓存读取", day.cachedInputTokens)
-                        ).foregroundStyle(by: .value("类型", "缓存读取"))
-                        BarMark(
-                            x: .value("日期", Fmt.mmdd(day.date)),
-                            y: .value("缓存写入", day.cacheWriteTokens)
-                        ).foregroundStyle(by: .value("类型", "缓存写入"))
-                        BarMark(
-                            x: .value("日期", Fmt.mmdd(day.date)),
-                            y: .value("新输入", day.inputTokens)
-                        ).foregroundStyle(by: .value("类型", "新输入"))
-                        BarMark(
-                            x: .value("日期", Fmt.mmdd(day.date)),
-                            y: .value("输出", day.outputTokens + day.reasoningTokens)
-                        ).foregroundStyle(by: .value("类型", "输出"))
-                    }
-                    HoverDateRule(date: weekHover)
-                }
-                .chartXSelection(value: $weekHover)
-                .chartForegroundStyleScale([
-                    "缓存读取": Theme.hit,
-                    "缓存写入": Theme.miss,
-                    "新输入": Theme.input,
-                    "输出": Theme.response,
+        SourceTrendCard(
+            source: .copilot,
+            weekDays: result.days.map { day in
+                .init(date: day.date, parts: [
+                    ("缓存读取", day.cachedInputTokens, Theme.hit),
+                    ("缓存写入", day.cacheWriteTokens, Theme.miss),
+                    ("新输入", day.inputTokens, Theme.input),
+                    ("输出", day.outputTokens + day.reasoningTokens, Theme.response),
                 ])
-                .chartLegend(position: .bottom, spacing: 4)
-                .tokenYAxis()
-                .frame(height: 150)
-            }
-        }
+            },
+            liveDayModels: result.dayModels)
     }
 
     private func modelsCard(_ result: CopilotUsageResult) -> some View {

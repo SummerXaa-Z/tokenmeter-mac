@@ -219,6 +219,24 @@ final class SourceAPICostTests: XCTestCase {
         XCTAssertNil(values["2026-09-25"])
     }
 
+    func testDailyValuesWindowDaysCoversThirtyDays() {
+        // 30 天档窗口 = 08-29..09-27:08-30 计入;默认 7 天档不计
+        let persisted = [
+            day("2026-08-30", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+            // 30 天窗口之外
+            day("2026-08-15", source: .kimi, ["kimi-k2.6": .init(output: 9_000_000)]),
+        ]
+        let month = SourceAPICost.dailyValues(
+            source: .kimi, liveDayModels: nil, persisted: persisted,
+            todayKey: "2026-09-27", calendar: calendar, windowDays: 30)
+        XCTAssertEqual(month.count, 1)
+        XCTAssertEqual(month["2026-08-30"] ?? 0, 2.44, accuracy: 0.001)
+        let week = SourceAPICost.dailyValues(
+            source: .kimi, liveDayModels: nil, persisted: persisted,
+            todayKey: "2026-09-27", calendar: calendar)
+        XCTAssertTrue(week.isEmpty)
+    }
+
     // MARK: - 订阅回本（归属来源的月费折算）
 
     private func subscriptionValue(

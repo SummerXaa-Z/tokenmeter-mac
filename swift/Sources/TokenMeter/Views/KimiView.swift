@@ -5,7 +5,6 @@ import Charts
 // 不读取对话正文、工具参数或凭据，也不产生任何网络上报。
 struct KimiView: View {
     @EnvironmentObject var state: AppState
-    @State private var weekHover: String?
     var onBack: () -> Void
     var onSettings: () -> Void
 
@@ -98,60 +97,17 @@ struct KimiView: View {
     }
 
     private func weekChartCard(_ result: KimiUsageResult) -> some View {
-        Card {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("最近 7 天 Token", systemImage: "chart.bar.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                ChartHover.caption(hover: weekHover, amountFor: SourceHoverAmount.make(source: .kimi, liveDayModels: result.dayModels, days: result.days.map(\.date)), buckets: result.days.map { day in
-                    (
-                        label: Fmt.mmdd(day.date),
-                        total: day.cachedInputTokens + day.cacheCreationTokens
-                            + day.inputTokens + day.outputTokens,
-                        parts: [
-                            ("缓存读取", day.cachedInputTokens, Theme.hit),
-                            ("缓存写入", day.cacheCreationTokens, Theme.miss),
-                            ("新输入", day.inputTokens, Theme.input),
-                            ("输出", day.outputTokens, Theme.response),
-                        ]
-                    )
-                })
-                Chart {
-                    ForEach(result.days) { day in
-                        BarMark(
-                            x: .value("日期", Fmt.mmdd(day.date)),
-                            y: .value("缓存读取", day.cachedInputTokens)
-                        )
-                        .foregroundStyle(by: .value("类型", "缓存读取"))
-                        BarMark(
-                            x: .value("日期", Fmt.mmdd(day.date)),
-                            y: .value("缓存写入", day.cacheCreationTokens)
-                        )
-                        .foregroundStyle(by: .value("类型", "缓存写入"))
-                        BarMark(
-                            x: .value("日期", Fmt.mmdd(day.date)),
-                            y: .value("新输入", day.inputTokens)
-                        )
-                        .foregroundStyle(by: .value("类型", "新输入"))
-                        BarMark(
-                            x: .value("日期", Fmt.mmdd(day.date)),
-                            y: .value("输出", day.outputTokens)
-                        )
-                        .foregroundStyle(by: .value("类型", "输出"))
-                    }
-                    HoverDateRule(date: weekHover)
-                }
-                .chartXSelection(value: $weekHover)
-                .chartForegroundStyleScale([
-                    "缓存读取": Theme.hit,
-                    "缓存写入": Theme.miss,
-                    "新输入": Theme.input,
-                    "输出": Theme.response,
+        SourceTrendCard(
+            source: .kimi,
+            weekDays: result.days.map { day in
+                .init(date: day.date, parts: [
+                    ("缓存读取", day.cachedInputTokens, Theme.hit),
+                    ("缓存写入", day.cacheCreationTokens, Theme.miss),
+                    ("新输入", day.inputTokens, Theme.input),
+                    ("输出", day.outputTokens, Theme.response),
                 ])
-                .chartLegend(position: .bottom, spacing: 4)
-                .tokenYAxis()
-                .frame(height: 150)
-            }
-        }
+            },
+            liveDayModels: result.dayModels)
     }
 
     private func modelsCard(_ result: KimiUsageResult) -> some View {
