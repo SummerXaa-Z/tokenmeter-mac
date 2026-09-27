@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.13.0 — 2026-09-27 — 口径统一收尾：Skills 榜与会话数跟随范围
+
+- **Skills 榜与会话数跟随所选范围**：总览还剩 Skills 榜和会话数固定近 7 天。现在按天明细从「模型 Token」拓宽为「模型 + Skill 调用次数 + 活跃会话数」（`SourceDayDetail`），落盘仍走 `model-history/` 按月分片——旧分片按旧格式透明解码、该来源下次写入时原位升级；只开会话没耗 token 的天也保留（权威重扫仅删「三项全空」的天）。总览把实时扫描与留存明细按「日期 + 来源」合并后，Skills 榜、画像会话数与模型榜同口径按范围聚合；覆盖说明改为「按天明细自 X/X 起留存」覆盖全部维度。各采集器补齐按天数据：七个来源全部暴露 `daySessions`（从既有的按天会话计数派生），Claude / Codex 沿用解析器已有的 `perDaySkill`，Copilot 的 Skill 证据按会话结束日归属。影响范围：`ModelUsageHistory.swift`、七个来源采集器、`AppState.swift`、`OverviewSnapshot.swift`、`PersonalUsageProfile.swift`、`OverviewCards.swift`。
+- 新增 5 个测试（合计 263）：旧格式分片解码与原位升级、仅 Skills/会话的天保留、权威删除语义、会话与 Skills 跟随范围且实时扫描整体覆盖留存值。
+
 ## v3.12.0 — 2026-09-27 — 费用口径升级：模型维度跟随范围与订阅回本
 
 - **模型维度跟随所选范围**：模型榜、API 等价参考与输入缓存复用此前固定近 7 天，切到 30D / 全部也只看短窗口。现在三者跟随 1D / 7D / 30D / 全部——各采集器按天输出互斥的模型 Token 四分类明细（`ModelTokenTally`）， AppState 在写入按天历史的同时落盘 `model-history/`（按月分片本地 JSON，只含日期、来源、模型名与 Token 计数）；总览把实时扫描与落盘明细按「日期 + 来源」合并（实时覆盖同日落盘值，不重复计数）后按范围聚合。未来日期、设置里关掉的来源与 Cursor（只有订阅周期聚合）不参与；范围早于明细起点时模型榜与 API 卡注明「模型明细自 X/X 起按天留存，更早的用量只计入工具合计」。影响范围：`ModelUsageHistory.swift`（新增）、各来源采集器、`AppState.swift`、`OverviewSnapshot.swift`、`OverviewView.swift`、`OverviewCards.swift`。
