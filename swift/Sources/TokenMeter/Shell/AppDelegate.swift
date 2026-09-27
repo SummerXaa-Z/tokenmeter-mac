@@ -213,9 +213,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let note = OverviewSnapshot.modelCoverageNote(since: "2026-09-20")
         return ScrollView {
             VStack(spacing: 10) {
-                // 回本 ≥ 1 倍 + 覆盖说明
+                // 回本 ≥ 1 倍 + 覆盖说明 + 上期对比
                 OverviewAPICostCard(
                     summary: full, range: .week,
+                    priorSummary: APIReferenceCostSummary(
+                        samples: [
+                            .init(model: "opus-5-5", tokens: .init(
+                                newInputTokens: 0, cachedInputTokens: 0,
+                                cacheCreationTokens: 0, outputTokens: 3_000_000,
+                                reasoningOutputTokens: 0)),
+                        ],
+                        estimator: APIReferencePricingCatalog.estimator,
+                        referenceDate: APIReferencePricingCatalog.observedAt,
+                        conversionRates: APIReferencePricingCatalog.conversionRatesToUSD),
                     subscriptionValue: SubscriptionValueSummary(
                         monthlyFeeUSD: 120, days: 7, apiValueUSD: full.total),
                     coverageNote: note)

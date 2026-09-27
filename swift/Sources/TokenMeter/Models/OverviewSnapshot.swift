@@ -24,6 +24,9 @@ struct OverviewSnapshot: Equatable {
     let rankings: PersonalUsageRankings
     let skillRankings: PersonalSkillRankings
     let apiReferenceCost: APIReferenceCostSummary
+    // 固定范围的上期基期金额(今日档比昨日、7 天比前 7 天、30 天比前 30 天);
+    // 「全部」没有可比基期,为 nil
+    let priorAPIReferenceCost: APIReferenceCostSummary?
     // 所选来源最早有模型明细的一天（截至今天）；nil 表示尚无明细
     let modelCoverageStartDate: String?
     // 所选范围内的工具用量早于模型明细起点：模型维度只覆盖后一段
@@ -254,6 +257,41 @@ struct OverviewSnapshot: Equatable {
             referenceDate: APIReferencePricingCatalog.observedAt,
             conversionRates: APIReferencePricingCatalog.conversionRatesToUSD
         )
+
+        // 上期基期:同长度的上一个滚动窗口(今日→昨日、7 天→前 7 天、
+        // 30 天→前 30 天),同价格口径取样,供总览 API 等价卡做环比徽标
+        if let dayCount = range.fixedDayCount,
+           let today = DateUtil.date(from: todayKey),
+           let priorEnd = Calendar.current.date(
+               byAdding: .day, value: -dayCount, to: today),
+           let priorStart = Calendar.current.date(
+               byAdding: .day, value: 1 - 2 * dayCount, to: today)
+        {
+            let startKey = DateUtil.key(priorStart)
+            let endKey = DateUtil.key(priorEnd)
+            var priorSamples: [APICostSample] = []
+            for date in modelDays.keys.sorted() where date >= startKey && date <= endKey {
+                let pricingDate = max(date, APIReferencePricingCatalog.firstObservedAt)
+                let bySource = modelDays[date] ?? [:]
+                for source in modelSources {
+                    guard let detail = bySource[source] else { continue }
+                    for model in detail.models.keys.sorted() {
+                        guard let tally = detail.models[model] else { continue }
+                        priorSamples.append(.init(
+                            model: model, tokens: tally.breakdown,
+                            usageDate: pricingDate, source: source))
+                    }
+                }
+            }
+            priorAPIReferenceCost = APIReferenceCostSummary(
+                samples: priorSamples,
+                estimator: APIReferencePricingCatalog.estimator,
+                referenceDate: APIReferencePricingCatalog.observedAt,
+                conversionRates: APIReferencePricingCatalog.conversionRatesToUSD
+            )
+        } else {
+            priorAPIReferenceCost = nil
+        }
 
         let coverageStart = modelDays.keys.min()
         modelCoverageStartDate = coverageStart

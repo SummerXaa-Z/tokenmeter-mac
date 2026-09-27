@@ -68,6 +68,7 @@ struct OverviewView: View {
                         OverviewAPICostCard(
                             summary: data.apiReferenceCost,
                             range: range,
+                            priorSummary: data.priorAPIReferenceCost,
                             subscriptionValue: data.subscriptionValue,
                             coverageNote: data.modelCoverageNote
                         )

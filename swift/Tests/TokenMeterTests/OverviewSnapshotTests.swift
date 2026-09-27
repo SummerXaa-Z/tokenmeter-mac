@@ -601,6 +601,43 @@ final class OverviewSnapshotTests: XCTestCase {
         XCTAssertEqual(month.modelCoverageStartDate, "2026-09-01")
     }
 
+    func testPriorAPIReferenceCostUsesPreviousWindowOfSameLength() throws {
+        let history = try makeHistory(start: "2026-08-27", count: 30) { _ in [.codex: 1] }
+        let persisted = [
+            // 前 7 天(09-12..18):7D 档的基期窗口
+            ModelUsageDay(date: "2026-09-14", bySource: [
+                .codex: SourceDayDetail(models: ["gpt-5.4": .init(cached: 2_000_000)]),
+            ]),
+            // 昨日:1D 档的基期;今日不属于任何基期窗口
+            ModelUsageDay(date: "2026-09-24", bySource: [
+                .codex: SourceDayDetail(models: ["gpt-5.4": .init(output: 1_000_000)]),
+            ]),
+            ModelUsageDay(date: "2026-09-25", bySource: [
+                .codex: SourceDayDetail(models: ["gpt-5.4": .init(input: 9_000_000)]),
+            ]),
+        ]
+        func snapshot(_ range: UsageHistoryRange) -> OverviewSnapshot {
+            OverviewSnapshot(
+                selection: OverviewSourceSelection(sources: [.codex]),
+                range: range, history: range.slice(history), streakHistory: history,
+                deepSeek: nil, claude: nil, codex: nil, openCode: nil, gemini: nil,
+                copilot: nil, cursor: nil, modelHistory: persisted, todayKey: "2026-09-25")
+        }
+
+        // gpt-5.4 缓存读取 $0.25/M × 2M = $0.50
+        let week = snapshot(.week)
+        XCTAssertEqual(week.priorAPIReferenceCost?.total ?? 0, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(week.priorAPIReferenceCost?.totalTokens, 2_000_000)
+
+        // 昨日 1M 输出 × $15/M = $15
+        let day = snapshot(.day)
+        XCTAssertEqual(day.priorAPIReferenceCost?.total ?? 0, 15, accuracy: 1e-9)
+        XCTAssertEqual(day.priorAPIReferenceCost?.totalTokens, 1_000_000)
+
+        // 「全部」没有可比基期
+        XCTAssertNil(snapshot(.all).priorAPIReferenceCost)
+    }
+
     func testModelDimensionsIgnoreFutureDaysDeselectedSourcesAndCursor() {
         let persisted = [
             ModelUsageDay(date: "2026-09-25", bySource: [

@@ -756,6 +756,8 @@ struct OverviewRankingsCard: View {
 struct OverviewAPICostCard: View {
     let summary: APIReferenceCostSummary
     let range: UsageHistoryRange
+    // 固定范围的上期基期金额(环比徽标);「全部」为 nil
+    var priorSummary: APIReferenceCostSummary? = nil
     var subscriptionValue: SubscriptionValueSummary? = nil
     var coverageNote: String? = nil
 
@@ -767,9 +769,24 @@ struct OverviewAPICostCard: View {
                     Label("\(range.scopeTitle) API 等价参考", systemImage: "dollarsign.circle")
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
+                    if range.fixedDayCount != nil {
+                        Text("上期对比")
+                            .font(.system(size: 10)).foregroundStyle(.tertiary)
+                    }
+                }
+                HStack(spacing: 6) {
                     Text(summary.amounts.isEmpty ? "暂无参考价" : Fmt.usd(summary.total))
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundStyle(Theme.brand)
+                    if let prior = priorSummary {
+                        Text(priorLabel(prior))
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if let prior = priorSummary {
+                        ChangeBadge(change: PeriodCompare.change(
+                            this: summary.total, last: prior.total))
+                    }
                 }
                 HStack {
                     Text("价格覆盖").font(.system(size: 11)).foregroundStyle(.secondary)
@@ -811,6 +828,17 @@ struct OverviewAPICostCard: View {
 
     private var topAmounts: [APIReferenceCostSummary.ModelAmount] {
         Array(summary.modelAmounts.prefix(3))
+    }
+
+    private func priorLabel(_ prior: APIReferenceCostSummary) -> String {
+        let name: String
+        switch range.fixedDayCount {
+        case 1: name = "昨日"
+        case 7: name = "前 7 天"
+        case 30: name = "前 30 天"
+        default: name = "上期"
+        }
+        return "\(name) \(Fmt.usd(prior.total))"
     }
 
     private func amountRow(rank: Int, amount: APIReferenceCostSummary.ModelAmount) -> some View {
