@@ -177,6 +177,60 @@ final class UsageCSVExportTests: XCTestCase {
             "2026-09-26")
     }
 
+    // MARK: - 周报导出（固定窗口档）
+
+    func testWindowRangeFiltersRowsAndProratesFullWeek() throws {
+        // 上周 = 09-14(周一)..09-20(周日);窗口外的 09-13/09-21 不导出;
+        // 明细留存从 09-16 起 → 折算从 09-16 到 09-20 共 5 天,
+        // 周日(09-20)没有用量行也计入折算终点(与周报同整周口径)
+        let modelHistory = [
+            ModelUsageDay(date: "2026-09-16", bySource: [
+                .kimi: SourceDayDetail(models: ["kimi-k2.6": .init(output: 1_000_000)]),
+            ]),
+        ]
+        let apiValues = UsageCSVExport.apiValueByDate(modelHistory)
+        let rows = parseRows(UsageCSVExport.makeCSV([
+            day("2026-09-13", bySource: [.kimi: 999]),
+            day("2026-09-15", bySource: [.kimi: 100]),
+            day("2026-09-16", bySource: [.kimi: 50]),
+            day("2026-09-19", bySource: [.kimi: 200]),
+            day("2026-09-21", bySource: [.kimi: 777]),
+        ], apiValueByDate: apiValues, modelHistory: modelHistory,
+           plans: [SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY")],
+           range: .window(start: "2026-09-14", end: "2026-09-20")))
+        XCTAssertEqual(rows.count, 6)   // 表头 + 3 天 + 汇总 + 订阅回本
+        XCTAssertEqual(rows[1][0], "2026-09-15")
+        XCTAssertFalse(rows.contains { $0.first == "2026-09-13" })
+        XCTAssertFalse(rows.contains { $0.first == "2026-09-21" })
+        XCTAssertEqual(rows[4][0], "汇总")
+        XCTAssertEqual(rows[4][3], "350")          // 100+50+200
+        XCTAssertEqual(rows[4][12], "2.44")
+        let text = try XCTUnwrap(rows.last?.joined(separator: ","))
+        XCTAssertTrue(text.contains("折算天数 5"), text)            // 09-16..09-20
+        XCTAssertTrue(text.contains("折算订阅费(USD) 3.29"), text)
+        XCTAssertTrue(text.contains("API 等价合计(USD) 2.44"), text)
+        XCTAssertTrue(text.contains("回本倍数 0.74"), text)
+    }
+
+    func testLastWeekWindowMatchesDigestISOWeek() {
+        // 无论周日还是周一取「上周」,都落在同一个已结束的 ISO 周
+        let fromSunday = UsageCSVExport.lastWeekWindow(
+            today: DateUtil.date(from: "2026-09-27")!)   // 周日
+        XCTAssertEqual(fromSunday, .window(start: "2026-09-14", end: "2026-09-20"))
+        let fromMonday = UsageCSVExport.lastWeekWindow(
+            today: DateUtil.date(from: "2026-09-21")!)   // 周一
+        XCTAssertEqual(fromMonday, .window(start: "2026-09-14", end: "2026-09-20"))
+        let midWeek = UsageCSVExport.lastWeekWindow(
+            today: DateUtil.date(from: "2026-09-24")!)   // 周四
+        XCTAssertEqual(midWeek, .window(start: "2026-09-14", end: "2026-09-20"))
+    }
+
+    func testSuggestedFilenameWindowSuffix() {
+        XCTAssertTrue(UsageCSVExport.suggestedFilename(
+            range: .window(start: "2026-09-14", end: "2026-09-20")
+        ).hasSuffix("-lastweek.csv"))
+    }
+
     func testSuggestedFilenameCarriesRange() {
         XCTAssertTrue(UsageCSVExport.suggestedFilename(range: .lastDays(30))
             .hasSuffix("-30d.csv"))

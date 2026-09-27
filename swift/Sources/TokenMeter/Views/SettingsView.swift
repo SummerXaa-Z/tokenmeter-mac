@@ -27,6 +27,7 @@ struct SettingsView: View {
     @State private var diagnosticStatus = ""
     @State private var usageExportStatus = ""
     @State private var usageExportRange: UsageCSVExport.ExportRange = .all
+    @State private var digestExportStatus = ""
     // 连接行的展开态：未配置的默认展开引导输入，已配置的收起成一行；
     // 验证保存成功后自动收起，清除后保持展开方便重输。
     @State private var expandBalanceKey = false
@@ -540,6 +541,19 @@ struct SettingsView: View {
                     .controlSize(.small)
                     .disabled(digestPreview == nil)
                 }
+                HStack {
+                    Button("导出上周 CSV") { exportLastWeekCSV() }
+                        .controlSize(.small)
+                    Text("与周报同口径：上周周一到周日，末尾同样附汇总与订阅回本行")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    Spacer()
+                }
+                if !digestExportStatus.isEmpty {
+                    Text(digestExportStatus)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
 
                 Divider()
                 VStack(alignment: .leading, spacing: 5) {
@@ -754,15 +768,33 @@ struct SettingsView: View {
     }
 
     private func exportUsageCSV() {
+        if let status = runUsageCSVExport(range: usageExportRange) {
+            usageExportStatus = status
+        }
+    }
+
+    /// 周报同口径导出：上周周一到周日（含汇总与订阅回本行，按整周折算）
+    private func exportLastWeekCSV() {
+        guard let range = UsageCSVExport.lastWeekWindow() else {
+            digestExportStatus = "无法确定上周的日期范围"
+            return
+        }
+        if let status = runUsageCSVExport(range: range) {
+            digestExportStatus = status
+        }
+    }
+
+    /// 共用的保存面板流程；返回 nil 表示用户取消，否则为结果状态文案
+    private func runUsageCSVExport(range: UsageCSVExport.ExportRange) -> String? {
         NSApp.activate(ignoringOtherApps: true)
         let panel = NSSavePanel()
         panel.title = "导出用量 CSV"
-        panel.nameFieldStringValue = UsageCSVExport.suggestedFilename(range: usageExportRange)
+        panel.nameFieldStringValue = UsageCSVExport.suggestedFilename(range: range)
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
         panel.allowedContentTypes = [.commaSeparatedText]
 
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
         do {
             let modelHistory = ModelUsageHistoryStore.shared.all()
             let apiValues = UsageCSVExport.apiValueByDate(modelHistory)
@@ -771,11 +803,11 @@ struct SettingsView: View {
                 apiValueByDate: apiValues,
                 modelHistory: modelHistory,
                 plans: ConfigStore.shared.subscriptionPlans,
-                range: usageExportRange
+                range: range
             ).write(to: url, atomically: true, encoding: .utf8)
-            usageExportStatus = "已导出：\(url.lastPathComponent)"
+            return "已导出：\(url.lastPathComponent)"
         } catch {
-            usageExportStatus = "导出失败：\(error.localizedDescription)"
+            return "导出失败：\(error.localizedDescription)"
         }
     }
 

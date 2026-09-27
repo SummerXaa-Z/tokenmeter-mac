@@ -12,6 +12,8 @@ enum UsageCSVExport {
     enum ExportRange: Hashable {
         case all
         case lastDays(Int)
+        /// 固定自然日窗口（含两端），如周报导出的「上周」周一到周日
+        case window(start: String, end: String)
 
         /// 设置页分段选择器的选项与标题
         static let choices: [ExportRange] = [.all, .lastDays(30), .lastDays(90)]
@@ -20,6 +22,7 @@ enum UsageCSVExport {
             switch self {
             case .all: return "全部"
             case .lastDays(let n): return "近\(n)天"
+            case .window: return "指定范围"
             }
         }
     }
@@ -30,7 +33,7 @@ enum UsageCSVExport {
         (.qwen, "Qwen Code"), (.cursor, "Cursor"),
     ]
 
-    /// 窗口起点日期键（含）；全部档返回 nil。近 N 天=滚动窗口，
+    /// 窗口起点日期键（含）；全部档与固定窗口档返回 nil。近 N 天=滚动窗口，
     /// 从今天往前数第 N 个自然日（含今天），与总览「近 7 天」同口径。
     static func windowStartDateKey(
         _ range: ExportRange,
@@ -42,6 +45,23 @@ enum UsageCSVExport {
         let start = calendar.date(
             byAdding: .day, value: -(n - 1), to: calendar.startOfDay(for: today)) ?? today
         return DateUtil.key(start)
+    }
+
+    /// 周报同口径的「上周」窗口：今天往前 7 天所在的 ISO 周（周一到周日），
+    /// 与 WeeklyDigest 的订阅折算窗口完全一致。
+    static func lastWeekWindow(
+        today: Date = Date(),
+        calendar: Calendar = .current
+    ) -> ExportRange? {
+        guard let lastWeek = calendar.date(byAdding: .day, value: -7, to: today)
+        else { return nil }
+        var iso = Calendar(identifier: .iso8601)
+        iso.timeZone = calendar.timeZone
+        iso.firstWeekday = 2
+        guard let week = iso.dateInterval(of: .weekOfYear, for: lastWeek),
+              let weekEnd = calendar.date(byAdding: .day, value: 6, to: week.start)
+        else { return nil }
+        return .window(start: DateUtil.key(week.start), end: DateUtil.key(weekEnd))
     }
 
     static func makeCSV(
@@ -57,9 +77,21 @@ enum UsageCSVExport {
             + codingColumns.map(\.title)
             + ["Coding 合计", "DeepSeek 平台", "平台费用(USD)", "API 等价(USD)"])
         var sorted = days.sorted(by: { $0.date < $1.date })
-        if let startKey = windowStartDateKey(range, todayKey: todayKey) {
-            sorted = sorted.filter { $0.date >= startKey }
+        switch range {
+        case .all:
+            break
+        case .lastDays:
+            if let startKey = windowStartDateKey(range, todayKey: todayKey) {
+                sorted = sorted.filter { $0.date >= startKey }
+            }
+        case .window(let start, let end):
+            sorted = sorted.filter { $0.date >= start && $0.date <= end }
         }
+        // 固定窗口档的折算边界用窗口本身（与周报同口径：整周自然日都摊），
+        // 滚动/全部档沿用首末行日期
+        let fixedBounds: (start: String, end: String)?
+        if case let .window(start, end) = range { fixedBounds = (start, end) }
+        else { fixedBounds = nil }
         for day in sorted {
             let codingTotal = HistorySource.codingAgents.reduce(0) {
                 $0 + (day.bySource[$1] ?? 0)
@@ -77,7 +109,7 @@ enum UsageCSVExport {
             lines.append(totalRow(sorted, apiValueByDate: apiValueByDate))
         }
         if let subscription = subscriptionSummary(
-            sorted, apiValueByDate: apiValueByDate,
+            sorted, fixedBounds: fixedBounds, apiValueByDate: apiValueByDate,
             modelHistory: modelHistory, plans: plans)
         {
             lines.append([
@@ -121,20 +153,24 @@ enum UsageCSVExport {
     /// 「订阅回本」行的数字：月费为全部订阅合计（人民币按固定参考汇率折算）；
     /// 折算天数从导出起点与按天明细留存起点中较晚者数到导出终点——不拿
     /// 没算进金额的天去摊订阅费（与总览/来源页同钳制）。API 等价合计
-    /// 只统计导出范围内的天（与「汇总」行同口径）。
+    /// 只统计导出范围内的天（与「汇总」行同口径）。固定窗口档
+    /// （周报导出）的起点/终点取窗口边界而非首末行：与周报同按整周
+    /// 自然日折算，周末空白日也计入分母。
     private static func subscriptionSummary(
         _ sorted: [HistoryStore.DayPoint],
+        fixedBounds: (start: String, end: String)?,
         apiValueByDate: [String: Double],
         modelHistory: [ModelUsageDay],
         plans: [SubscriptionPlan]
     ) -> SubscriptionValueSummary? {
         let monthlyFee = SubscriptionPlan.monthlyTotalUSD(plans)
         guard monthlyFee > 0,
-              let exportStart = sorted.first?.date,
-              let exportEnd = sorted.last?.date,
+              let exportStart = fixedBounds?.start ?? sorted.first?.date,
+              let exportEnd = fixedBounds?.end ?? sorted.last?.date,
               let startDate = DateUtil.date(
                 from: max(exportStart, detailCoverageStart(modelHistory) ?? exportStart)),
-              let endDate = DateUtil.date(from: exportEnd)
+              let endDate = DateUtil.date(from: exportEnd),
+              startDate <= endDate
         else { return nil }
         let days = Calendar.current.dateComponents([.day], from: startDate, to: endDate).day ?? 0
         let apiTotal = sorted.compactMap { apiValueByDate[$0.date] }.reduce(0, +)
@@ -183,6 +219,7 @@ enum UsageCSVExport {
         switch range {
         case .all: suffix = ""
         case .lastDays(let n): suffix = "-\(n)d"
+        case .window: suffix = "-lastweek"
         }
         return "TokenMeter-usage-\(DateUtil.today())\(suffix).csv"
     }
