@@ -5,6 +5,8 @@ enum AppView: Equatable {
     case source(Provider)
     case settings
     case detail(String)   // model key: "flash" | "pro"
+    // 模型榜下钻：来源 + 模型名，固定「近 30 天」明细页
+    case codingModel(HistorySource, String)
 }
 
 // 可从首页内容区进入的工具详情；它不再承担导航栏职责。
@@ -74,6 +76,9 @@ struct RootView: View {
                         range: historyRange,
                         sources: sources,
                         onOpenSource: { push(.source($0)) },
+                        onOpenModel: { source, model in
+                            push(.codingModel(source, model))
+                        },
                         onSettings: { push(.settings) }
                     )
                     .transition(.opacity)
@@ -118,6 +123,11 @@ struct RootView: View {
                     .transition(.opacity)
                 case .detail(let key):
                     ModelDetailView(modelKey: key, onBack: { push(.source(.deepseek)) })
+                        .transition(.opacity)
+                case .codingModel(let source, let model):
+                    CodingModelDetailView(
+                        source: source, model: model,
+                        onBack: { push(.dashboard) })
                         .transition(.opacity)
                 }
             }

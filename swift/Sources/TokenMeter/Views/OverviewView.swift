@@ -7,6 +7,8 @@ struct OverviewView: View {
     let range: UsageHistoryRange
     let sources: [Provider]
     let onOpenSource: (Provider) -> Void
+    // 模型榜下钻：(来源, 模型名) → 近 30 天明细页
+    var onOpenModel: (HistorySource, String) -> Void = { _, _ in }
     var onSettings: () -> Void
     @State private var history: [HistoryStore.DayPoint] = []
     @State private var modelHistory: [ModelUsageDay] = []
@@ -62,7 +64,8 @@ struct OverviewView: View {
                         rankings: data.rankings,
                         skillRankings: data.skillRankings,
                         range: range,
-                        coverageNote: data.modelCoverageNote
+                        coverageNote: data.modelCoverageNote,
+                        onOpenModel: onOpenModel
                     )
                     if data.apiReferenceCost.totalTokens > 0 {
                         OverviewAPICostCard(

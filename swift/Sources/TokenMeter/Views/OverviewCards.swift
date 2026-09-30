@@ -658,6 +658,8 @@ struct OverviewRankingsCard: View {
     let skillRankings: PersonalSkillRankings
     let range: UsageHistoryRange
     var coverageNote: String? = nil
+    // 模型行点击下钻到「近 30 天」明细页；默认空实现（渲染/预览可省）
+    var onOpenModel: (HistorySource, String) -> Void = { _, _ in }
 
     var body: some View {
         Card {
@@ -671,18 +673,24 @@ struct OverviewRankingsCard: View {
                 } else {
                     ForEach(Array(rankings.models.prefix(5).enumerated()), id: \.element.id) {
                         index, entry in
-                        rankingRow(
-                            rank: index + 1,
-                            name: entry.model,
-                            source: entry.source,
-                            tokens: entry.totalTokens,
-                            share: entry.share,
-                            showsSource: true
-                        )
+                        Button {
+                            onOpenModel(entry.source, entry.model)
+                        } label: {
+                            rankingRow(
+                                rank: index + 1,
+                                name: entry.model,
+                                source: entry.source,
+                                tokens: entry.totalTokens,
+                                share: entry.share,
+                                showsSource: true
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .help("查看该模型近 30 天明细与 API 等价走势")
                     }
                 }
 
-                Text("模型名右侧为其当前生效的参考单价（输入 / 输出，每百万 tokens）；缺价模型不标注，等价金额见「API 等价参考」卡。")
+                Text("模型名右侧为其当前生效的参考单价（输入 / 输出，每百万 tokens）；缺价模型不标注，等价金额见「API 等价参考」卡。点击模型行查看近 30 天明细与 API 等价走势。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
                 Text("模型榜保留采集来源；Cursor 当前只有订阅周期聚合，暂不混入模型榜。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
