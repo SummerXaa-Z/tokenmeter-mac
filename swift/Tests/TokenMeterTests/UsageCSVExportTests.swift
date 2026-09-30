@@ -98,14 +98,68 @@ final class UsageCSVExportTests: XCTestCase {
             day("2026-09-22", bySource: [.kimi: 150]),
             day("2026-09-26", bySource: [.kimi: 200]),
         ], apiValueByDate: apiValues, modelHistory: modelHistory,
-           plans: [SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY")]))
-        XCTAssertEqual(rows.last?.first, "订阅回本")
-        let text = try XCTUnwrap(rows.last?.joined(separator: ","))
+           plans: [SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY")],
+           todayKey: "2026-09-28"))
+        let text = try XCTUnwrap(
+            rows.first { $0.first == "订阅回本" }?.joined(separator: ","))
         XCTAssertTrue(text.contains("订阅月费合计(USD) 20.00"), text)
         XCTAssertTrue(text.contains("折算天数 5"), text)
         XCTAssertTrue(text.contains("折算订阅费(USD) 3.29"), text)   // 20×12/365×5
         XCTAssertTrue(text.contains("API 等价合计(USD) 2.44"), text)
         XCTAssertTrue(text.contains("回本倍数 0.74"), text)
+    }
+
+    // MARK: - 订阅回本·周明细行
+
+    func testRoiWeeklyRowsFollowCurvePipeline() throws {
+        // 与总览曲线同管线:全部 Coding 来源聚合(Kimi 9/22 旧价 $2.44/M +
+        // Claude opus-5.5 9/23 $20/M),周费 $100×12/365×7 = $23.01;
+        // 留存从 09-07 起 → 此前的周费用 0、倍数「—」
+        let modelHistory = [
+            ModelUsageDay(date: "2026-09-07", bySource: [
+                .kimi: SourceDayDetail(models: ["kimi-k2.6": .init(output: 2_000_000)]),
+            ]),
+            ModelUsageDay(date: "2026-09-14", bySource: [
+                .kimi: SourceDayDetail(models: ["kimi-k2.6": .init(output: 5_000_000)]),
+            ]),
+            ModelUsageDay(date: "2026-09-22", bySource: [
+                .kimi: SourceDayDetail(models: ["kimi-k2.6": .init(output: 3_000_000)]),
+            ]),
+            ModelUsageDay(date: "2026-09-23", bySource: [
+                .claude: SourceDayDetail(models: ["opus-5-5": .init(output: 1_000_000)]),
+            ]),
+        ]
+        let rows = parseRows(UsageCSVExport.makeCSV([
+            day("2026-09-22", bySource: [.kimi: 300]),
+            day("2026-09-23", bySource: [.claude: 50]),
+        ], apiValueByDate: UsageCSVExport.apiValueByDate(modelHistory),
+           modelHistory: modelHistory,
+           plans: [SubscriptionPlan(name: "Claude Max", monthlyFee: 100)],
+           todayKey: "2026-09-28"))
+        let weekly = rows.filter { $0.first == "订阅回本·周明细" }
+        XCTAssertEqual(weekly.count, 13)
+        // 订阅回本行在周明细之前
+        let subscriptionIndex = try XCTUnwrap(
+            rows.firstIndex { $0.first == "订阅回本" })
+        let firstWeeklyIndex = try XCTUnwrap(
+            rows.firstIndex { $0.first == "订阅回本·周明细" })
+        XCTAssertLessThan(subscriptionIndex, firstWeeklyIndex)
+        // 留存起点之前:整周无费用、倍数留「—」
+        XCTAssertEqual(weekly.first?.dropFirst().prefix(2),
+                       ["周(周一) 2026-06-29", "API 等价(USD) 0.00"])
+        XCTAssertTrue(weekly.first?.contains("折算订阅费(USD) 0.00") ?? false)
+        XCTAssertTrue(weekly.first?.contains("回本倍数 —") ?? false)
+        // 最近一个完整周:双来源金额聚合进同一周
+        XCTAssertEqual(weekly.last?.dropFirst().prefix(3), [
+            "周(周一) 2026-09-21",
+            "API 等价(USD) 27.32",     // 3M×2.44 + 1M×20
+            "折算订阅费(USD) 23.01",    // 100×12/365×7
+        ])
+        XCTAssertTrue(weekly.last?.contains("回本倍数 1.19") ?? false)
+        // 有数据的中间周各成一行
+        let middle = weekly.first { $0.contains("周(周一) 2026-09-14") }
+        XCTAssertTrue(middle?.contains("API 等价(USD) 12.20") ?? false)
+        XCTAssertTrue(middle?.contains("回本倍数 0.53") ?? false)
     }
 
     func testSubscriptionRowOmittedWithoutPlans() {
@@ -141,7 +195,8 @@ final class UsageCSVExportTests: XCTestCase {
         ], apiValueByDate: apiValues, modelHistory: modelHistory,
            plans: [SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY")],
            range: .lastDays(5), todayKey: "2026-09-26"))
-        XCTAssertEqual(rows.count, 6)   // 表头 + 2 天 + 汇总 + 价格覆盖率 + 订阅回本
+        // 表头 + 2 天 + 汇总 + 价格覆盖率 + 订阅回本 + 13 行周明细
+        XCTAssertEqual(rows.count, 19)
         XCTAssertEqual(rows[1][0], "2026-09-22")
         XCTAssertFalse(rows.contains { $0.first == "2026-09-18" })
         // 汇总只算范围内:Kimi 200+300,API 等价 2.44+4.00
@@ -151,11 +206,19 @@ final class UsageCSVExportTests: XCTestCase {
         // 覆盖率同样只算范围内(09-18 的明细不计入)
         XCTAssertEqual(rows[4][0], "价格覆盖率")
         XCTAssertTrue(rows[4].joined(separator: ",").contains("覆盖率 100.0%"))
-        let text = try XCTUnwrap(rows.last?.joined(separator: ","))
+        let text = try XCTUnwrap(
+            rows.first { $0.first == "订阅回本" }?.joined(separator: ","))
         XCTAssertTrue(text.contains("折算天数 5"), text)          // 09-22..09-26
         XCTAssertTrue(text.contains("折算订阅费(USD) 3.29"), text)  // 20×12/365×5
         XCTAssertTrue(text.contains("API 等价合计(USD) 6.44"), text)
         XCTAssertTrue(text.contains("回本倍数 1.96"), text)        // 6.44/3.29
+        // 周明细不随导出范围截取:today=09-26 的最近完整周是 09-14,
+        // 留存自 09-18 起 → 该周摊 3 天、含 09-18 的 $2.44
+        let weekly = rows.filter { $0.first == "订阅回本·周明细" }
+        XCTAssertEqual(weekly.count, 13)
+        let lastWeekRow = weekly.first { $0.contains("周(周一) 2026-09-14") }
+        XCTAssertTrue(lastWeekRow?.contains("折算订阅费(USD) 1.97") ?? false)  // 20×12/365×3
+        XCTAssertTrue(lastWeekRow?.contains("API 等价(USD) 2.44") ?? false)
     }
 
     func testRangeBeyondHistoryKeepsEverything() {
@@ -201,18 +264,22 @@ final class UsageCSVExportTests: XCTestCase {
         ], apiValueByDate: apiValues, modelHistory: modelHistory,
            plans: [SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY")],
            range: .window(start: "2026-09-14", end: "2026-09-20")))
-        XCTAssertEqual(rows.count, 7)   // 表头 + 3 天 + 汇总 + 价格覆盖率 + 订阅回本
+        // 表头 + 3 天 + 汇总 + 价格覆盖率 + 订阅回本 + 13 行周明细
+        XCTAssertEqual(rows.count, 20)
         XCTAssertEqual(rows[1][0], "2026-09-15")
         XCTAssertFalse(rows.contains { $0.first == "2026-09-13" })
         XCTAssertFalse(rows.contains { $0.first == "2026-09-21" })
         XCTAssertEqual(rows[4][0], "汇总")
         XCTAssertEqual(rows[4][3], "350")          // 100+50+200
         XCTAssertEqual(rows[4][12], "2.44")
-        let text = try XCTUnwrap(rows.last?.joined(separator: ","))
+        let text = try XCTUnwrap(
+            rows.first { $0.first == "订阅回本" }?.joined(separator: ","))
         XCTAssertTrue(text.contains("折算天数 5"), text)            // 09-16..09-20
         XCTAssertTrue(text.contains("折算订阅费(USD) 3.29"), text)
         XCTAssertTrue(text.contains("API 等价合计(USD) 2.44"), text)
         XCTAssertTrue(text.contains("回本倍数 0.74"), text)
+        // 周明细按 today 的完整周计算,窗口外的当周照常成行(不随导出范围截取)
+        XCTAssertEqual(rows.filter { $0.first == "订阅回本·周明细" }.count, 13)
     }
 
     func testLastWeekWindowMatchesDigestISOWeek() {

@@ -8,7 +8,8 @@ import Foundation
 // （各列求和，与表头同列对齐）、「价格覆盖率」行（范围内已计价 tokens 占比，
 // 说明 API 等价列的可靠程度）；填写了订阅月费时再附「订阅回本」行——
 // 月费合计、按导出跨度折算的天数与订阅费、API 等价合计与回本倍数，
-// 与总览同口径，且都只统计所选范围内的天。
+// 与总览同口径，且都只统计所选范围内的天——其后跟「订阅回本·周明细」
+// 行：最近 13 个完整周逐周回本（与总览曲线同管线，不随导出范围截取）。
 enum UsageCSVExport {
     enum ExportRange: Hashable {
         case all
@@ -116,8 +117,39 @@ enum UsageCSVExport {
                 String(format: "API 等价合计(USD) %.2f", subscription.apiValueUSD),
                 subscription.multiple.map { String(format: "回本倍数 %.2f", $0) } ?? "回本倍数 —",
             ])
+            lines.append(contentsOf: roiWeeklyRows(
+                modelHistory: modelHistory, plans: plans, todayKey: todayKey))
         }
         return lines.map { $0.joined(separator: ",") }.joined(separator: "\n") + "\n"
+    }
+
+    /// 「订阅回本·周明细」行：最近 13 个完整周逐周回本，与总览回本走势
+    /// 曲线同一条管线（全部订阅合计、全部 Coding 来源），不随导出范围
+    /// 截取——对账时与 App 内曲线逐点对得上。留存起点之前的周费用为
+    /// 0、倍数留「—」；未填订阅或无按天明细时不输出任何行。
+    private static func roiWeeklyRows(
+        modelHistory: [ModelUsageDay],
+        plans: [SubscriptionPlan],
+        todayKey: String
+    ) -> [[String]] {
+        let monthlyFee = SubscriptionPlan.monthlyTotalUSD(plans)
+        guard monthlyFee > 0,
+              let today = DateUtil.date(from: todayKey)
+        else { return [] }
+        return SubscriptionROICurve.weeklyPoints(
+            participants: HistorySource.codingAgents,
+            monthlyFeeUSD: monthlyFee,
+            persisted: modelHistory,
+            today: today
+        ).map { point in
+            [
+                "订阅回本·周明细",
+                "周(周一) \(point.weekOf)",
+                String(format: "API 等价(USD) %.2f", point.apiValueUSD),
+                String(format: "折算订阅费(USD) %.2f", point.feeUSD),
+                point.multiple.map { String(format: "回本倍数 %.2f", $0) } ?? "回本倍数 —",
+            ]
+        }
     }
 
     /// 「价格覆盖率」行：范围内按天模型明细的已计价 tokens 占比（与逐日
