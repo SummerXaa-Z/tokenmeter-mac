@@ -207,6 +207,7 @@ final class WeeklyDigestTests: XCTestCase {
         XCTAssertEqual(
             message?.body,
             "合计 3M；全部来自 Kimi Code；API 等价 $7.32\(checkedAt)；订阅回本 约 1.9 倍")
+        // 留存只覆盖上周一周:有数据的周不足两个,走势小抄不拼
     }
 
     func testMessageSubscriptionUsesFullWeekWhenCoveragePredatesIt() {
@@ -223,9 +224,31 @@ final class WeeklyDigestTests: XCTestCase {
                SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY"),
            ],
            today: date("2026-09-28"), calendar: calendar)
+        // 走势取有数据的最近几周:9/7 周自 09-10 起摊 4 天(0.2)、9/14 周零
+        // 用量(0.0)、上周(0.3);留存更早的周不足两个时不拼(见上一测试)
         XCTAssertEqual(
             message?.body,
-            "合计 3M；全部来自 Kimi Code；API 等价 $7.32\(checkedAt)；订阅回本 约 0.3 倍")
+            "合计 3M；全部来自 Kimi Code；API 等价 $7.32\(checkedAt)；订阅回本 约 0.3 倍，近 3 周 0.2 → 0.0 → 0.3")
+    }
+
+    func testMessageAppendsRoiTrendOfRecentCompleteWeeks() {
+        // 四个完整周都有明细(价均 $2.44/M):逐周 1M/2M/5M/3M 输出 →
+        // $2.44/4.88/12.20/7.32 ÷ 周费 $23.01($100×12/365×7) =
+        // 0.1/0.2/0.5/0.3,末位与正文"约 0.3 倍"同一条曲线
+        let message = WeeklyDigest.message([
+            day("2026-09-22", bySource: [.kimi: 3_000_000]),
+        ], participants: [.kimi],
+           modelDays: [
+               modelDay("2026-08-31", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+               modelDay("2026-09-07", source: .kimi, ["kimi-k2.6": .init(output: 2_000_000)]),
+               modelDay("2026-09-14", source: .kimi, ["kimi-k2.6": .init(output: 5_000_000)]),
+               modelDay("2026-09-22", source: .kimi, ["kimi-k2.6": .init(output: 3_000_000)]),
+           ],
+           plans: [SubscriptionPlan(name: "Claude Max", monthlyFee: 100)],
+           today: date("2026-09-28"), calendar: calendar)
+        XCTAssertEqual(
+            message?.body,
+            "合计 3M；全部来自 Kimi Code；API 等价 $7.32（环比 ↓ 40%）\(checkedAt)；订阅回本 约 0.3 倍，近 4 周 0.1 → 0.2 → 0.5 → 0.3")
     }
 
     func testMessageSubscriptionOmittedWithoutPositiveFee() {

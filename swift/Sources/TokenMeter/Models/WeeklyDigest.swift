@@ -1,9 +1,10 @@
 import Foundation
 
 // 每周一条的"上周用量摘要"通知:上周全部 Coding 来源 Token 合计、环比、
-// 主力来源、API 等价金额与订阅回本倍数。数据与总览环比卡同源(PeriodCompare
-// 日历周口径),金额按天明细 + 当日生效价重算(与总览 API 等价同口径),
-// 纯本地计算,经 Notifier 推系统通知;上周一条记录都没有就不打扰。
+// 主力来源、API 等价金额与订阅回本倍数(附近几周走势小抄)。数据与总览
+// 环比卡同源(PeriodCompare 日历周口径),金额按天明细 + 当日生效价重算
+// (与总览 API 等价同口径),纯本地计算,经 Notifier 推系统通知;上周一条
+// 记录都没有就不打扰。
 enum WeeklyDigest {
     struct Message: Equatable {
         let title: String
@@ -114,9 +115,39 @@ enum WeeklyDigest {
                let multiple = value.multiple
             {
                 body += "；订阅回本 \(SubscriptionValueSummary.multipleText(multiple))"
+                if let trend = roiTrendText(
+                    modelDays: modelDays, allowed: allowed,
+                    plans: plans, today: today, calendar: calendar)
+                {
+                    body += "，\(trend)"
+                }
             }
         }
         return Message(title: "TokenMeter 上周用量摘要", body: body)
+    }
+
+    /// 回本走势小抄:近几个完整周的逐周倍数(如"近 4 周 1.8 → 2.4 → 2.1 →
+    /// 2.0"),与正文回本倍数同一条曲线(总览口径,全部订阅合计),末位即
+    /// 刚报的倍数。分母自留存起点起逐周连续,有数据的周必然连成一段并
+    /// 终于上周,所以"近 N 周"字面成立;不足两个周不拼——单个数成不了
+    /// 走势。
+    private static func roiTrendText(
+        modelDays: [ModelUsageDay],
+        allowed: Set<HistorySource>,
+        plans: [SubscriptionPlan],
+        today: Date,
+        calendar: Calendar
+    ) -> String? {
+        let monthlyFee = SubscriptionPlan.monthlyTotalUSD(plans)
+        guard monthlyFee > 0 else { return nil }
+        let recent = SubscriptionROICurve.weeklyPoints(
+            participants: allowed, monthlyFeeUSD: monthlyFee,
+            persisted: modelDays, today: today, calendar: calendar)
+            .compactMap(\.multiple)
+            .suffix(4)
+        guard recent.count >= 2 else { return nil }
+        let items = recent.map { String(format: "%.1f", $0) }
+        return "近 \(recent.count) 周 " + items.joined(separator: " → ")
     }
 
     /// 上周的订阅回本:分母为全部订阅月费合计(总览口径,人民币按固定参考
