@@ -264,6 +264,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date())
                 .map(DateUtil.key) ?? DateUtil.today()
         }
+        // 回本走势夹具:最近 13 个完整周,含 <1 倍低周与 6 倍尖峰(验证封顶与虚线)
+        let roiFixture: [SubscriptionROICurve.WeekPoint] = {
+            let calendar = Calendar.current
+            let today = calendar.startOfDay(for: Date())
+            let thisMonday = DateUtil.date(
+                from: UsageHeatmap.mondayKey(of: today, calendar: calendar)) ?? today
+            let pattern: [Double] = [
+                2.1, 1.8, 2.4, 0.9, 1.6, 2.0, 2.2, 6.0, 1.9, 1.5, 2.3, 1.7, 2.0,
+            ]
+            return pattern.enumerated().compactMap { index, multiple in
+                guard let monday = calendar.date(
+                    byAdding: .weekOfYear, value: index - pattern.count, to: thisMonday)
+                else { return nil }
+                let fee = 120.0 * 12 / 365 * 7
+                return SubscriptionROICurve.WeekPoint(
+                    weekOf: DateUtil.key(monday),
+                    apiValueUSD: fee * multiple,
+                    feeUSD: fee)
+            }
+        }()
         return ScrollView {
             VStack(spacing: 10) {
                 // 回本 ≥ 1 倍 + 覆盖说明 + 上期对比
@@ -281,12 +301,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         conversionRates: APIReferencePricingCatalog.conversionRatesToUSD),
                     subscriptionValue: SubscriptionValueSummary(
                         monthlyFeeUSD: 120, days: 7, apiValueUSD: full.total),
+                    roiCurve: roiFixture,
                     coverageNote: note)
                 // 回本 < 1 倍：提示按 API 付费更省
                 OverviewAPICostCard(
                     summary: full, range: .week,
                     subscriptionValue: SubscriptionValueSummary(
-                        monthlyFeeUSD: 400, days: 7, apiValueUSD: full.total))
+                        monthlyFeeUSD: 400, days: 7, apiValueUSD: full.total),
+                    roiCurve: roiFixture)
                 // 未填订阅：引导去设置
                 OverviewAPICostCard(summary: sparse, range: .all)
                 // 来源页 API 等价卡 + 归属订阅回本：≥1 倍与 <1 倍两分支

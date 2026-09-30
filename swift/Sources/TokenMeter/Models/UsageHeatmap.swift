@@ -275,7 +275,7 @@ enum UsageHeatmap {
         return 4
     }
 
-    private static func mondayKey(of date: Date, calendar: Calendar) -> String {
+    static func mondayKey(of date: Date, calendar: Calendar) -> String {
         var iso = Calendar(identifier: .iso8601)
         iso.timeZone = calendar.timeZone
         iso.firstWeekday = 2

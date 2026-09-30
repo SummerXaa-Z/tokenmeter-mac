@@ -70,6 +70,7 @@ struct OverviewView: View {
                             range: range,
                             priorSummary: data.priorAPIReferenceCost,
                             subscriptionValue: data.subscriptionValue,
+                            roiCurve: data.roiCurve,
                             coverageNote: data.modelCoverageNote
                         )
                     }

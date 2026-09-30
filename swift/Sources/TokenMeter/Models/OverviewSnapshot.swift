@@ -33,6 +33,9 @@ struct OverviewSnapshot: Equatable {
     let modelCoverageIsPartial: Bool
     // 用户在设置里填写了订阅月费时的回本倍数；未填写为 nil
     let subscriptionValue: SubscriptionValueSummary?
+    // 回本走势：近 13 个完整周逐周倍数(与所选范围无关的固定上下文)；
+    // 未填订阅或无明细为空
+    let roiCurve: [SubscriptionROICurve.WeekPoint]
     let trend: [TrendPoint]
     let trendGranularity: UsageTrendGranularity
     let trendTotal: Int
@@ -320,6 +323,13 @@ struct OverviewSnapshot: Equatable {
         } else {
             subscriptionValue = nil
         }
+        roiCurve = monthlyFee > 0
+            ? SubscriptionROICurve.weeklyPoints(
+                participants: modelSources,
+                monthlyFeeUSD: monthlyFee,
+                persisted: modelHistory,
+                today: DateUtil.date(from: todayKey) ?? Date())
+            : []
 
         trendGranularity = range.trendGranularity(
             historyDayCount: range == .all ? availableHistoryDays : history.count
