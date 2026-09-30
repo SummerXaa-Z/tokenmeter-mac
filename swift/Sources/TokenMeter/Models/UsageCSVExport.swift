@@ -5,7 +5,8 @@ import Foundation
 // + 平台费用 + API 等价；按日期升序，任何输入顺序都产出稳定结果。
 // API 等价只在当天有模型明细时填写，留空表示无明细（不是 0 元）。
 // 可选按自然日窗口（近 N 天，滚动到今天）截取导出范围；末尾附「汇总」行
-// （各列求和，与表头同列对齐）；填写了订阅月费时再附「订阅回本」行——
+// （各列求和，与表头同列对齐）、「价格覆盖率」行（范围内已计价 tokens 占比，
+// 说明 API 等价列的可靠程度）；填写了订阅月费时再附「订阅回本」行——
 // 月费合计、按导出跨度折算的天数与订阅费、API 等价合计与回本倍数，
 // 与总览同口径，且都只统计所选范围内的天。
 enum UsageCSVExport {
@@ -97,6 +98,12 @@ enum UsageCSVExport {
         if !sorted.isEmpty {
             lines.append(totalRow(sorted, apiValueByDate: apiValueByDate))
         }
+        if !sorted.isEmpty,
+           let coverageRow = priceCoverageRow(
+               modelHistory: modelHistory, range: range, todayKey: todayKey)
+        {
+            lines.append(coverageRow)
+        }
         if let subscription = subscriptionSummary(
             sorted, fixedBounds: fixedBounds, apiValueByDate: apiValueByDate,
             modelHistory: modelHistory, plans: plans)
@@ -111,6 +118,49 @@ enum UsageCSVExport {
             ])
         }
         return lines.map { $0.joined(separator: ",") }.joined(separator: "\n") + "\n"
+    }
+
+    /// 「价格覆盖率」行：范围内按天模型明细的已计价 tokens 占比（与逐日
+    /// 金额同一套计价样本），对账时一眼看出「API 等价(USD)」列的可靠程度；
+    /// 有缺价模型时点名。没有明细、没有 tokens 或明细全在窗口外时省略。
+    private static func priceCoverageRow(
+        modelHistory: [ModelUsageDay],
+        range: ExportRange,
+        todayKey: String
+    ) -> [String]? {
+        let startKey: String?
+        switch range {
+        case .all: startKey = nil
+        case .lastDays: startKey = windowStartDateKey(range, todayKey: todayKey)
+        case .window(let start, _): startKey = start
+        }
+        let endKey: String?
+        if case let .window(_, end) = range { endKey = end } else { endKey = nil }
+
+        let samples = modelHistory
+            .filter { day in
+                guard ModelUsageHistoryStore.isDateKey(day.date) else { return false }
+                if let startKey, day.date < startKey { return false }
+                if let endKey, day.date > endKey { return false }
+                return true
+            }
+            .flatMap(samples(in:))
+        guard !samples.isEmpty else { return nil }
+        let summary = APIReferenceCostSummary(
+            samples: samples,
+            estimator: APIReferencePricingCatalog.estimator,
+            referenceDate: APIReferencePricingCatalog.observedAt,
+            conversionRates: APIReferencePricingCatalog.conversionRatesToUSD)
+        guard let coverage = summary.coverage else { return nil }
+        var row = [
+            "价格覆盖率",
+            String(format: "覆盖率 %.1f%%", coverage * 100),
+            "覆盖 tokens \(summary.matchedTokens) / \(summary.totalTokens)",
+        ]
+        if !summary.unpricedModels.isEmpty {
+            row.append("缺价模型 " + summary.unpricedModels.joined(separator: "、"))
+        }
+        return row
     }
 
     /// 「汇总」行：逐列求和（平台费用与 API 等价同口径相加），与表头对齐。
@@ -177,24 +227,31 @@ enum UsageCSVExport {
             .map(\.date).min()
     }
 
+    // 一天里全部 Coding 来源的计价样本；首个快照之前的用量按首个快照计价。
+    // 逐日金额（apiValueByDate）与范围覆盖率（priceCoverageRow）共用，
+    // 保证两处口径永远一致。
+    private static func samples(in day: ModelUsageDay) -> [APICostSample] {
+        let pricingDate = max(day.date, APIReferencePricingCatalog.firstObservedAt)
+        return HistorySource.codingAgents.flatMap { source in
+            (day.bySource[source]?.models ?? [:]).map { model, tally in
+                APICostSample(
+                    model: model, tokens: tally.breakdown,
+                    usageDate: pricingDate, source: source)
+            }
+        }
+    }
+
     // 每天全部 Coding 来源的 API 等价金额（USD），与总览同一价格口径：
     // 首个快照之前的用量按首个快照计价，此后按用量当日生效价。
     static func apiValueByDate(_ modelHistory: [ModelUsageDay]) -> [String: Double] {
         var result: [String: Double] = [:]
         for day in modelHistory {
-            let pricingDate = max(day.date, APIReferencePricingCatalog.firstObservedAt)
-            let samples = HistorySource.codingAgents.flatMap { source in
-                (day.bySource[source]?.models ?? [:]).map { model, tally in
-                    APICostSample(
-                        model: model, tokens: tally.breakdown,
-                        usageDate: pricingDate, source: source)
-                }
-            }
+            let samples = samples(in: day)
             guard !samples.isEmpty else { continue }
             let summary = APIReferenceCostSummary(
                 samples: samples,
                 estimator: APIReferencePricingCatalog.estimator,
-                referenceDate: pricingDate,
+                referenceDate: max(day.date, APIReferencePricingCatalog.firstObservedAt),
                 conversionRates: APIReferencePricingCatalog.conversionRatesToUSD)
             // 当天模型全部缺价时留空，不写成 0 元
             guard !summary.amounts.isEmpty else { continue }

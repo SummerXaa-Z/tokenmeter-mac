@@ -141,13 +141,16 @@ final class UsageCSVExportTests: XCTestCase {
         ], apiValueByDate: apiValues, modelHistory: modelHistory,
            plans: [SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY")],
            range: .lastDays(5), todayKey: "2026-09-26"))
-        XCTAssertEqual(rows.count, 5)   // 表头 + 2 天 + 汇总 + 订阅回本
+        XCTAssertEqual(rows.count, 6)   // 表头 + 2 天 + 汇总 + 价格覆盖率 + 订阅回本
         XCTAssertEqual(rows[1][0], "2026-09-22")
         XCTAssertFalse(rows.contains { $0.first == "2026-09-18" })
         // 汇总只算范围内:Kimi 200+300,API 等价 2.44+4.00
         XCTAssertEqual(rows[3][0], "汇总")
         XCTAssertEqual(rows[3][3], "500")
         XCTAssertEqual(rows[3][12], "6.44")
+        // 覆盖率同样只算范围内(09-18 的明细不计入)
+        XCTAssertEqual(rows[4][0], "价格覆盖率")
+        XCTAssertTrue(rows[4].joined(separator: ",").contains("覆盖率 100.0%"))
         let text = try XCTUnwrap(rows.last?.joined(separator: ","))
         XCTAssertTrue(text.contains("折算天数 5"), text)          // 09-22..09-26
         XCTAssertTrue(text.contains("折算订阅费(USD) 3.29"), text)  // 20×12/365×5
@@ -198,7 +201,7 @@ final class UsageCSVExportTests: XCTestCase {
         ], apiValueByDate: apiValues, modelHistory: modelHistory,
            plans: [SubscriptionPlan(name: "Kimi 会员", monthlyFee: 138, currency: "CNY")],
            range: .window(start: "2026-09-14", end: "2026-09-20")))
-        XCTAssertEqual(rows.count, 6)   // 表头 + 3 天 + 汇总 + 订阅回本
+        XCTAssertEqual(rows.count, 7)   // 表头 + 3 天 + 汇总 + 价格覆盖率 + 订阅回本
         XCTAssertEqual(rows[1][0], "2026-09-15")
         XCTAssertFalse(rows.contains { $0.first == "2026-09-13" })
         XCTAssertFalse(rows.contains { $0.first == "2026-09-21" })
@@ -255,5 +258,52 @@ final class UsageCSVExportTests: XCTestCase {
 
     func testEndsWithNewline() {
         XCTAssertTrue(UsageCSVExport.makeCSV([]).hasSuffix("\n"))
+    }
+
+    // MARK: - 价格覆盖率行
+
+    func testPriceCoverageRowReportsRatioAndUnpricedModels() throws {
+        // 一天 kimi 有价(1M output)、一天 qwen 私有模型缺价(1M input):
+        // 覆盖 1M / 2M = 50%,缺价模型点名
+        let modelHistory = [
+            ModelUsageDay(date: "2026-09-24", bySource: [
+                .kimi: SourceDayDetail(models: ["kimi-k2.6": .init(output: 1_000_000)]),
+            ]),
+            ModelUsageDay(date: "2026-09-25", bySource: [
+                .qwen: SourceDayDetail(models: ["private-model": .init(input: 1_000_000)]),
+            ]),
+        ]
+        let rows = parseRows(UsageCSVExport.makeCSV([
+            day("2026-09-24", bySource: [.kimi: 100]),
+            day("2026-09-25", bySource: [.qwen: 100]),
+        ], modelHistory: modelHistory))
+        XCTAssertEqual(rows[3][0], "汇总")
+        XCTAssertEqual(rows[4][0], "价格覆盖率")
+        let text = try XCTUnwrap(rows[4].joined(separator: ","))
+        XCTAssertTrue(text.contains("覆盖率 50.0%"), text)
+        XCTAssertTrue(text.contains("覆盖 tokens 1000000 / 2000000"), text)
+        XCTAssertTrue(text.contains("缺价模型 private-model"), text)
+    }
+
+    func testPriceCoverageRowFullCoverageOmitsModelsAndWindowScopes() {
+        let modelHistory = [
+            ModelUsageDay(date: "2026-09-24", bySource: [
+                .kimi: SourceDayDetail(models: ["kimi-k2.6": .init(output: 1_000_000)]),
+            ]),
+        ]
+        // 全部有价：不附缺价 cell
+        let rows = parseRows(UsageCSVExport.makeCSV([
+            day("2026-09-24", bySource: [.kimi: 100]),
+        ], modelHistory: modelHistory))
+        XCTAssertEqual(rows[3][0], "价格覆盖率")
+        XCTAssertEqual(rows[3].count, 3)
+        XCTAssertTrue(rows[3].joined(separator: ",").contains("覆盖率 100.0%"))
+
+        // 明细全在窗口外：没有明细行也没有汇总/覆盖率行，仅表头
+        let scoped = parseRows(UsageCSVExport.makeCSV([
+            day("2026-09-24", bySource: [.kimi: 100]),
+        ], modelHistory: modelHistory,
+           range: .window(start: "2026-09-30", end: "2026-10-01")))
+        XCTAssertEqual(scoped.count, 1)
     }
 }
