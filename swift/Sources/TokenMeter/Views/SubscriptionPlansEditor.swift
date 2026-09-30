@@ -10,7 +10,7 @@ struct SubscriptionPlansEditor: View {
             VStack(alignment: .leading, spacing: 2) {
                 Label("订阅月费", systemImage: "creditcard")
                     .font(.system(size: 12, weight: .semibold))
-                Text("填写正在付费的 AI 订阅；总览按所选范围折算回本倍数，指定归属来源后对应来源页同步显示。")
+                Text("填写正在付费的 AI 订阅；总览按所选范围折算回本倍数，指定归属来源后对应来源页同步显示；两处均附近 13 个完整周的回本走势折线，周报与导出 CSV 同口径。")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -48,6 +48,8 @@ struct SubscriptionPlansEditor: View {
                     Text("· 　来源页：只计入归属该来源的订阅；「周」自本周一到今天、「近7天」为滚动 7 天、「月」自本月 1 日到今天。")
                     Text("· 　周报与「导出上周 CSV」：上周整周（周一到周日）。")
                     Text("· 　导出「全部/近 N 天」按导出数据的首末行日期；「自定义起止」按所选整段自然日。")
+                    Text("· 周走势折线（总览卡、来源页、周报小抄、导出周明细同一条公式）：只取已结束的完整周，含今天的本周不计；折线在单周超 5 倍时纵轴封顶并在脚注说明，周报小抄与 CSV 的数字不封顶。")
+                    Text("· 　来源页折线只算归属该来源的订阅与该来源明细；周报小抄取最近几个有数据的周（不足两个不显示）；导出周明细固定最近 13 个完整周、不随导出范围截取。")
                 }
                 .font(.system(size: 10)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

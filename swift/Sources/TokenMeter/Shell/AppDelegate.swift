@@ -429,7 +429,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 额度节奏/余额可用天数的合成数据页:本机未必有实时配额与平台消费,
             // 用固定快照覆盖"会提前用完 / 撑得到重置 / 余额偏低"各分支
             ("pace-fixture", hosting(Self.paceFixture(), height: 1100)),
-            ("cost-fixture", hosting(Self.costFixture(), height: 2700)),
+            ("cost-fixture", hosting(Self.costFixture(), height: 2920)),
             // 热力图 13|26 周档合成数据页:本机留存未必覆盖 26 周,
             // 用确定性周节律验证双倍列数下的格宽收窄、月份标签、脚注与翻页态
             ("heatmap-fixture", hosting(Self.heatmapFixture(), height: 780)),
