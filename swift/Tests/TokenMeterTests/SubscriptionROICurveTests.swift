@@ -85,4 +85,32 @@ final class SubscriptionROICurveTests: XCTestCase {
         XCTAssertEqual(SubscriptionValueSummary.multipleText(0.62), "约 0.6 倍")
         XCTAssertEqual(SubscriptionValueSummary.multipleText(12.4), "约 12 倍")
     }
+
+    // 来源页注入前的自算口径:分母只取归属订阅,分子与覆盖起点只看该来源
+    func testSourceCardCurveIsolatedToTaggedSource() {
+        let today = DateUtil.date(from: "2026-09-30")!
+        let plans = [SubscriptionPlan(
+            name: "Claude Max", monthlyFee: 100, currency: "USD", source: .claude)]
+        // kimi 的 7 月明细不算 claude 的覆盖起点;claude 首个明细 9/22
+        // (opus-5.5 价格自当天生效,1M 输出 = $20)
+        let persisted = [
+            modelDay("2026-07-01"),
+            modelDay("2026-09-22", source: .claude,
+                     ["opus-5-5": .init(output: 1_000_000)]),
+        ]
+        let curve = SourceAPICostCard.roiCurve(
+            source: .claude, plans: plans, persisted: persisted, today: today)
+        XCTAssertEqual(curve.count, 13)
+        XCTAssertTrue(curve.dropLast().allSatisfy { $0.multiple == nil },
+                      "9/22 之前的周不该摊到订阅费")
+        let last = curve.last
+        XCTAssertEqual(last?.weekOf, "2026-09-21")
+        XCTAssertEqual(last?.feeUSD ?? 0, 100.0 * 12 / 365 * 6, accuracy: 0.001)
+        XCTAssertEqual(last?.apiValueUSD ?? 0, 20.0, accuracy: 0.001)
+        // 订阅未归属到该来源 → 不出曲线
+        XCTAssertTrue(SourceAPICostCard.roiCurve(
+            source: .claude,
+            plans: [SubscriptionPlan(name: "ChatGPT Pro", monthlyFee: 200)],
+            persisted: persisted, today: today).isEmpty)
+    }
 }

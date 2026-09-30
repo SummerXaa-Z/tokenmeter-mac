@@ -10,6 +10,8 @@ struct SourceAPICostCard: View {
     let liveDayModels: [String: [String: ModelTokenTally]]?
     // 测试/渲染注入用；nil 时读本机设置（自包含，与 persisted 留存同思路）
     var subscriptionPlans: [SubscriptionPlan]? = nil
+    // 同上:注入固定回本走势点;nil 时按归属订阅与本机留存自行计算
+    var roiCurve: [SubscriptionROICurve.WeekPoint]? = nil
     @State private var period: PeriodCompare.Period = .week
 
     var body: some View {
@@ -30,6 +32,8 @@ struct SourceAPICostCard: View {
         let subscription = SourceAPICost.subscriptionValue(
             source: source, liveDayModels: liveDayModels,
             period: period, plans: plans)
+        let curve = roiCurve ?? Self.roiCurve(
+            source: source, plans: plans)
         return Card {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -46,7 +50,8 @@ struct SourceAPICostCard: View {
                     .frame(width: 104)
                 }
                 if let summary {
-                    detail(summary, prior: prior, subscription: subscription)
+                    detail(summary, prior: prior, subscription: subscription,
+                           roiCurve: curve)
                 } else if let prior, prior.total > 0 {
                     // 有历史但所选周期暂无明细（如本周还没用过）：带上期金额
                     // 做参照，切档后数字自然回来（与环比卡同语义）
@@ -60,10 +65,25 @@ struct SourceAPICostCard: View {
         }
     }
 
+    // 该来源的回本走势:分母只算归属到该来源的订阅月费;未归属订阅为空
+    static func roiCurve(
+        source: HistorySource,
+        plans: [SubscriptionPlan],
+        persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
+        today: Date = Date()
+    ) -> [SubscriptionROICurve.WeekPoint] {
+        let monthlyFee = SubscriptionPlan.monthlyTotalUSD(plans, tagged: source)
+        guard monthlyFee > 0 else { return [] }
+        return SubscriptionROICurve.weeklyPoints(
+            participants: [source], monthlyFeeUSD: monthlyFee,
+            persisted: persisted, today: today)
+    }
+
     private func detail(
         _ summary: APIReferenceCostSummary,
         prior: APIReferenceCostSummary?,
-        subscription: SubscriptionValueSummary?
+        subscription: SubscriptionValueSummary?,
+        roiCurve: [SubscriptionROICurve.WeekPoint]
     ) -> some View {
         let coverage = summary.coverage ?? 0
         let priorText: String = {
@@ -113,6 +133,9 @@ struct SourceAPICostCard: View {
                 Text(subscription.detailText)
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if !roiCurve.isEmpty {
+                    SubscriptionROITrendChart(points: roiCurve)
+                }
             }
             Text(policyText(summary))
                 .font(.system(size: 10)).foregroundStyle(.tertiary)

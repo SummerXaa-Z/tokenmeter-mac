@@ -319,13 +319,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             cached: 9_000_000, cacheWrite: 800_000, output: 500_000)],
                         dayKey(1): ["opus-5-5": .init(cached: 4_000_000, output: 300_000)],
                     ],
-                    subscriptionPlans: fixturePlans)
+                    subscriptionPlans: fixturePlans,
+                    roiCurve: roiFixture)
                 SourceAPICostCard(
                     source: .kimi,
                     liveDayModels: [
                         dayKey(0): ["kimi-k2.6": .init(output: 120_000)],
                     ],
-                    subscriptionPlans: fixturePlans)
+                    subscriptionPlans: fixturePlans,
+                    roiCurve: roiFixture)
                 OverviewRankingsCard(
                     rankings: rankings, skillRankings: skills, range: .month, coverageNote: note)
                 Card {
