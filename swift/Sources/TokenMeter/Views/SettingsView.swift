@@ -42,6 +42,7 @@ struct SettingsView: View {
     @State private var balanceAlert = 0
     @State private var subscriptionPlans: [SubscriptionPlan] = []
     @State private var diagnosticStatus = ""
+    @State private var sourceHealth: SourceHealth.Snapshot?
     @State private var usageExportStatus = ""
     @State private var usageExportPreset: ExportPreset
     // 自定义起止（自然日，含两端）；止日不晚于今天，起日不晚于止日
@@ -807,6 +808,34 @@ struct SettingsView: View {
 
                 Divider()
                 VStack(alignment: .leading, spacing: 7) {
+                    Label("数据源健康", systemImage: "waveform.path.ecg")
+                        .font(.system(size: 12, weight: .semibold))
+                    if let health = sourceHealth {
+                        ForEach(health.entries) { entry in
+                            sourceHealthRow(entry, now: health.checkedAt)
+                        }
+                        Text("检查于 \(health.checkedAt.formatted(date: .omitted, time: .shortened)) · 只读各来源本地数据的路径与最后写入时间，不读取内容；工具是否在运行见各来源页。")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    } else {
+                        Text("正在检查各来源的本地数据路径…")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    HStack {
+                        Button(sourceHealth == nil ? "重新检查" : "再查一次") {
+                            Task { sourceHealth = await SourceHealth.collect() }
+                        }
+                        Spacer()
+                    }
+                }
+                .task {
+                    if sourceHealth == nil {
+                        sourceHealth = await SourceHealth.collect()
+                    }
+                }
+
+                Divider()
+                VStack(alignment: .leading, spacing: 7) {
                     Label("脱敏诊断", systemImage: "stethoscope")
                         .font(.system(size: 12, weight: .semibold))
                     Text("导出版本、系统、签名、数据源与工具状态；不包含凭据或会话内容。")
@@ -823,6 +852,41 @@ struct SettingsView: View {
                     }
                 }
             }
+        }
+    }
+
+    // 数据源健康单行:来源色点 + 名称(停用加灰标签)+ 状态,下一行是短路径。
+    private func sourceHealthRow(_ entry: SourceHealth.Entry, now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Circle().fill(entry.source.overviewColor).frame(width: 6, height: 6)
+                Text(entry.source.overviewName)
+                    .font(.system(size: 11, weight: .medium))
+                if !entry.enabled {
+                    Text("已停用")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                }
+                Spacer()
+                if !entry.pathExists {
+                    Text("路径不存在")
+                        .font(.system(size: 10)).foregroundStyle(.orange)
+                } else if let relative = SourceHealth.lastWriteText(entry.lastWrite, now: now) {
+                    Text("最后写入 \(relative)")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                } else {
+                    Text("暂无数据文件")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+            }
+            Text(entry.displayPath)
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
     }
 

@@ -8,6 +8,9 @@ enum DiagnosticReport {
         let running: String
         let path: String?
         let detail: String?
+        // 本地数据文件的最后写入时间(ISO8601);无本地文件或路径不存在时为 nil。
+        // var + 默认值:保持既有构造点不填该字段也能编译。
+        var lastWrite: String? = nil
     }
 
     struct Context {
@@ -55,6 +58,9 @@ enum DiagnosticReport {
 
         for source in context.sources {
             var line = "\(source.name): enabled=\(yesNo(source.enabled)) available=\(yesNo(source.available)) running=\(source.running)"
+            if let lastWrite = source.lastWrite, !lastWrite.isEmpty {
+                line += " lastWrite=\(lastWrite)"
+            }
             if let path = source.path, !path.isEmpty {
                 line += " path=\(path)"
             }
@@ -106,7 +112,8 @@ enum DiagnosticReport {
                     available: ClaudeUsage.isAvailable,
                     running: runningText(ProcessStatus.claude()),
                     path: ClaudeUsage.projectsDir.path,
-                    detail: nil
+                    detail: nil,
+                    lastWrite: lastWriteISO(for: .claude)
                 ),
                 SourceStatus(
                     name: "Codex",
@@ -114,7 +121,8 @@ enum DiagnosticReport {
                     available: CodexUsage.isAvailable,
                     running: runningText(ProcessStatus.codex()),
                     path: CodexUsage.sessionsDir.path,
-                    detail: nil
+                    detail: nil,
+                    lastWrite: lastWriteISO(for: .codex)
                 ),
                 SourceStatus(
                     name: "Kimi Code",
@@ -122,7 +130,8 @@ enum DiagnosticReport {
                     available: KimiUsage.isAvailable,
                     running: runningText(ProcessStatus.kimi()),
                     path: KimiUsage.defaultHomes.map(\.path).joined(separator: ","),
-                    detail: "usageRecordOnly=yes quotaKeyConfigured=\(yesNo(store.kimiCodeKeyConfigured))"
+                    detail: "usageRecordOnly=yes quotaKeyConfigured=\(yesNo(store.kimiCodeKeyConfigured))",
+                    lastWrite: lastWriteISO(for: .kimi)
                 ),
                 SourceStatus(
                     name: "智谱 GLM",
@@ -138,7 +147,8 @@ enum DiagnosticReport {
                     available: OpenCodeUsage.isAvailable,
                     running: runningText(ProcessStatus.opencode()),
                     path: OpenCodeUsage.databaseURL.path,
-                    detail: "structuredUsageOnly=yes"
+                    detail: "structuredUsageOnly=yes",
+                    lastWrite: lastWriteISO(for: .opencode)
                 ),
                 SourceStatus(
                     name: "Gemini CLI",
@@ -146,7 +156,8 @@ enum DiagnosticReport {
                     available: GeminiUsage.isAvailable,
                     running: runningText(ProcessStatus.gemini()),
                     path: GeminiUsage.sessionsRoot.path,
-                    detail: "structuredUsageOnly=yes"
+                    detail: "structuredUsageOnly=yes",
+                    lastWrite: lastWriteISO(for: .gemini)
                 ),
                 SourceStatus(
                     name: "GitHub Copilot CLI",
@@ -154,7 +165,8 @@ enum DiagnosticReport {
                     available: CopilotUsage.isAvailable,
                     running: runningText(ProcessStatus.copilot()),
                     path: CopilotUsage.sessionsRoot.path,
-                    detail: "shutdownAggregateOnly=yes structuredUsageOnly=yes"
+                    detail: "shutdownAggregateOnly=yes structuredUsageOnly=yes",
+                    lastWrite: lastWriteISO(for: .copilot)
                 ),
                 SourceStatus(
                     name: "Qwen Code",
@@ -162,7 +174,8 @@ enum DiagnosticReport {
                     available: QwenCodeUsage.isAvailable,
                     running: runningText(ProcessStatus.qwen()),
                     path: QwenCodeUsage.usageRecordURL.path,
-                    detail: "sessionAggregateOnly=yes structuredUsageOnly=yes"
+                    detail: "sessionAggregateOnly=yes structuredUsageOnly=yes",
+                    lastWrite: lastWriteISO(for: .qwen)
                 ),
                 SourceStatus(
                     name: "Cursor",
@@ -170,7 +183,8 @@ enum DiagnosticReport {
                     available: CursorUsage.isAvailable,
                     running: runningText(ProcessStatus.cursor()),
                     path: CursorUsage.stateDB.path,
-                    detail: nil
+                    detail: nil,
+                    lastWrite: lastWriteISO(for: .cursor)
                 ),
             ]
         )
@@ -178,6 +192,14 @@ enum DiagnosticReport {
 
     private static func yesNo(_ value: Bool) -> String {
         value ? "yes" : "no"
+    }
+
+    // 与设置页「数据源健康」同源的路径映射,取最后写入时间,只做属性枚举。
+    private static func lastWriteISO(for source: HistorySource) -> String? {
+        guard let date = SourceHealth.latestWrite(roots: SourceHealth.roots(for: source)) else {
+            return nil
+        }
+        return isoString(date)
     }
 
     private static func runningText(_ snapshot: ProcessStatus.Snapshot) -> String {
