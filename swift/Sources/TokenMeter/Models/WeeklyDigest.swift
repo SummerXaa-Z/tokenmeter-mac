@@ -99,6 +99,15 @@ enum WeeklyDigest {
             if let coverage = last.coverage, coverage < 0.999 {
                 body += "，价格覆盖 \(Int((coverage * 100).rounded()))%"
             }
+            // 金额段必附价格新鲜度;覆盖不足时点名缺价模型,方便报给收录流程
+            body += "，最近核对 \(APIReferencePricingCatalog.observedAt)"
+            if let coverage = last.coverage, coverage < 0.95,
+               !last.unpricedModels.isEmpty
+            {
+                let listed = last.unpricedModels.prefix(2).joined(separator: "、")
+                let suffix = last.unpricedModels.count > 2 ? " 等" : ""
+                body += "，缺价 \(listed)\(suffix)"
+            }
             if let value = subscriptionValue(
                 apiValueUSD: last.total, modelDays: modelDays, allowed: allowed,
                 lastWeekDate: lastWeek, plans: plans, calendar: calendar),

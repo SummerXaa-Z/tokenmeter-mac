@@ -83,6 +83,11 @@ final class WeeklyDigestTests: XCTestCase {
 
     // MARK: - API 等价金额
 
+    // 金额段必附的价格新鲜度段;动态引用 observedAt,目录刷新后测试不漂移
+    private var checkedAt: String {
+        "，最近核对 \(APIReferencePricingCatalog.observedAt)"
+    }
+
     private func modelDay(
         _ date: String, source: HistorySource,
         _ models: [String: ModelTokenTally]
@@ -104,7 +109,7 @@ final class WeeklyDigestTests: XCTestCase {
         // 3M×2.44 = 7.32 → 环比 (7.32-2.44)/2.44 = 200%
         XCTAssertEqual(
             message?.body,
-            "合计 3M，环比 ↑ 200%；全部来自 Kimi Code；API 等价 $7.32（环比 ↑ 200%）")
+            "合计 3M，环比 ↑ 200%；全部来自 Kimi Code；API 等价 $7.32（环比 ↑ 200%）\(checkedAt)")
     }
 
     func testMessageAmountOmittedWithoutModelDetail() {
@@ -127,10 +132,10 @@ final class WeeklyDigestTests: XCTestCase {
                ]),
            ],
            today: date("2026-09-28"), calendar: calendar)
-        // 上上周无金额基期:不拼环比;缺价一半:覆盖 50%
+        // 上上周无金额基期:不拼环比;缺价一半:覆盖 50%,低于阈值点名缺价模型
         XCTAssertEqual(
             message?.body,
-            "合计 2M；全部来自 Kimi Code；API 等价 $2.44，价格覆盖 50%")
+            "合计 2M；全部来自 Kimi Code；API 等价 $2.44，价格覆盖 50%\(checkedAt)，缺价 mystery-model")
     }
 
     func testMessageAmountIgnoresDisabledSourcesAndCurrentWeek() {
@@ -147,7 +152,43 @@ final class WeeklyDigestTests: XCTestCase {
         // 未启用的 Codex 与本周(09-28)的明细都不进金额,金额段只算 Kimi $2.44
         XCTAssertEqual(
             message?.body,
-            "合计 1M；全部来自 Kimi Code；API 等价 $2.44")
+            "合计 1M；全部来自 Kimi Code；API 等价 $2.44\(checkedAt)")
+    }
+
+    func testMessageCapsUnpricedModelNamesAtTwo() {
+        let message = WeeklyDigest.message([
+            day("2026-09-22", bySource: [.kimi: 4_000_000]),
+        ], participants: [.kimi],
+           modelDays: [
+               modelDay("2026-09-22", source: .kimi, [
+                   "kimi-k2.6": .init(output: 1_000_000),
+                   "mystery-a": .init(output: 1_000_000),
+                   "mystery-b": .init(output: 1_000_000),
+                   "mystery-c": .init(output: 1_000_000),
+               ]),
+           ],
+           today: date("2026-09-28"), calendar: calendar)
+        // 覆盖 25%:点名前两个缺价模型,其余收进「等」,通知保持一行可读
+        XCTAssertEqual(
+            message?.body,
+            "合计 4M；全部来自 Kimi Code；API 等价 $2.44，价格覆盖 25%\(checkedAt)，缺价 mystery-a、mystery-b 等")
+    }
+
+    func testMessageOmitsUnpricedNamesAboveCoverageThreshold() {
+        // 覆盖 96%(≥95%):显示覆盖率与核对日期,但不点名缺价模型
+        let message = WeeklyDigest.message([
+            day("2026-09-22", bySource: [.kimi: 25_000_000]),
+        ], participants: [.kimi],
+           modelDays: [
+               modelDay("2026-09-22", source: .kimi, [
+                   "kimi-k2.6": .init(output: 24_000_000),
+                   "mystery-model": .init(output: 1_000_000),
+               ]),
+           ],
+           today: date("2026-09-28"), calendar: calendar)
+        XCTAssertEqual(
+            message?.body,
+            "合计 25M；全部来自 Kimi Code；API 等价 $58.56，价格覆盖 96%\(checkedAt)")
     }
 
     // MARK: - 订阅回本
@@ -165,7 +206,7 @@ final class WeeklyDigestTests: XCTestCase {
            today: date("2026-09-28"), calendar: calendar)
         XCTAssertEqual(
             message?.body,
-            "合计 3M；全部来自 Kimi Code；API 等价 $7.32；订阅回本 约 1.9 倍")
+            "合计 3M；全部来自 Kimi Code；API 等价 $7.32\(checkedAt)；订阅回本 约 1.9 倍")
     }
 
     func testMessageSubscriptionUsesFullWeekWhenCoveragePredatesIt() {
@@ -184,7 +225,7 @@ final class WeeklyDigestTests: XCTestCase {
            today: date("2026-09-28"), calendar: calendar)
         XCTAssertEqual(
             message?.body,
-            "合计 3M；全部来自 Kimi Code；API 等价 $7.32；订阅回本 约 0.3 倍")
+            "合计 3M；全部来自 Kimi Code；API 等价 $7.32\(checkedAt)；订阅回本 约 0.3 倍")
     }
 
     func testMessageSubscriptionOmittedWithoutPositiveFee() {
@@ -199,6 +240,6 @@ final class WeeklyDigestTests: XCTestCase {
            today: date("2026-09-28"), calendar: calendar)
         XCTAssertEqual(
             message?.body,
-            "合计 1M；全部来自 Kimi Code；API 等价 $2.44")
+            "合计 1M；全部来自 Kimi Code；API 等价 $2.44\(checkedAt)")
     }
 }
