@@ -11,6 +11,8 @@ enum DiagnosticReport {
         // 本地数据文件的最后写入时间(ISO8601);无本地文件或路径不存在时为 nil。
         // var + 默认值:保持既有构造点不填该字段也能编译。
         var lastWrite: String? = nil
+        // 最近一次采集结果:"ok(耗时),时间" 或 "failed,时间,摘要"。
+        var lastCollect: String? = nil
     }
 
     struct Context {
@@ -60,6 +62,9 @@ enum DiagnosticReport {
             var line = "\(source.name): enabled=\(yesNo(source.enabled)) available=\(yesNo(source.available)) running=\(source.running)"
             if let lastWrite = source.lastWrite, !lastWrite.isEmpty {
                 line += " lastWrite=\(lastWrite)"
+            }
+            if let lastCollect = source.lastCollect, !lastCollect.isEmpty {
+                line += " lastCollect=\(lastCollect)"
             }
             if let path = source.path, !path.isEmpty {
                 line += " path=\(path)"
@@ -113,7 +118,8 @@ enum DiagnosticReport {
                     running: runningText(ProcessStatus.claude()),
                     path: ClaudeUsage.projectsDir.path,
                     detail: nil,
-                    lastWrite: lastWriteISO(for: .claude)
+                    lastWrite: lastWriteISO(for: .claude),
+                    lastCollect: lastCollectText(for: .claude)
                 ),
                 SourceStatus(
                     name: "Codex",
@@ -122,7 +128,8 @@ enum DiagnosticReport {
                     running: runningText(ProcessStatus.codex()),
                     path: CodexUsage.sessionsDir.path,
                     detail: nil,
-                    lastWrite: lastWriteISO(for: .codex)
+                    lastWrite: lastWriteISO(for: .codex),
+                    lastCollect: lastCollectText(for: .codex)
                 ),
                 SourceStatus(
                     name: "Kimi Code",
@@ -131,7 +138,8 @@ enum DiagnosticReport {
                     running: runningText(ProcessStatus.kimi()),
                     path: KimiUsage.defaultHomes.map(\.path).joined(separator: ","),
                     detail: "usageRecordOnly=yes quotaKeyConfigured=\(yesNo(store.kimiCodeKeyConfigured))",
-                    lastWrite: lastWriteISO(for: .kimi)
+                    lastWrite: lastWriteISO(for: .kimi),
+                    lastCollect: lastCollectText(for: .kimi)
                 ),
                 SourceStatus(
                     name: "智谱 GLM",
@@ -148,7 +156,8 @@ enum DiagnosticReport {
                     running: runningText(ProcessStatus.opencode()),
                     path: OpenCodeUsage.databaseURL.path,
                     detail: "structuredUsageOnly=yes",
-                    lastWrite: lastWriteISO(for: .opencode)
+                    lastWrite: lastWriteISO(for: .opencode),
+                    lastCollect: lastCollectText(for: .opencode)
                 ),
                 SourceStatus(
                     name: "Gemini CLI",
@@ -157,7 +166,8 @@ enum DiagnosticReport {
                     running: runningText(ProcessStatus.gemini()),
                     path: GeminiUsage.sessionsRoot.path,
                     detail: "structuredUsageOnly=yes",
-                    lastWrite: lastWriteISO(for: .gemini)
+                    lastWrite: lastWriteISO(for: .gemini),
+                    lastCollect: lastCollectText(for: .gemini)
                 ),
                 SourceStatus(
                     name: "GitHub Copilot CLI",
@@ -166,7 +176,8 @@ enum DiagnosticReport {
                     running: runningText(ProcessStatus.copilot()),
                     path: CopilotUsage.sessionsRoot.path,
                     detail: "shutdownAggregateOnly=yes structuredUsageOnly=yes",
-                    lastWrite: lastWriteISO(for: .copilot)
+                    lastWrite: lastWriteISO(for: .copilot),
+                    lastCollect: lastCollectText(for: .copilot)
                 ),
                 SourceStatus(
                     name: "Qwen Code",
@@ -175,7 +186,8 @@ enum DiagnosticReport {
                     running: runningText(ProcessStatus.qwen()),
                     path: QwenCodeUsage.usageRecordURL.path,
                     detail: "sessionAggregateOnly=yes structuredUsageOnly=yes",
-                    lastWrite: lastWriteISO(for: .qwen)
+                    lastWrite: lastWriteISO(for: .qwen),
+                    lastCollect: lastCollectText(for: .qwen)
                 ),
                 SourceStatus(
                     name: "Cursor",
@@ -184,7 +196,8 @@ enum DiagnosticReport {
                     running: runningText(ProcessStatus.cursor()),
                     path: CursorUsage.stateDB.path,
                     detail: nil,
-                    lastWrite: lastWriteISO(for: .cursor)
+                    lastWrite: lastWriteISO(for: .cursor),
+                    lastCollect: lastCollectText(for: .cursor)
                 ),
             ]
         )
@@ -200,6 +213,15 @@ enum DiagnosticReport {
             return nil
         }
         return isoString(date)
+    }
+
+    // 最近一次采集记录:无空格的 key=value 友好格式。
+    private static func lastCollectText(for source: HistorySource) -> String? {
+        guard let attempt = CollectAttemptLog.attempt(for: source) else { return nil }
+        if attempt.succeeded {
+            return "ok(\(CollectAttemptLog.durationText(attempt.durationMS))),\(isoString(attempt.finishedAt))"
+        }
+        return "failed,\(isoString(attempt.finishedAt)),\(attempt.failure ?? "")"
     }
 
     private static func runningText(_ snapshot: ProcessStatus.Snapshot) -> String {

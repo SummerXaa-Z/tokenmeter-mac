@@ -28,7 +28,8 @@ final class DiagnosticReportTests: XCTestCase {
                     running: "未运行",
                     path: "/Users/summer/.codex/sessions",
                     detail: nil,
-                    lastWrite: "2026-09-30T08:00:00Z"
+                    lastWrite: "2026-09-30T08:00:00Z",
+                    lastCollect: "ok(1.2s),2026-09-30T08:00:01Z"
                 )
             ]
         )
@@ -40,7 +41,7 @@ final class DiagnosticReportTests: XCTestCase {
         XCTAssertTrue(text.contains("Bundle ID: com.deepseek.monitor.mac"))
         XCTAssertTrue(text.contains("Path: ~/Applications/TokenMeter.app"))
         XCTAssertTrue(text.contains("Claude: enabled=yes available=yes running=运行中 path=~/.claude/projects"))
-        XCTAssertTrue(text.contains("Codex: enabled=yes available=no running=未运行 lastWrite=2026-09-30T08:00:00Z path=~/.codex/sessions"))
+        XCTAssertTrue(text.contains("Codex: enabled=yes available=no running=未运行 lastWrite=2026-09-30T08:00:00Z lastCollect=ok(1.2s),2026-09-30T08:00:01Z path=~/.codex/sessions"))
         XCTAssertFalse(text.contains("/Users/summer"))
         XCTAssertFalse(text.contains("secret-token"))
         XCTAssertFalse(text.contains("sk-secret"))

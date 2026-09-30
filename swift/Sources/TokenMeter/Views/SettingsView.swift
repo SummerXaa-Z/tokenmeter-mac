@@ -814,7 +814,7 @@ struct SettingsView: View {
                         ForEach(health.entries) { entry in
                             sourceHealthRow(entry, now: health.checkedAt)
                         }
-                        Text("检查于 \(health.checkedAt.formatted(date: .omitted, time: .shortened)) · 只读各来源本地数据的路径与最后写入时间，不读取内容；工具是否在运行见各来源页。")
+                        Text("检查于 \(health.checkedAt.formatted(date: .omitted, time: .shortened)) · 只读各来源本地数据的路径、最后写入时间与最近一次采集的成败、耗时，不读取内容；工具是否在运行见各来源页。")
                             .font(.system(size: 10))
                             .foregroundStyle(.tertiary)
                     } else {
@@ -832,6 +832,9 @@ struct SettingsView: View {
                     if sourceHealth == nil {
                         sourceHealth = await SourceHealth.collect()
                     }
+                }
+                .onChange(of: state.collectRevision) { _, _ in
+                    Task { sourceHealth = await SourceHealth.collect() }
                 }
 
                 Divider()
@@ -887,6 +890,19 @@ struct SettingsView: View {
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+            if let attempt = entry.attempt {
+                let relative = SourceHealth.lastWriteText(attempt.finishedAt, now: now) ?? ""
+                if attempt.succeeded {
+                    Text("采集 \(CollectAttemptLog.durationText(attempt.durationMS)) · \(relative)")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                } else {
+                    Text("采集失败 · \(relative) · \(attempt.failure ?? "")")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.orange)
+                        .lineLimit(1)
+                }
+            }
         }
     }
 

@@ -39,6 +39,9 @@ final class AppState: ObservableObject {
     @Published var usage: UsageResult?
     @Published var usageState: LoadState = .loading
     @Published private(set) var historyRevision: UInt = 0
+    // 最近一次采集记录(CollectAttemptLog)的版本号:loadX 每轮采集后 +1,
+    // 健康面板监听它以及时刷新「最近一次采集」行。
+    @Published private(set) var collectRevision: UInt = 0
 
     @Published var refreshIntervalSeconds: Int = 60
     @Published var autoRefreshEnabled: Bool = false
@@ -333,9 +336,14 @@ final class AppState: ObservableObject {
 
         while true {
             claude.proc = ProcessStatus.claude()
+            let collectStarted = Date()
             let r = await Task.detached(priority: .userInitiated) { ClaudeUsage.load() }.value
             claude.result = r
             claude.loadedAt = Date()
+            CollectAttemptLog.record(.init(
+                source: .claude, startedAt: collectStarted,
+                finishedAt: Date(), failure: nil))
+            collectRevision &+= 1
             // 历史按工具归属：Claude Code session 中经 deepseek-* 模型产生的
             // token 仍属于 Claude 工具用量。DeepSeek 平台账户是独立账户口径，
             // 不得用它与 Claude 模型子集做跨源扣减。
@@ -483,9 +491,15 @@ final class AppState: ObservableObject {
         while true {
             codex.proc = ProcessStatus.codex()
             // 本地扫描与官方实时配额并行；实时拿到就替换配额卡（用量统计仍是本地）
+            // 采集计时只覆盖本地扫描(await local),不含网络等待。
+            let collectStarted = Date()
             async let local = Task.detached(priority: .userInitiated) { CodexUsage.load() }.value
             async let live = CodexUsage.fetchLiveRateLimits()
             var r = await local
+            CollectAttemptLog.record(.init(
+                source: .codex, startedAt: collectStarted,
+                finishedAt: Date(), failure: nil))
+            collectRevision &+= 1
             if let liveLimits = await live {
                 r = CodexUsageResult(rateLimits: liveLimits.first, allRateLimits: liveLimits,
                                      days: r.days, models: r.models,
@@ -527,6 +541,7 @@ final class AppState: ObservableObject {
         while true {
             kimi.proc = ProcessStatus.kimi()
             kimi.error = nil
+            let collectStarted = Date()
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
                     try KimiUsage.load()
@@ -540,11 +555,19 @@ final class AppState: ObservableObject {
                                    dayModels: result.dayModels,
                                    daySessions: result.daySessions, authoritative: true)
                 historyRevision &+= 1
+                CollectAttemptLog.record(.init(
+                    source: .kimi, startedAt: collectStarted,
+                    finishedAt: Date(), failure: nil))
             } catch {
-                kimi.result = nil
-                kimi.error = (error as? KimiUsageError)?.errorDescription
+                let message = (error as? KimiUsageError)?.errorDescription
                     ?? "Kimi Code 本地用量暂不可用"
+                kimi.result = nil
+                kimi.error = message
+                CollectAttemptLog.record(.init(
+                    source: .kimi, startedAt: collectStarted, finishedAt: Date(),
+                    failure: CollectAttemptLog.failureSummary(message)))
             }
+            collectRevision &+= 1
 
             guard kimiRefresh.finish() else { break }
             guard kimiEnabled, KimiUsage.isAvailable else {
@@ -570,6 +593,7 @@ final class AppState: ObservableObject {
         while true {
             opencode.proc = ProcessStatus.opencode()
             opencode.error = nil
+            let collectStarted = Date()
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
                     try OpenCodeUsage.load()
@@ -583,11 +607,19 @@ final class AppState: ObservableObject {
                                    dayModels: result.dayModels,
                                    daySessions: result.daySessions, authoritative: false)
                 historyRevision &+= 1
+                CollectAttemptLog.record(.init(
+                    source: .opencode, startedAt: collectStarted,
+                    finishedAt: Date(), failure: nil))
             } catch {
-                opencode.result = nil
-                opencode.error = (error as? OpenCodeUsageError)?.errorDescription
+                let message = (error as? OpenCodeUsageError)?.errorDescription
                     ?? error.localizedDescription
+                opencode.result = nil
+                opencode.error = message
+                CollectAttemptLog.record(.init(
+                    source: .opencode, startedAt: collectStarted, finishedAt: Date(),
+                    failure: CollectAttemptLog.failureSummary(message)))
             }
+            collectRevision &+= 1
 
             guard opencodeRefresh.finish() else { break }
             guard opencodeEnabled, OpenCodeUsage.isAvailable else {
@@ -613,6 +645,7 @@ final class AppState: ObservableObject {
         while true {
             gemini.proc = ProcessStatus.gemini()
             gemini.error = nil
+            let collectStarted = Date()
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
                     try GeminiUsage.load()
@@ -626,11 +659,19 @@ final class AppState: ObservableObject {
                                    dayModels: result.dayModels,
                                    daySessions: result.daySessions, authoritative: false)
                 historyRevision &+= 1
+                CollectAttemptLog.record(.init(
+                    source: .gemini, startedAt: collectStarted,
+                    finishedAt: Date(), failure: nil))
             } catch {
-                gemini.result = nil
-                gemini.error = (error as? GeminiUsageError)?.errorDescription
+                let message = (error as? GeminiUsageError)?.errorDescription
                     ?? error.localizedDescription
+                gemini.result = nil
+                gemini.error = message
+                CollectAttemptLog.record(.init(
+                    source: .gemini, startedAt: collectStarted, finishedAt: Date(),
+                    failure: CollectAttemptLog.failureSummary(message)))
             }
+            collectRevision &+= 1
 
             guard geminiRefresh.finish() else { break }
             guard geminiEnabled, GeminiUsage.isAvailable else {
@@ -656,6 +697,7 @@ final class AppState: ObservableObject {
         while true {
             copilot.proc = ProcessStatus.copilot()
             copilot.error = nil
+            let collectStarted = Date()
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
                     try CopilotUsage.load()
@@ -669,11 +711,19 @@ final class AppState: ObservableObject {
                                    dayModels: result.dayModels, daySkills: result.daySkills,
                                    daySessions: result.daySessions, authoritative: false)
                 historyRevision &+= 1
+                CollectAttemptLog.record(.init(
+                    source: .copilot, startedAt: collectStarted,
+                    finishedAt: Date(), failure: nil))
             } catch {
-                copilot.result = nil
-                copilot.error = (error as? CopilotUsageError)?.errorDescription
+                let message = (error as? CopilotUsageError)?.errorDescription
                     ?? error.localizedDescription
+                copilot.result = nil
+                copilot.error = message
+                CollectAttemptLog.record(.init(
+                    source: .copilot, startedAt: collectStarted, finishedAt: Date(),
+                    failure: CollectAttemptLog.failureSummary(message)))
             }
+            collectRevision &+= 1
 
             guard copilotRefresh.finish() else { break }
             guard copilotEnabled, CopilotUsage.isAvailable else {
@@ -699,6 +749,7 @@ final class AppState: ObservableObject {
         while true {
             qwen.proc = ProcessStatus.qwen()
             qwen.error = nil
+            let collectStarted = Date()
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
                     try QwenCodeUsage.load()
@@ -712,11 +763,19 @@ final class AppState: ObservableObject {
                                    dayModels: result.dayModels,
                                    daySessions: result.daySessions, authoritative: true)
                 historyRevision &+= 1
+                CollectAttemptLog.record(.init(
+                    source: .qwen, startedAt: collectStarted,
+                    finishedAt: Date(), failure: nil))
             } catch {
-                qwen.result = nil
-                qwen.error = (error as? QwenCodeUsageError)?.errorDescription
+                let message = (error as? QwenCodeUsageError)?.errorDescription
                     ?? "Qwen Code 本地用量暂不可用"
+                qwen.result = nil
+                qwen.error = message
+                CollectAttemptLog.record(.init(
+                    source: .qwen, startedAt: collectStarted, finishedAt: Date(),
+                    failure: CollectAttemptLog.failureSummary(message)))
             }
+            collectRevision &+= 1
 
             guard qwenRefresh.finish() else { break }
             guard qwenEnabled, QwenCodeUsage.isAvailable else {
@@ -742,6 +801,7 @@ final class AppState: ObservableObject {
         while true {
             cursor.proc = ProcessStatus.cursor()
             cursor.error = nil
+            let collectStarted = Date()
             do {
                 let r = try await CursorUsage.load()
                 cursor.result = r
@@ -753,10 +813,19 @@ final class AppState: ObservableObject {
                     ])
                 }
                 historyRevision &+= 1
+                CollectAttemptLog.record(.init(
+                    source: .cursor, startedAt: collectStarted,
+                    finishedAt: Date(), failure: nil))
             } catch {
+                let message = (error as? CursorUsageError)?.errorDescription
+                    ?? error.localizedDescription
                 cursor.result = nil
-                cursor.error = (error as? CursorUsageError)?.errorDescription ?? error.localizedDescription
+                cursor.error = message
+                CollectAttemptLog.record(.init(
+                    source: .cursor, startedAt: collectStarted, finishedAt: Date(),
+                    failure: CollectAttemptLog.failureSummary(message)))
             }
+            collectRevision &+= 1
 
             guard cursorRefresh.finish() else { break }
             guard cursorEnabled, CursorUsage.isAvailable else {

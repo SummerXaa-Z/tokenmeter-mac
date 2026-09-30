@@ -111,4 +111,24 @@ final class SourceHealthTests: XCTestCase {
             SourceHealth.lastWriteText(now.addingTimeInterval(-3 * 86_400), now: now),
             "3天前")
     }
+
+    @MainActor
+    func testCollectCarriesAttempts() async throws {
+        let name = "source-health-attempt-\(UUID().uuidString)"
+        let suite = try XCTUnwrap(UserDefaults(suiteName: name))
+        addTeardownBlock {
+            suite.removePersistentDomain(forName: name)
+            CollectAttemptLog.useDefaults(.standard)
+        }
+        CollectAttemptLog.useDefaults(suite)
+        let now = Date()
+        CollectAttemptLog.record(.init(
+            source: .claude, startedAt: now.addingTimeInterval(-4),
+            finishedAt: now.addingTimeInterval(-2), failure: nil))
+
+        let snapshot = await SourceHealth.collect()
+
+        XCTAssertEqual(snapshot.entries.first { $0.source == .claude }?.attempt?.succeeded, true)
+        XCTAssertNil(snapshot.entries.first { $0.source == .cursor }?.attempt)
+    }
 }

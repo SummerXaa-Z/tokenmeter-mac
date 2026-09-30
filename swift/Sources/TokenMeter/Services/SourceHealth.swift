@@ -11,6 +11,7 @@ enum SourceHealth {
         let pathExists: Bool
         let lastWrite: Date?
         let displayPath: String
+        let attempt: CollectAttemptLog.Attempt?
 
         var id: String { source.rawValue }
     }
@@ -89,7 +90,8 @@ enum SourceHealth {
                         enabled: enabled,
                         pathExists: exists,
                         lastWrite: latestWrite(roots: roots),
-                        displayPath: Self.shortened(roots)))
+                        displayPath: Self.shortened(roots),
+                        attempt: CollectAttemptLog.attempt(for: source)))
                 }
             }
             var result: [(Int, Entry)] = []

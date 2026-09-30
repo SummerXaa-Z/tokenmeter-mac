@@ -328,6 +328,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return host
         }
 
+        // 渲染进程可能触发真实首轮采集:采集记录写入独立 suite,
+        // 不污染正式 App 域(渲染里的记录随下一次真实刷新自然作废)。
+        CollectAttemptLog.useDefaults(
+            UserDefaults(suiteName: "tokenmeter.ui-render") ?? .standard)
+        // 健康面板「最近一次采集」行:合成成功与失败两条夹具,只进内存、
+        // 绝不写真实 UserDefaults(渲染进程与正式 App 共用同一域)。
+        let fixtureNow = Date()
+        CollectAttemptLog.seedForPreview(.init(
+            source: .claude, startedAt: fixtureNow.addingTimeInterval(-4),
+            finishedAt: fixtureNow.addingTimeInterval(-2.2), failure: nil))
+        CollectAttemptLog.seedForPreview(.init(
+            source: .codex, startedAt: fixtureNow.addingTimeInterval(-70),
+            finishedAt: fixtureNow.addingTimeInterval(-3), failure: nil))
+        CollectAttemptLog.seedForPreview(.init(
+            source: .qwen, startedAt: fixtureNow.addingTimeInterval(-95),
+            finishedAt: fixtureNow.addingTimeInterval(-90),
+            failure: "usage_record.jsonl 解析失败：第 3 行不是合法 JSON"))
+
         let pages: [(name: String, view: NSView)] = [
             ("overview", hosting(RootView())),
             ("dashboard", hosting(
