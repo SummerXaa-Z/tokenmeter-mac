@@ -561,8 +561,8 @@ final class APICostEstimatorTests: XCTestCase {
         // 以后收录新工具/新模型时往这里加，只增不减。
         let basket = [
             // Claude Code（displayModel 去前缀 + 连字符版本号两种写法）
-            "claude-opus-5.5", "opus-5-5", "claude-sonnet-5", "haiku-4-5",
-            "claude-fable-5-1", "fable-5.1",
+            "claude-opus-5.5", "opus-5-5", "claude-sonnet-5", "claude-sonnet-5.5",
+            "haiku-4-5", "claude-fable-5-1", "fable-5.1",
             // Codex（可能带推理强度后缀）
             "gpt-5.5 (xhigh)", "gpt-5.4-mini", "gpt-5.6-terra",
             // Kimi Code（产品别名）
@@ -585,5 +585,48 @@ final class APICostEstimatorTests: XCTestCase {
                 "\(model) 在最近核对日缺价；刷新目录时不要删掉既有条目或别名"
             )
         }
+    }
+
+    // MARK: - 模型榜单价小抄
+
+    func testPriceSnapshotReturnsTheLatestEffectiveRow() throws {
+        let estimator = APIReferencePricingCatalog.estimator
+
+        let sol0924 = try XCTUnwrap(
+            estimator.priceSnapshot(model: "gpt-5.6-sol", on: "2026-09-24"))
+        XCTAssertEqual(sol0924.perMillion.newInput, 5, accuracy: 1e-9)
+        XCTAssertEqual(sol0924.perMillion.output, 30, accuracy: 1e-9)
+        let sol0925 = try XCTUnwrap(
+            estimator.priceSnapshot(model: "gpt-5.6-sol", on: "2026-09-25"))
+        XCTAssertEqual(sol0925.perMillion.newInput, 2, accuracy: 1e-9)
+        XCTAssertEqual(sol0925.perMillion.output, 10, accuracy: 1e-9)
+
+        // 产品别名与连字符版本号同样解析到当日生效价
+        let kimi = try XCTUnwrap(
+            estimator.priceSnapshot(model: "k2d6-agent", on: "2026-09-26"))
+        XCTAssertEqual(kimi.perMillion.output, 4, accuracy: 1e-9)
+
+        XCTAssertNil(estimator.priceSnapshot(model: "unknown-model", on: "2026-09-27"))
+        // 生效日之前不外推（同 estimate 的窗口约束）
+        XCTAssertNil(estimator.priceSnapshot(model: "glm-5.3", on: "2026-08-17"))
+    }
+
+    func testModelPriceCheatSheetCaptionFormatsAndSkipsUnpriced() {
+        XCTAssertEqual(
+            ModelPriceCheatSheet.caption(model: "opus-5-5", on: "2026-09-27"),
+            "$4 / $20 /M"
+        )
+        // 人民币公开价保留原币种符号
+        XCTAssertEqual(
+            ModelPriceCheatSheet.caption(model: "agent-plan/doubao-seed-evolving"),
+            "¥6 / ¥30 /M"
+        )
+        // 小数单价去尾零、保留四位有效小数（日期钉死，避免随目录刷新漂移）
+        XCTAssertEqual(
+            ModelPriceCheatSheet.caption(model: "V4 Flash", on: "2026-09-27"),
+            "$0.0469 / $0.0938 /M"
+        )
+        XCTAssertEqual(ModelPriceCheatSheet.caption(model: "kimi-k3"), "$3 / $15 /M")
+        XCTAssertNil(ModelPriceCheatSheet.caption(model: "preview-coder-x"))
     }
 }

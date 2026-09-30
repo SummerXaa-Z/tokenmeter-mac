@@ -241,20 +241,26 @@ struct APICostEstimator {
         self.index = index
     }
 
+    // 匹配规则与 estimate 相同（生效日 ≤ date、来源优先级、同优先级取
+    // 最新生效日），但返回价格快照本身，供需要展示单价而不只是金额的调用方
+    func priceSnapshot(model: String, on date: String) -> APIPriceSnapshot? {
+        let matching = (index[Self.canonicalModel(model)] ?? []).filter {
+            $0.effectiveFrom <= date
+        }
+        return matching.max(by: {
+            if $0.source.priority != $1.source.priority {
+                return $0.source.priority < $1.source.priority
+            }
+            return $0.effectiveFrom < $1.effectiveFrom
+        })
+    }
+
     func estimate(
         model: String,
         usageDate: String,
         tokens: APITokenBreakdown
     ) -> APICostEstimate? {
-        let matching = (index[Self.canonicalModel(model)] ?? []).filter {
-            $0.effectiveFrom <= usageDate
-        }
-        guard let price = matching.max(by: {
-            if $0.source.priority != $1.source.priority {
-                return $0.source.priority < $1.source.priority
-            }
-            return $0.effectiveFrom < $1.effectiveFrom
-        }) else {
+        guard let price = priceSnapshot(model: model, on: usageDate) else {
             return nil
         }
 
@@ -316,7 +322,7 @@ enum APIReferencePricingCatalog {
     // 首个价格快照的观测日；早于它的用量按这一天的价格参考
     static let firstObservedAt = "2026-08-12"
     // 最近一次核对 OpenRouter 目录的日期
-    static let observedAt = "2026-09-27"
+    static let observedAt = "2026-09-30"
     static let sourceURL = "https://openrouter.ai/api/v1/models"
     static let cnyPerUSD = 6.9
     // 目标币种是 USD：1 CNY = 1 / 6.9 USD。它是产品固定参考汇率，
@@ -353,7 +359,11 @@ enum APIReferencePricingCatalog {
                  input: 0.5795, cached: 0.0976, output: 2.44),
         snapshot("moonshotai/kimi-k2.6", aliases: ["kimi-k2.6", "k2d6-agent"],
                  from: "2026-09-25", input: 0.95, cached: 0.16, output: 4),
+        snapshot("moonshotai/kimi-k2.6", aliases: ["kimi-k2.6", "k2d6-agent"],
+                 from: "2026-09-30", input: 0.65, cached: 0.15, output: 3.41),
         snapshot("moonshotai/kimi-k2.7-code", input: 0.6562, cached: 0.18, output: 3.3),
+        snapshot("moonshotai/kimi-k2.7-code", from: "2026-09-30",
+                 input: 0.6712, cached: 0.18, output: 3.35),
 
         // OpenRouter 暂无 Doubao-Seed-Evolving。这里采用火山方舟公开原价，
         // 保留人民币币种；缓存创建没有独立公开价时按普通输入计。
@@ -381,6 +391,8 @@ enum APIReferencePricingCatalog {
                  cacheWrite: 3.75, output: 15),
         snapshot("anthropic/claude-sonnet-5", input: 2, cached: 0.2,
                  cacheWrite: 2.5, output: 10),
+        snapshot("anthropic/claude-sonnet-5.5", from: "2026-09-28",
+                 input: 2, cached: 0.2, cacheWrite: 2.5, output: 10),
         // 已从 OpenRouter 目录下架；历史用量仍按此价计算，保留
         snapshot("anthropic/claude-opus-4", input: 15, cached: 1.5,
                  cacheWrite: 18.75, output: 75),
@@ -409,10 +421,14 @@ enum APIReferencePricingCatalog {
         snapshot("z-ai/glm-5", input: 0.6, cached: 0.12, output: 1.92),
         snapshot("z-ai/glm-5-turbo", input: 1.2, cached: 0.24, output: 4),
         snapshot("z-ai/glm-5.1", input: 0.9646, cached: 0.17914, output: 3.0316),
+        snapshot("z-ai/glm-5.1", from: "2026-09-30", input: 1.4, cached: 0.26, output: 4.4),
         snapshot("z-ai/glm-5.2", input: 0.6496, cached: 0.12064, output: 2.0416),
+        snapshot("z-ai/glm-5.2", from: "2026-09-30", input: 0.41, cached: 0.26, output: 3.99),
         snapshot("z-ai/glm-5.3", from: "2026-08-18", input: 1.4, cached: 0.26, output: 4.4),
         snapshot("z-ai/glm-5.3-flash", from: "2026-08-26",
                  input: 0.045, cached: 0.01, output: 0.14),
+        snapshot("z-ai/glm-5.3-flash", from: "2026-09-30",
+                 input: 0.15, cached: 0.03, output: 0.5),
         snapshot("z-ai/glm-5.3-flashx", from: "2026-09-18",
                  input: 0.37, cached: 0.09, output: 1.25),
         snapshot("z-ai/glm-5.3-prime", from: "2026-09-23",
@@ -458,16 +474,22 @@ enum APIReferencePricingCatalog {
                  from: "2026-09-25", input: 0.049, cached: 0.0098, output: 0.098),
         snapshot("deepseek/deepseek-v4-flash", aliases: ["V4 Flash"],
                  from: "2026-09-27", input: 0.0469, cached: 0.00938, output: 0.0938),
+        snapshot("deepseek/deepseek-v4-flash", aliases: ["V4 Flash"],
+                 from: "2026-09-30", input: 0.14, cached: 0.028, output: 0.28),
         snapshot("deepseek/deepseek-v4-pro", aliases: ["V4 Pro"],
                  input: 1.168, cached: 0.09855, output: 2.336),
         snapshot("deepseek/deepseek-v4-pro", aliases: ["V4 Pro"],
                  from: "2026-09-25", input: 0.783, cached: 0.06525, output: 1.566),
         snapshot("deepseek/deepseek-v4-pro", aliases: ["V4 Pro"],
                  from: "2026-09-27", input: 0.348, cached: 0.029, output: 0.696),
+        snapshot("deepseek/deepseek-v4-pro", aliases: ["V4 Pro"],
+                 from: "2026-09-30", input: 0.95526, cached: 0.079605, output: 1.91052),
         snapshot("deepseek/deepseek-v4.1-flash", from: "2026-09-10",
                  input: 0.3, cached: 0.006, output: 1.2),
         snapshot("deepseek/deepseek-v4.1-flash", from: "2026-09-27",
                  input: 0.035, cached: 0.001, output: 0.29),
+        snapshot("deepseek/deepseek-v4.1-flash", from: "2026-09-30",
+                 input: 0.0198, cached: 0.00291, output: 0.396),
     ])
 
     private static func snapshot(

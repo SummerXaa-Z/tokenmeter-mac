@@ -628,6 +628,31 @@ struct OverviewProfileCard: View {
     }
 }
 
+// 模型榜单价小抄：给榜上的模型名配一行当前生效的参考单价
+// （输入 / 输出，每百万 tokens）。缺价模型不标注——缺价的汇报入口
+// 在 API 等价卡的复制按钮，榜单保持安静。
+enum ModelPriceCheatSheet {
+    static func caption(
+        model: String,
+        estimator: APICostEstimator = APIReferencePricingCatalog.estimator,
+        on date: String = APIReferencePricingCatalog.observedAt
+    ) -> String? {
+        guard let snapshot = estimator.priceSnapshot(model: model, on: date) else {
+            return nil
+        }
+        let symbol = snapshot.currency == "CNY" ? "¥" : "$"
+        return "\(symbol)\(trim(snapshot.perMillion.newInput)) / \(symbol)\(trim(snapshot.perMillion.output)) /M"
+    }
+
+    // 去掉尾零：4 → "4"，2.4400 → "2.44"，0.0098 → "0.0098"
+    private static func trim(_ value: Double) -> String {
+        var text = String(format: "%.4f", value)
+        while text.hasSuffix("0") { text.removeLast() }
+        if text.hasSuffix(".") { text.removeLast() }
+        return text
+    }
+}
+
 struct OverviewRankingsCard: View {
     let rankings: PersonalUsageRankings
     let skillRankings: PersonalSkillRankings
@@ -657,6 +682,8 @@ struct OverviewRankingsCard: View {
                     }
                 }
 
+                Text("模型名右侧为其当前生效的参考单价（输入 / 输出，每百万 tokens）；缺价模型不标注，等价金额见「API 等价参考」卡。")
+                    .font(.system(size: 10)).foregroundStyle(.tertiary)
                 Text("模型榜保留采集来源；Cursor 当前只有订阅周期聚合，暂不混入模型榜。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
                 if let coverageNote {
@@ -710,9 +737,15 @@ struct OverviewRankingsCard: View {
             Text(name).font(.system(size: 11, weight: .medium)).lineLimit(1)
             if showsSource { sourceBadge(source) }
             Spacer(minLength: 4)
-            Text("\(Fmt.tokensShort(tokens)) · \(Int((share * 100).rounded()))%")
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text("\(Fmt.tokensShort(tokens)) · \(Int((share * 100).rounded()))%")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                if let price = ModelPriceCheatSheet.caption(model: name) {
+                    Text(price)
+                        .font(.system(size: 9)).foregroundStyle(.tertiary)
+                }
+            }
         }
     }
 
