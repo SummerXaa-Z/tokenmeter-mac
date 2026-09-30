@@ -1256,7 +1256,8 @@ struct OverviewCompareCard: View {
     }
 }
 
-// 近 13 周用量热力图：周为列、周一到周日为行，颜色越深当日合计越大。
+// 近 13/26 周用量热力图：周为列、周一到周日为行，颜色越深当日合计越大；
+// 可按周翻页回看更早历史（上限为最早数据，颜色分档跨页可比）。
 // 纯本机按天历史渲染，悬停查看当日数值。
 struct OverviewHeatmapCard: View {
     // 热力图窗口档位:13 周为默认档;26 周档格宽收窄到 11pt 以容纳双倍列数
@@ -1271,15 +1272,19 @@ struct OverviewHeatmapCard: View {
     let participants: Set<HistorySource>
     @State private var span: Span
     @State private var hoverWeekday: String?
+    // 按周翻页:0 = 最近(终点今天),k = 整体前移 k 周;上限由最早数据决定
+    @State private var weekOffset: Int
 
     init(
         history: [HistoryStore.DayPoint],
         participants: Set<HistorySource>,
-        initialSpan: Span = .quarter
+        initialSpan: Span = .quarter,
+        initialWeekOffset: Int = 0
     ) {
         self.history = history
         self.participants = participants
         _span = State(initialValue: initialSpan)
+        _weekOffset = State(initialValue: initialWeekOffset)
     }
 
     // 索引 = UsageHeatmap.DayCell.level(0...4)
@@ -1299,20 +1304,24 @@ struct OverviewHeatmapCard: View {
 
     var body: some View {
         let columns = UsageHeatmap.window(
-            history, participants: participants, windowWeeks: span.rawValue)
+            history, participants: participants,
+            windowWeeks: span.rawValue, weekOffset: weekOffset)
         let streak = UsageHeatmap.currentStreak(history, participants: participants)
         let hasUsage = columns.flatMap(\.cells).contains { $0.level > 0 }
         // 悬停 tooltip 的当日金额：同价格口径逐日重算，只在有用量时算
         let apiValues = hasUsage
             ? UsageHeatmap.dailyAPIValues(
-                participants: participants, windowWeeks: span.rawValue)
+                participants: participants,
+                windowWeeks: span.rawValue, weekOffset: weekOffset)
             : [:]
+        let maxOffset = UsageHeatmap.maxWeekOffset(history, participants: participants)
         return Card {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Label("用量热力图", systemImage: "square.grid.3x3")
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
+                    weekNavigator(columns: columns, maxOffset: maxOffset)
                     Picker("热力图窗口", selection: $span) {
                         ForEach(OverviewHeatmapCard.Span.allCases, id: \.self) { item in
                             Text(item.title).tag(item)
@@ -1338,16 +1347,76 @@ struct OverviewHeatmapCard: View {
                         }
                         Text("多")
                             .font(Theme.footnoteFont).foregroundStyle(.tertiary)
-                        if streak >= 2 {
+                        if weekOffset == 0, streak >= 2 {
                             Text("· 当前连续 \(streak) 天")
                                 .font(Theme.footnoteFont).foregroundStyle(.tertiary)
                         }
                         Spacer(minLength: 0)
-                        Text("近 \(span.rawValue) 周 · 悬停查值 · 描边为今天")
+                        Text(weekOffset == 0
+                             ? "近 \(span.rawValue) 周 · 悬停查值 · 描边为今天"
+                             : "悬停查值")
                             .font(Theme.footnoteFont).foregroundStyle(.tertiary)
                     }
                 }
             }
+        }
+    }
+
+    // 按周翻页:左箭头看更早,右箭头回来;中间是当前可见范围,翻页后点击
+    // 范围文本可直接回到最近(翻得深时不用一格一格点回来)。
+    private func weekNavigator(
+        columns: [UsageHeatmap.WeekColumn], maxOffset: Int
+    ) -> some View {
+        let first = columns.first?.cells.first?.date
+        let last = columns.last?.cells.last?.date
+        let range: String
+        if let first, let last {
+            range = "\(Fmt.mmdd(first)) – \(Fmt.mmdd(last))"
+        } else {
+            range = ""
+        }
+        return HStack(spacing: 2) {
+            Button {
+                weekOffset = min(weekOffset + 1, max(1, maxOffset))
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+            .disabled(weekOffset >= maxOffset)
+            .accessibilityLabel("更早 \(span.rawValue) 周")
+            Group {
+                if weekOffset > 0 {
+                    Button(range) { weekOffset = 0 }
+                        .foregroundStyle(.tertiary)
+                        .help("回到最近")
+                } else {
+                    Text(range).foregroundStyle(.tertiary)
+                }
+            }
+            .font(.system(size: 9, design: .monospaced))
+            .frame(minWidth: 74)
+            .lineLimit(1)
+            Group {
+                if weekOffset > 0 {
+                    Button {
+                        weekOffset = max(weekOffset - 1, 0)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("更近 \(span.rawValue) 周")
+                } else {
+                    // 最近一页时右箭头淡出但占位,导航簇宽度不跳动
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color.primary.opacity(0.15))
+                }
+            }
+            .disabled(weekOffset == 0)
         }
     }
 
@@ -1382,7 +1451,8 @@ struct OverviewHeatmapCard: View {
     // 说明行与其他图表同款悬停查值,未悬停时显示峰值日
     private var rhythmChart: some View {
         let stats = UsageHeatmap.weekdayAverages(
-            history, participants: participants, windowWeeks: span.rawValue)
+            history, participants: participants,
+            windowWeeks: span.rawValue, weekOffset: weekOffset)
         let peak = stats.map(\.average).max() ?? 0
         let active = stats.first { $0.label == hoverWeekday }
             ?? stats.max { $0.average < $1.average }

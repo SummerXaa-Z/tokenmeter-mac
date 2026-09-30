@@ -135,6 +135,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             OverviewHeatmapCard(history: days, participants: [.claude, .codex])
             OverviewHeatmapCard(
                 history: days, participants: [.claude, .codex], initialSpan: .half)
+            // 翻页态:前移 5 周,验证导航箭头、可见范围文本与无今日描边
+            OverviewHeatmapCard(
+                history: days, participants: [.claude, .codex], initialWeekOffset: 5)
         }
         .padding(14)
     }
@@ -404,8 +407,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("pace-fixture", hosting(Self.paceFixture(), height: 1100)),
             ("cost-fixture", hosting(Self.costFixture(), height: 2700)),
             // 热力图 13|26 周档合成数据页:本机留存未必覆盖 26 周,
-            // 用确定性周节律验证双倍列数下的格宽收窄、月份标签与脚注
-            ("heatmap-fixture", hosting(Self.heatmapFixture(), height: 560)),
+            // 用确定性周节律验证双倍列数下的格宽收窄、月份标签、脚注与翻页态
+            ("heatmap-fixture", hosting(Self.heatmapFixture(), height: 780)),
         ]
 
         var windows: [NSWindow] = []

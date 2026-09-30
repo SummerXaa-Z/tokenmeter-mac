@@ -249,6 +249,79 @@ final class UsageHeatmapTests: XCTestCase {
         XCTAssertEqual(values["2026-08-10"] ?? 0, 2.44, accuracy: 0.001)
     }
 
+    // MARK: - 按周翻页
+
+    func testWindowPagedBackShiftsByWholeWeeks() {
+        // windowWeeks=1、前移 1 周:终点 9/18(周五),起点 9/12(周六)——
+        // 与 offset 0 的窗口形状一致,只是整体前移了 7 天
+        let columns = window([day("2026-09-17", claude: 100)], windowWeeks: 1)
+        let paged = UsageHeatmap.window(
+            [day("2026-09-17", claude: 100)],
+            participants: [.claude, .codex],
+            today: DateUtil.date(from: "2026-09-25")!,
+            windowWeeks: 1, weekOffset: 1)
+        XCTAssertEqual(paged.count, 2)
+        XCTAssertEqual(paged[0].weekOf, "2026-09-07")
+        XCTAssertEqual(paged[0].cells.map(\.date), ["2026-09-12", "2026-09-13"])
+        XCTAssertEqual(paged[1].weekOf, "2026-09-14")
+        XCTAssertEqual(paged[1].cells.map(\.date), [
+            "2026-09-14", "2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18",
+        ])
+        // offset 0 时同一天落在最后一列;窗口长度不因偏移改变
+        XCTAssertEqual(columns.last?.cells.last?.date, "2026-09-25")
+    }
+
+    func testWeekdayAveragesFollowPagedWindow() {
+        // 2 周窗口前移 1 周:09-05(周六)进入窗口,09-19(周六)离开
+        let days = [
+            day("2026-09-05", claude: 999),
+            day("2026-09-19", claude: 30),
+        ]
+        let stats = UsageHeatmap.weekdayAverages(
+            days, participants: [.claude, .codex],
+            today: DateUtil.date(from: "2026-09-25")!,
+            windowWeeks: 2, weekOffset: 1)
+        let saturday = stats.first { $0.label == "六" }
+        XCTAssertEqual(saturday?.days, 2)          // 09-05 与 09-12(零天)
+        XCTAssertEqual(saturday?.average, 499)     // 999 / 2
+    }
+
+    func testDailyAPIValuesFollowPagedWindow() {
+        // 1 周窗口前移 1 周:只看 09-12...09-18
+        let values = UsageHeatmap.dailyAPIValues(
+            participants: [.kimi],
+            persisted: [
+                modelDay("2026-09-17", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+                modelDay("2026-09-24", source: .kimi, ["kimi-k2.6": .init(output: 9_000_000)]),
+            ],
+            today: DateUtil.date(from: "2026-09-25")!,
+            windowWeeks: 1, weekOffset: 1)
+        XCTAssertEqual(values.count, 1)
+        XCTAssertEqual(values["2026-09-17"] ?? 0, 2.44, accuracy: 0.001)
+    }
+
+    func testMaxWeekOffsetBoundByEarliestCodingDay() {
+        let days = [
+            day("2026-03-01", deepseek: 999),   // 平台账户日不算
+            day("2026-06-01", claude: 5),
+            day("2026-09-24", claude: 5),
+        ]
+        // 6/1 → 9/25 共 116 天,116/7 = 16
+        XCTAssertEqual(UsageHeatmap.maxWeekOffset(
+            days, participants: [.claude, .codex],
+            today: DateUtil.date(from: "2026-09-25")!), 16)
+        // 无任何 Coding 数据 → 0
+        XCTAssertEqual(UsageHeatmap.maxWeekOffset(
+            [day("2026-09-24", deepseek: 999)],
+            participants: [.claude, .codex],
+            today: DateUtil.date(from: "2026-09-25")!), 0)
+        // 极早数据封顶 156 周(约三年)防呆
+        XCTAssertEqual(UsageHeatmap.maxWeekOffset(
+            [day("2020-01-01", claude: 5)],
+            participants: [.claude, .codex],
+            today: DateUtil.date(from: "2026-09-25")!), 156)
+    }
+
     func testCellHelpTextAppendsAmountOnlyWhenPositive() {
         XCTAssertEqual(
             UsageHeatmap.cellHelpText(date: "2026-09-25", total: 1_234_567, apiValue: 12.5),

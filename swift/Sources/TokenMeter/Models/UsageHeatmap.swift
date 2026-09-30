@@ -30,6 +30,45 @@ enum UsageHeatmap {
 
     static let windowWeeks = 13
 
+    /// 按周翻页的窗口锚点(窗口终点):offset 0 = 今天;k = 整体前移 k 周
+    /// (终点为今天往前第 k 周的同一天)。统一对齐到午夜,起点由终点推算,
+    /// 任何偏移下窗口长度恒为 windowWeeks * 7 天。
+    private static func anchorDate(
+        today: Date, weekOffset: Int, calendar: Calendar
+    ) -> Date {
+        let shifted = weekOffset > 0
+            ? calendar.date(byAdding: .day, value: -(weekOffset * 7), to: today) ?? today
+            : today
+        return calendar.startOfDay(for: shifted)
+    }
+
+    /// 还能往回翻几周:窗口终点不能早于最早有数据的那天(否则整窗空白),
+    /// 再以 156 周(约三年)兜底防呆。
+    static func maxWeekOffset(
+        _ days: [HistoryStore.DayPoint],
+        participants: some Sequence<HistorySource>,
+        today: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Int {
+        let allowed = Set(participants)
+        var earliest: Date?
+        for day in days {
+            let total = day.bySource.reduce(0) { sum, entry in
+                allowed.contains(entry.key) ? sum + max(entry.value, 0) : sum
+            }
+            guard total > 0, let date = DateUtil.date(from: day.date) else { continue }
+            if let seen = earliest, date >= seen { continue }
+            earliest = date
+        }
+        guard let earliest else { return 0 }
+        let daysBack = calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: earliest),
+            to: calendar.startOfDay(for: today)
+        ).day ?? 0
+        return min(max(0, daysBack / 7), 156)
+    }
+
     /// 窗口内逐日 API 等价美元（自然日键 → USD）：participants 的本地来源
     /// 合并到同一天，与总览/来源页同一价格口径（按用量当日生效的快照重算、
     /// 缺价模型不计入）。只读本机留存明细——热力图窗口远超实时采集的
@@ -40,16 +79,17 @@ enum UsageHeatmap {
         persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
         today: Date = Date(),
         windowWeeks: Int = UsageHeatmap.windowWeeks,
+        weekOffset: Int = 0,
         calendar: Calendar = .current
     ) -> [String: Double] {
         let allowed = Set(participants)
         guard allowed.contains(where: \.isCodingAgent) else { return [:] }
+        let anchor = anchorDate(today: today, weekOffset: weekOffset, calendar: calendar)
         let start = calendar.date(
-            byAdding: .day, value: -(windowWeeks * 7 - 1),
-            to: calendar.startOfDay(for: today)) ?? today
+            byAdding: .day, value: -(windowWeeks * 7 - 1), to: anchor) ?? anchor
         var keys = Set<String>()
         var cursor = start
-        while cursor <= today {
+        while cursor <= anchor {
             keys.insert(DateUtil.key(cursor))
             guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
             cursor = next
@@ -98,6 +138,7 @@ enum UsageHeatmap {
         participants: some Sequence<HistorySource>,
         today: Date = Date(),
         windowWeeks: Int = UsageHeatmap.windowWeeks,
+        weekOffset: Int = 0,
         calendar: Calendar = .current
     ) -> [WeekColumn] {
         let allowed = Set(participants)
@@ -110,9 +151,9 @@ enum UsageHeatmap {
             totals[day.date, default: 0] += total
         }
 
+        let anchor = anchorDate(today: today, weekOffset: weekOffset, calendar: calendar)
         let start = calendar.date(
-            byAdding: .day, value: -(windowWeeks * 7 - 1), to: calendar.startOfDay(for: today)
-        ) ?? today
+            byAdding: .day, value: -(windowWeeks * 7 - 1), to: anchor) ?? anchor
         let thresholds = quantileThresholds(Array(totals.values))
 
         var columns: [WeekColumn] = []
@@ -120,7 +161,7 @@ enum UsageHeatmap {
         var currentWeekOf: String?
         var currentCells: [DayCell] = []
         var cursor = start
-        while cursor <= today {
+        while cursor <= anchor {
             let key = DateUtil.key(cursor)
             let total = totals[key] ?? 0
             let cell = DayCell(
@@ -183,6 +224,7 @@ enum UsageHeatmap {
         participants: some Sequence<HistorySource>,
         today: Date = Date(),
         windowWeeks: Int = UsageHeatmap.windowWeeks,
+        weekOffset: Int = 0,
         calendar: Calendar = .current
     ) -> [WeekdayStat] {
         let allowed = Set(participants)
@@ -197,11 +239,11 @@ enum UsageHeatmap {
 
         var sums = [Int: Int]()
         var counts = [Int: Int]()
+        let anchor = anchorDate(today: today, weekOffset: weekOffset, calendar: calendar)
         let start = calendar.date(
-            byAdding: .day, value: -(windowWeeks * 7 - 1), to: calendar.startOfDay(for: today)
-        ) ?? today
+            byAdding: .day, value: -(windowWeeks * 7 - 1), to: anchor) ?? anchor
         var cursor = start
-        while cursor <= today {
+        while cursor <= anchor {
             let weekday = calendar.component(.weekday, from: cursor)
             sums[weekday, default: 0] += totals[DateUtil.key(cursor)] ?? 0
             counts[weekday, default: 0] += 1
