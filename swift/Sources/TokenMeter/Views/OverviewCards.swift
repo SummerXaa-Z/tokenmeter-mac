@@ -673,11 +673,18 @@ struct OverviewRankingsCard: View {
     var sparklineFor: ((HistorySource, String) -> [(date: String, tokens: Int)])? = nil
     // 渲染夹具:强制某行迷你柱进入某日悬停态(说明行显示单日文案)
     var previewSparkDay: (model: String, dayIndex: Int)? = nil
+    // 渲染夹具:注入确定性的 Skill 近 13 周序列(真实取数来自
+    // 本机留存与实时采集,离屏渲染不可预测)
+    var skillSparkFor: ((String) -> [(weekOf: String, count: Int)])? = nil
+    // 渲染夹具:强制某行迷你条进入某周悬停态(说明行显示单周文案)
+    var previewSkillSparkWeek: (name: String, weekIndex: Int)? = nil
     @EnvironmentObject private var state: AppState
     @State private var hoverEntry: PersonalUsageRankings.ModelEntry?
     @State private var hoverSkill: PersonalSkillRankings.Entry?
     // 迷你柱悬停对准的日序号(指针在柱图上时优先于行悬停文案)
     @State private var sparkDay: (model: String, dayIndex: Int)?
+    // Skill 迷你条悬停对准的周序号
+    @State private var skillSparkWeek: (name: String, weekIndex: Int)?
 
     /// 迷你趋势柱的布局矩形(底对齐):峰值满高、零值零高、
     /// 非零值保底 1.5pt 可见。纯函数供单元测试。
@@ -747,6 +754,30 @@ struct OverviewRankingsCard: View {
         return parts.joined(separator: " · ")
     }
 
+    /// Skill 迷你条单周悬停的说明行文案:周一锚定周标签 + 当周次数。
+    /// 纯函数供单元测试。
+    static func skillWeekText(weekOf: String, count: Int) -> String {
+        "\(Fmt.mmdd(weekOf))周 · " + (count > 0 ? "\(Fmt.int(count)) 次" : "无调用")
+    }
+
+    /// 各来源实时采集的逐日 Skill 调用(与 dayModels 同窗口同语义)。
+    private static func liveDaySkills(
+        _ state: AppState
+    ) -> [HistorySource: [String: [String: Int]]] {
+        [
+            .claude: state.claude.result?.daySkills ?? [:],
+            .codex: state.codex.result?.daySkills ?? [:],
+            .copilot: state.copilot.result?.daySkills ?? [:],
+        ]
+    }
+
+    /// Skill 迷你条的近 13 周逐周序列;夹具注入优先,断流返回 nil(不画)
+    private func skillWeeklyCounts(name: String) -> [(weekOf: String, count: Int)]? {
+        if let skillSparkFor { return skillSparkFor(name) }
+        return SkillUsageTrend.weeklyCounts(
+            name: name, weeks: 13, liveSkills: Self.liveDaySkills(state))
+    }
+
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 9) {
@@ -811,7 +842,15 @@ struct OverviewRankingsCard: View {
                         index, entry in
                         skillRow(
                             rank: index + 1, entry: entry,
-                            highlighted: (hoverSkill ?? previewSkillEntry)?.id == entry.id)
+                            highlighted: (hoverSkill ?? previewSkillEntry)?.id == entry.id,
+                            weekly: skillWeeklyCounts(name: entry.name),
+                            onWeekHover: { weekIndex in
+                                if let weekIndex {
+                                    skillSparkWeek = (name: entry.name, weekIndex: weekIndex)
+                                } else if skillSparkWeek?.name == entry.name {
+                                    skillSparkWeek = nil
+                                }
+                            })
                             .onHover { hovering in
                                 if hovering {
                                     hoverSkill = entry
@@ -823,7 +862,7 @@ struct OverviewRankingsCard: View {
                     skillHoverCaption
                 }
 
-                Text("Claude 统计原生 Skill 工具；Codex 统计工具实际读取标准 SKILL.md；Copilot 统计 skill.invoked。普通消息提及不计入。")
+                Text("Claude 统计原生 Skill 工具；Codex 统计工具实际读取标准 SKILL.md；Copilot 统计 skill.invoked。普通消息提及不计入。行尾小条为近 13 周逐周调用次数（悬停查单周）。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
         }
@@ -911,16 +950,26 @@ struct OverviewRankingsCard: View {
         return nil
     }
 
-    /// Skills 榜悬停说明行:常驻一行,未悬停时显示占位提示,版面不跳
+    /// Skills 榜悬停说明行:常驻一行,未悬停时显示占位提示,版面不跳。
+    /// 单周悬停最具体,优先于整行来源拆解。
     private var skillHoverCaption: some View {
-        Text(
-            hoverSkill.map(Self.hoverSkillText)
-                ?? previewSkillEntry.map(Self.hoverSkillText)
-                ?? "悬停 Skill 行看各来源调用次数"
-        )
-        .font(.system(size: 10)).foregroundStyle(.tertiary)
-        .lineLimit(1)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        Text(currentSkillHoverText)
+            .font(.system(size: 10)).foregroundStyle(.tertiary)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var currentSkillHoverText: String {
+        if let week = skillSparkWeek ?? previewSkillSparkWeek,
+           let series = skillWeeklyCounts(name: week.name),
+           series.indices.contains(week.weekIndex)
+        {
+            let item = series[week.weekIndex]
+            return Self.skillWeekText(weekOf: item.weekOf, count: item.count)
+        }
+        return hoverSkill.map(Self.hoverSkillText)
+            ?? previewSkillEntry.map(Self.hoverSkillText)
+            ?? "悬停 Skill 行看各来源调用次数"
     }
 
     private func rankingRow(
@@ -965,7 +1014,11 @@ struct OverviewRankingsCard: View {
     }
 
     private func skillRow(
-        rank: Int, entry: PersonalSkillRankings.Entry, highlighted: Bool = false
+        rank: Int,
+        entry: PersonalSkillRankings.Entry,
+        highlighted: Bool = false,
+        weekly: [(weekOf: String, count: Int)]? = nil,
+        onWeekHover: ((Int?) -> Void)? = nil
     ) -> some View {
         HStack(spacing: 7) {
             rankLabel(rank)
@@ -981,6 +1034,12 @@ struct OverviewRankingsCard: View {
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
+            if let weekly {
+                ModelSparkline(
+                    values: weekly.map(\.count),
+                    color: Theme.brand,
+                    onDayHover: onWeekHover)
+            }
             Text("\(Fmt.int(entry.invocationCount))次 · \(Int((entry.share * 100).rounded()))%")
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)

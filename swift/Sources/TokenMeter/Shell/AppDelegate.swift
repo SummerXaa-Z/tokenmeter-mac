@@ -503,6 +503,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private static func rankingsSkillSparkFixture() -> some View {
+        let data = rankingsFixtureData()
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        // 确定性的近 13 周序列:周一锚定的真实周键 + 逐周图案;
+        // 强制首行对准第 11 根(2 周前),说明行显示单周文案
+        let thisMonday = DateUtil.date(
+            from: UsageHeatmap.mondayKey(of: today, calendar: calendar)) ?? today
+        let series: [(weekOf: String, count: Int)] = (0..<13).map { offset in
+            guard let monday = calendar.date(
+                byAdding: .weekOfYear, value: offset - 12, to: thisMonday)
+            else { return (weekOf: DateUtil.today(), count: 0) }
+            return (weekOf: DateUtil.key(monday), count: (offset % 3 == 0 ? 6 : 2) + offset / 4)
+        }
+        return ScrollView {
+            VStack(spacing: 12) {
+                OverviewRankingsCard(
+                    rankings: data.rankings, skillRankings: data.skills, range: .month,
+                    skillSparkFor: { _ in series },
+                    previewSkillSparkWeek: (name: "frontend-design", weekIndex: 10))
+            }
+            .padding(14)
+        }
+    }
+
     private static func rankingsSparklineFixture() -> some View {
         let data = rankingsFixtureData()
         let calendar = Calendar.current
@@ -633,6 +658,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("rankings-idle-fixture", hosting(Self.rankingsIdleFixture(), height: 560)),
             ("rankings-skill-preview-fixture", hosting(
                 Self.rankingsSkillPreviewFixture(), height: 560)),
+            ("rankings-skill-spark-fixture", hosting(
+                Self.rankingsSkillSparkFixture(), height: 560)),
             ("rankings-sparkline-fixture", hosting(
                 Self.rankingsSparklineFixture(), height: 560)),
             // 热力图 13|26 周档合成数据页:本机留存未必覆盖 26 周,

@@ -61,6 +61,7 @@
 		68DC204BA8F8A4EB2A4D53DE /* ArkPlanQuotaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96B332F068C8D6A1265701DD /* ArkPlanQuotaService.swift */; };
 		6F61B832C0A969BE3C20F6DC /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D564596B6873D239FB7F78 /* SettingsView.swift */; };
 		7193ABE0E27AFAD75C13A5D8 /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE2676BB49AC73AF2BA8531 /* Format.swift */; };
+		724F811D27BE42FCC499A6E3 /* SkillUsageTrend.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8F00C8AE1EB5973EE978D88 /* SkillUsageTrend.swift */; };
 		727D1AB8872C9EFC6DA1022C /* UnpricedModelsNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CA840794CFA53614F8872DD /* UnpricedModelsNote.swift */; };
 		753185080D5D22027CBF7B00 /* HistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21D9FAD2975109A06D1A9B98 /* HistoryStore.swift */; };
 		75BC978308318F6F92DB408A /* Notifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0108201849DF5FC34BB50A /* Notifier.swift */; };
@@ -74,6 +75,7 @@
 		85E3701A3E68F2AC251DE64F /* Updater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 776AA6C25BBA738D14FADBAF /* Updater.swift */; };
 		864ACCE9B37BB21017E8830B /* ChartHover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A96A717B32EC8A930DC3947 /* ChartHover.swift */; };
 		870C36A98D492D4EA893DC70 /* TrendSeriesFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BA08A1766B4DFB2AC3C1980 /* TrendSeriesFilter.swift */; };
+		873DB3C644359CE2D1C9B0FD /* SkillUsageTrendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EEC24E82A38D4C48A2F91D2 /* SkillUsageTrendTests.swift */; };
 		87C9A2CFDC42A7DD9139EB1B /* OverviewSourceSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82107C1666FA3E1EBD6FADB /* OverviewSourceSelection.swift */; };
 		8F0C6B1D77FB3247BF010F05 /* ZhipuQuotaServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 080188017FF759CF86F06172 /* ZhipuQuotaServiceTests.swift */; };
 		9130F93DD0C058FA7B74774F /* CursorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB5C8B4A29701DC68C925D9 /* CursorView.swift */; };
@@ -181,6 +183,7 @@
 		49DAF299FEE12F36C6B484D3 /* DiagnosticReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticReport.swift; sourceTree = "<group>"; };
 		4C7FF91B5D91E2641E200E35 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		4DA229440BE85C4E2C15FA8F /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		4EEC24E82A38D4C48A2F91D2 /* SkillUsageTrendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillUsageTrendTests.swift; sourceTree = "<group>"; };
 		54824B773553961BECA6D2BE /* OverviewCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewCards.swift; sourceTree = "<group>"; };
 		56793DA64ED1628C4958EEB6 /* ProcessStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessStatus.swift; sourceTree = "<group>"; };
 		5DFC07D8517606EDB9E692DC /* GeminiUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiUsageTests.swift; sourceTree = "<group>"; };
@@ -265,6 +268,7 @@
 		E7CC34673E7679C77153F2F4 /* UsageHistoryRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageHistoryRange.swift; sourceTree = "<group>"; };
 		E81E92812623068BE00FF7D7 /* DeepSeekAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekAPI.swift; sourceTree = "<group>"; };
 		E8AE7EE0A89ED056CF4918F1 /* PersonalSkillRankings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalSkillRankings.swift; sourceTree = "<group>"; };
+		E8F00C8AE1EB5973EE978D88 /* SkillUsageTrend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillUsageTrend.swift; sourceTree = "<group>"; };
 		EDD6318A133F765FB00F63D7 /* UsageCSVExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageCSVExportTests.swift; sourceTree = "<group>"; };
 		F0C668ED35AE76F512457202 /* CollectAttemptLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectAttemptLog.swift; sourceTree = "<group>"; };
 		F1B86D6C533AB2687E46CD0D /* DashboardComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardComponents.swift; sourceTree = "<group>"; };
@@ -385,6 +389,7 @@
 				D4E17B42B074FE9B38451148 /* QuotaPaceTests.swift */,
 				8834DFDCCF5EAD81A03BD730 /* QwenCodeUsageTests.swift */,
 				4238C0B2D1E4556D6B6D9C94 /* RankingsHoverPreviewTests.swift */,
+				4EEC24E82A38D4C48A2F91D2 /* SkillUsageTrendTests.swift */,
 				0087DD57EDD330A00C55AEB2 /* SourceAPICostTests.swift */,
 				14A60991D1A15A114E2810A6 /* SourceHealthTests.swift */,
 				D9C3B1C71EB83DB3D7498B0A /* SourceTrendCardTests.swift */,
@@ -447,6 +452,7 @@
 				DD11D2DC6163A46FA5BD2D91 /* PersonalUsageProfile.swift */,
 				E13A57349BE9B8FC76B5A9D2 /* PersonalUsageRankings.swift */,
 				DF3C50BBEA971A783811E602 /* QuotaPace.swift */,
+				E8F00C8AE1EB5973EE978D88 /* SkillUsageTrend.swift */,
 				2629AD65E076D2C7A7CBB0FC /* SubscriptionPlan.swift */,
 				E681D77D51281BCE0A4CADA2 /* SubscriptionQuotaAlert.swift */,
 				ADDB0373895B8FC7D526719A /* SubscriptionQuotaSnapshot.swift */,
@@ -616,6 +622,7 @@
 				BA0F9E5B4851F8D2EFB2E494 /* QuotaPaceTests.swift in Sources */,
 				0529AE6F8025E874DBE31CA6 /* QwenCodeUsageTests.swift in Sources */,
 				C09E3F2EB4DFF5C9AD4FAC25 /* RankingsHoverPreviewTests.swift in Sources */,
+				873DB3C644359CE2D1C9B0FD /* SkillUsageTrendTests.swift in Sources */,
 				F40813B2CD34605201547713 /* SourceAPICostTests.swift in Sources */,
 				39229402876B43CAB525CF4B /* SourceHealthTests.swift in Sources */,
 				275ADAFFFD56430E5983696C /* SourceTrendCardTests.swift in Sources */,
@@ -693,6 +700,7 @@
 				652CB7783E44E227E2183D40 /* QwenCodeView.swift in Sources */,
 				099AF48C316A4AEAA44557B0 /* RootView.swift in Sources */,
 				6F61B832C0A969BE3C20F6DC /* SettingsView.swift in Sources */,
+				724F811D27BE42FCC499A6E3 /* SkillUsageTrend.swift in Sources */,
 				5A85B048EED103F94F2814EC /* SourceAPICostCard.swift in Sources */,
 				9F762C6D7503AD31ACDB354E /* SourceDashboardComponents.swift in Sources */,
 				4EF7C7222089ECBB8E69009B /* SourceHealth.swift in Sources */,
