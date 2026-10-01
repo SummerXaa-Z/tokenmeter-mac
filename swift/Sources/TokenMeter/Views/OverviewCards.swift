@@ -963,7 +963,24 @@ struct OverviewRankingsCard: View {
                 }
 
                 Divider()
-                header("Skills 榜", detail: "\(range.scopeTitle) · 只认明确调用证据")
+                HStack {
+                    Text("Skills 榜").font(.system(size: 11, weight: .semibold))
+                    Spacer()
+                    Text("\(range.scopeTitle) · 只认明确调用证据")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    // 导出完整 Skills 榜（不只前 5）为 CSV
+                    Button {
+                        exportSkillsCSV()
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(skillRankings.entries.isEmpty)
+                    .help("导出 Skills 榜 CSV（完整榜单与近 13 周次数）")
+                    .accessibilityLabel("导出 Skills 榜 CSV")
+                }
                 if skillRankings.entries.isEmpty {
                     empty("Claude / Codex / Copilot 暂无可确认的 Skill 调用")
                 } else {
@@ -993,17 +1010,46 @@ struct OverviewRankingsCard: View {
                     skillHoverCaption
                 }
 
-                Text("Claude 统计原生 Skill 工具；Codex 统计工具实际读取标准 SKILL.md；Copilot 统计 skill.invoked。普通消息提及不计入。行尾小条为近 13 周逐周调用次数（悬停查单周）。")
+                Text("Claude 统计原生 Skill 工具；Codex 统计工具实际读取标准 SKILL.md；Copilot 统计 skill.invoked。普通消息提及不计入。行尾小条为近 13 周逐周调用次数（悬停查单周）；右上按钮导出完整 Skills 榜 CSV（周列为近 13 周次数，无调用留空）。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
         }
     }
 
-    private func header(_ title: String, detail: String) -> some View {
-        HStack {
-            Text(title).font(.system(size: 11, weight: .semibold))
-            Spacer()
-            Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
+    /// 导出当前榜单顺序下的完整 Skills 榜（不只界面前 5）为 CSV;
+    /// 来源拆解与近 13 周次数和榜内悬停/迷你条同一条取数管线
+    private func exportSkillsCSV() {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSSavePanel()
+        panel.title = "导出 Skills 榜 CSV"
+        panel.nameFieldStringValue = SkillRankingCSVExport.suggestedFilename()
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowedContentTypes = [.commaSeparatedText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try SkillRankingCSVExport.makeCSV(
+                rows: exportSkillRows,
+                scopeTitle: range.scopeTitle
+            ).write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.messageText = "导出 Skills 榜 CSV 失败"
+            alert.runModal()
+        }
+    }
+
+    private var exportSkillRows: [SkillRankingCSVExport.Row] {
+        skillRankings.entries.enumerated().map { index, entry in
+            SkillRankingCSVExport.Row(
+                rank: index + 1,
+                skill: entry.name,
+                invocationCount: entry.invocationCount,
+                sharePercent: entry.share,
+                sourceNote: entry.sources
+                    .map { "\($0.source.overviewName) \(Fmt.int($0.invocationCount)) 次" }
+                    .joined(separator: "、"),
+                weekly: skillWeeklyCounts(name: entry.name))
         }
     }
 
