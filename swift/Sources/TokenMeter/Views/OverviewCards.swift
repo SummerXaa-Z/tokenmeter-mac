@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import AppKit
 
 // 总览卡片都是无状态展示组件。跨来源计算统一由 OverviewSnapshot 完成，
 // 这里不读取 AppState，也不触发加载或网络请求。
@@ -828,6 +829,58 @@ struct OverviewRankingsCard: View {
             name: name, weeks: 13, liveSkills: Self.liveDaySkills(state))
     }
 
+    /// 导出当前排序下的完整模型榜（不只界面前 5）为 CSV；列与悬停
+    /// 数字同管线。保存面板流程与「设置 → 用量导出」同款，写盘失败
+    /// 弹系统错误框。
+    private func exportRankingsCSV() {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSSavePanel()
+        panel.title = "导出模型榜 CSV"
+        panel.nameFieldStringValue = ModelRankingCSVExport.suggestedFilename()
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowedContentTypes = [.commaSeparatedText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try ModelRankingCSVExport.makeCSV(
+                rows: exportRows,
+                scopeTitle: range.scopeTitle,
+                sortTitle: activeSort.rawValue
+            ).write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.messageText = "导出模型榜 CSV 失败"
+            alert.runModal()
+        }
+    }
+
+    /// 导出行:近 7/30 天与金额走悬停数字同一条下钻管线,断流或缺价
+    /// 留空(不是 0);单价复用单价小抄的展示文案
+    private var exportRows: [ModelRankingCSVExport.Row] {
+        sortedModels.enumerated().map { index, entry in
+            let live = CodingModelDetailView.liveDayModels(entry.source, state: state)
+            let month = CodingModelDetail.summary(
+                source: entry.source, model: entry.model,
+                liveDayModels: live, windowDays: 30)
+            let week = month == nil ? nil : CodingModelDetail.summary(
+                source: entry.source, model: entry.model,
+                liveDayModels: live, windowDays: 7)
+            return ModelRankingCSVExport.Row(
+                rank: index + 1,
+                source: entry.source.overviewName,
+                model: entry.model,
+                rangeTokens: entry.totalTokens,
+                sharePercent: entry.share,
+                weekTokens: week?.tally.total,
+                monthTokens: month?.tally.total,
+                monthUSD: month.flatMap { summary in
+                    (summary.coverage ?? 1) > 0 ? summary.totalUSD : nil
+                },
+                activeDays: month?.activeDays,
+                priceNote: ModelPriceCheatSheet.caption(model: entry.model) ?? "")
+        }
+    }
+
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 9) {
@@ -846,6 +899,18 @@ struct OverviewRankingsCard: View {
                     .controlSize(.mini)
                     .frame(width: 132)
                     .help("用量 = \(range.scopeTitle)合计；等价 / 近7天来自近 30 天明细留存")
+                    // 导出当前排序下的完整模型榜（不只前 5）为 CSV
+                    Button {
+                        exportRankingsCSV()
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(rankings.models.isEmpty)
+                    .help("导出模型榜 CSV（当前排序的完整榜单）")
+                    .accessibilityLabel("导出模型榜 CSV")
                 }
                 if rankings.models.isEmpty {
                     empty("刷新任一本地用量来源后生成")
@@ -888,7 +953,7 @@ struct OverviewRankingsCard: View {
                     modelHoverCaption
                 }
 
-                Text("榜默认按所选范围用量排序，可切近 30 天 API 等价或近 7 天用量（无 30 天明细的行沉底）。模型名右侧为其当前生效的参考单价（输入 / 输出，每百万 tokens，缺价不标）；行尾小柱图为该模型近 30 天逐日 Token 走势（口径同悬停数字，断流行不画）。悬停模型行先看近 7 / 30 天关键数字，点击进入详情页（7|30|90 天可切）。")
+                Text("榜默认按所选范围用量排序，可切近 30 天 API 等价或近 7 天用量（无 30 天明细的行沉底）。模型名右侧为其当前生效的参考单价（输入 / 输出，每百万 tokens，缺价不标）；行尾小柱图为该模型近 30 天逐日 Token 走势（口径同悬停数字，断流行不画）。悬停模型行先看近 7 / 30 天关键数字，点击进入详情页（7|30|90 天可切）；右上按钮导出当前排序的完整榜单 CSV（断流或缺价列留空）。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
                 Text("模型榜保留采集来源；Cursor 当前只有订阅周期聚合，暂不混入模型榜。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
