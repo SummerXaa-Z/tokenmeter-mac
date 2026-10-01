@@ -1,10 +1,10 @@
 import Foundation
 
 // 每周一条的"上周用量摘要"通知:上周全部 Coding 来源 Token 合计、环比、
-// 主力来源、API 等价金额与订阅回本倍数(附近几周走势小抄)。数据与总览
-// 环比卡同源(PeriodCompare 日历周口径),金额按天明细 + 当日生效价重算
-// (与总览 API 等价同口径),纯本地计算,经 Notifier 推系统通知;上周一条
-// 记录都没有就不打扰。
+// 主力来源、模型 Top3、API 等价金额与订阅回本倍数(附近几周走势小抄)。
+// 数据与总览环比卡同源(PeriodCompare 日历周口径),金额按天明细 + 当日
+// 生效价重算(与总览 API 等价同口径),纯本地计算,经 Notifier 推系统
+// 通知;上周一条记录都没有就不打扰。
 enum WeeklyDigest {
     struct Message: Equatable {
         let title: String
@@ -87,6 +87,11 @@ enum WeeklyDigest {
                 body += "；全部来自 \(top.key.overviewName)"
             }
         }
+        if let models = topModelsText(
+            modelDays, allowed: allowed, lastKey: lastKey, calendar: calendar)
+        {
+            body += "；\(models)"
+        }
         let amounts = weeklyAmounts(
             modelDays, allowed: allowed, lastKey: lastKey, priorKey: priorKey,
             calendar: calendar)
@@ -124,6 +129,39 @@ enum WeeklyDigest {
             }
         }
         return Message(title: "TokenMeter 上周用量摘要", body: body)
+    }
+
+    /// 上周模型 Top3 小抄:按天明细里逐模型合计(跨参与来源合并同名模型),
+    /// 取前三名与份额;单个模型只报名字,明细没覆盖上周时整段省略。
+    /// 份额分母为上周有明细的模型合计(与金额段同一条明细管线)。
+    /// 同名同量按模型名字典序定先后,通知文案可复现。
+    private static func topModelsText(
+        _ modelDays: [ModelUsageDay],
+        allowed: Set<HistorySource>,
+        lastKey: String,
+        calendar: Calendar
+    ) -> String? {
+        var byModel: [String: Int] = [:]
+        for day in modelDays {
+            guard let date = DateUtil.date(from: day.date),
+                  weekKey(date, calendar: calendar) == lastKey
+            else { continue }
+            for (source, detail) in day.bySource where allowed.contains(source) {
+                for (model, tally) in detail.models where !tally.isEmpty {
+                    byModel[model, default: 0] += tally.total
+                }
+            }
+        }
+        let total = byModel.values.reduce(0, +)
+        guard total > 0 else { return nil }
+        let ranked = byModel.sorted { lhs, rhs in
+            lhs.value != rhs.value ? lhs.value > rhs.value : lhs.key < rhs.key
+        }
+        guard ranked.count > 1 else { return "模型 \(ranked[0].key)" }
+        let leaders = ranked.prefix(3).map { entry in
+            "\(entry.key) \(Fmt.percent(Double(entry.value) / Double(total) * 100))"
+        }
+        return "模型 Top3 " + leaders.joined(separator: "、")
     }
 
     /// 回本走势小抄:近几个完整周的逐周倍数(如"近 4 周 1.8 → 2.4 → 2.1 →

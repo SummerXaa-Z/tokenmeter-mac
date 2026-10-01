@@ -109,7 +109,7 @@ final class WeeklyDigestTests: XCTestCase {
         // 3M×2.44 = 7.32 → 环比 (7.32-2.44)/2.44 = 200%
         XCTAssertEqual(
             message?.body,
-            "合计 3M，环比 ↑ 200%；全部来自 Kimi Code；API 等价 $7.32（环比 ↑ 200%）\(checkedAt)")
+            "合计 3M，环比 ↑ 200%；全部来自 Kimi Code；模型 kimi-k2.6；API 等价 $7.32（环比 ↑ 200%）\(checkedAt)")
     }
 
     func testMessageAmountOmittedWithoutModelDetail() {
@@ -135,7 +135,7 @@ final class WeeklyDigestTests: XCTestCase {
         // 上上周无金额基期:不拼环比;缺价一半:覆盖 50%,低于阈值点名缺价模型
         XCTAssertEqual(
             message?.body,
-            "合计 2M；全部来自 Kimi Code；API 等价 $2.44，价格覆盖 50%\(checkedAt)，缺价 mystery-model")
+            "合计 2M；全部来自 Kimi Code；模型 Top3 kimi-k2.6 50%、mystery-model 50%；API 等价 $2.44，价格覆盖 50%\(checkedAt)，缺价 mystery-model")
     }
 
     func testMessageAmountIgnoresDisabledSourcesAndCurrentWeek() {
@@ -152,7 +152,7 @@ final class WeeklyDigestTests: XCTestCase {
         // 未启用的 Codex 与本周(09-28)的明细都不进金额,金额段只算 Kimi $2.44
         XCTAssertEqual(
             message?.body,
-            "合计 1M；全部来自 Kimi Code；API 等价 $2.44\(checkedAt)")
+            "合计 1M；全部来自 Kimi Code；模型 kimi-k2.6；API 等价 $2.44\(checkedAt)")
     }
 
     func testMessageCapsUnpricedModelNamesAtTwo() {
@@ -168,10 +168,11 @@ final class WeeklyDigestTests: XCTestCase {
                ]),
            ],
            today: date("2026-09-28"), calendar: calendar)
-        // 覆盖 25%:点名前两个缺价模型,其余收进「等」,通知保持一行可读
+        // 覆盖 25%:点名前两个缺价模型,其余收进「等」,通知保持一行可读;
+        // 模型 Top3 同量并列按名字典序,只取前三(mystery-c 不进榜)
         XCTAssertEqual(
             message?.body,
-            "合计 4M；全部来自 Kimi Code；API 等价 $2.44，价格覆盖 25%\(checkedAt)，缺价 mystery-a、mystery-b 等")
+            "合计 4M；全部来自 Kimi Code；模型 Top3 kimi-k2.6 25%、mystery-a 25%、mystery-b 25%；API 等价 $2.44，价格覆盖 25%\(checkedAt)，缺价 mystery-a、mystery-b 等")
     }
 
     func testMessageOmitsUnpricedNamesAboveCoverageThreshold() {
@@ -188,7 +189,7 @@ final class WeeklyDigestTests: XCTestCase {
            today: date("2026-09-28"), calendar: calendar)
         XCTAssertEqual(
             message?.body,
-            "合计 25M；全部来自 Kimi Code；API 等价 $58.56，价格覆盖 96%\(checkedAt)")
+            "合计 25M；全部来自 Kimi Code；模型 Top3 kimi-k2.6 96%、mystery-model 4%；API 等价 $58.56，价格覆盖 96%\(checkedAt)")
     }
 
     // MARK: - 订阅回本
@@ -206,7 +207,7 @@ final class WeeklyDigestTests: XCTestCase {
            today: date("2026-09-28"), calendar: calendar)
         XCTAssertEqual(
             message?.body,
-            "合计 3M；全部来自 Kimi Code；API 等价 $7.32\(checkedAt)；订阅回本 约 1.9 倍")
+            "合计 3M；全部来自 Kimi Code；模型 kimi-k2.6；API 等价 $7.32\(checkedAt)；订阅回本 约 1.9 倍")
         // 留存只覆盖上周一周:有数据的周不足两个,走势小抄不拼
     }
 
@@ -228,7 +229,7 @@ final class WeeklyDigestTests: XCTestCase {
         // 用量(0.0)、上周(0.3);留存更早的周不足两个时不拼(见上一测试)
         XCTAssertEqual(
             message?.body,
-            "合计 3M；全部来自 Kimi Code；API 等价 $7.32\(checkedAt)；订阅回本 约 0.3 倍，近 3 周 0.2 → 0.0 → 0.3")
+            "合计 3M；全部来自 Kimi Code；模型 kimi-k2.6；API 等价 $7.32\(checkedAt)；订阅回本 约 0.3 倍，近 3 周 0.2 → 0.0 → 0.3")
     }
 
     func testMessageAppendsRoiTrendOfRecentCompleteWeeks() {
@@ -248,7 +249,7 @@ final class WeeklyDigestTests: XCTestCase {
            today: date("2026-09-28"), calendar: calendar)
         XCTAssertEqual(
             message?.body,
-            "合计 3M；全部来自 Kimi Code；API 等价 $7.32（环比 ↓ 40%）\(checkedAt)；订阅回本 约 0.3 倍，近 4 周 0.1 → 0.2 → 0.5 → 0.3")
+            "合计 3M；全部来自 Kimi Code；模型 kimi-k2.6；API 等价 $7.32（环比 ↓ 40%）\(checkedAt)；订阅回本 约 0.3 倍，近 4 周 0.1 → 0.2 → 0.5 → 0.3")
     }
 
     func testMessageSubscriptionOmittedWithoutPositiveFee() {
@@ -263,6 +264,40 @@ final class WeeklyDigestTests: XCTestCase {
            today: date("2026-09-28"), calendar: calendar)
         XCTAssertEqual(
             message?.body,
-            "合计 1M；全部来自 Kimi Code；API 等价 $2.44\(checkedAt)")
+            "合计 1M；全部来自 Kimi Code；模型 kimi-k2.6；API 等价 $2.44\(checkedAt)")
+    }
+
+    // MARK: - 模型 Top3
+
+    func testMessageAppendsTopThreeModelsMergedAcrossSources() {
+        // 上周(9/21-9/27)跨来源同名合并:sonnet 走 Claude+Codex 共 8M;
+        // 上上周与本周的同名模型不进榜;份额分母为有明细的模型合计 10M
+        let message = WeeklyDigest.message([
+            day("2026-09-22", bySource: [.claude: 6_000_000, .codex: 3_000_000, .kimi: 1_000_000]),
+        ], participants: [.claude, .codex, .kimi],
+           modelDays: [
+               modelDay("2026-09-22", source: .claude, ["sonnet": .init(output: 6_000_000)]),
+               modelDay("2026-09-23", source: .codex, ["sonnet": .init(output: 2_000_000)]),
+               modelDay("2026-09-23", source: .codex, ["gpt-5.5": .init(output: 1_000_000)]),
+               modelDay("2026-09-24", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+               modelDay("2026-09-15", source: .claude, ["sonnet": .init(output: 9_000_000)]),
+               modelDay("2026-09-28", source: .claude, ["sonnet": .init(output: 9_000_000)]),
+           ],
+           today: date("2026-09-28"), calendar: calendar)
+        // sonnet 80%,gpt-5.5 与 kimi-k2.6 同为 1M 并列按名字典序
+        XCTAssertTrue(message?.body.contains(
+            "模型 Top3 sonnet 80%、gpt-5.5 10%、kimi-k2.6 10%") ?? false)
+    }
+
+    func testMessageModelSegmentOmittedWithoutLastWeekDetail() {
+        // 上周只有 Token 历史、按天模型明细全在上上周:模型段省略
+        let message = WeeklyDigest.message([
+            day("2026-09-22", bySource: [.kimi: 3_000_000]),
+        ], participants: [.kimi],
+           modelDays: [
+               modelDay("2026-09-15", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+           ],
+           today: date("2026-09-28"), calendar: calendar)
+        XCTAssertFalse(message?.body.contains("模型") ?? true)
     }
 }
