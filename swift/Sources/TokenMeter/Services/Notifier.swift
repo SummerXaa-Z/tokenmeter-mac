@@ -7,6 +7,9 @@ import UserNotifications
 // 自签名非沙盒 app 上 UNUserNotificationCenter 可用，但权限申请可能被系统
 // 拒（取决于签名信任）。所有调用容错：失败不抛、不崩，静默退回图标着色。
 enum Notifier {
+    // 周报摘要通知的 identifier：发送方与点击路由共用，改这里即可换键。
+    static let weeklyDigestID = "weekly.digest"
+
     // 仅在有有效 bundle 时使用通知中心，避免裸进程调 current() 崩溃
     private static var available: Bool { Bundle.main.bundleIdentifier != nil }
 
@@ -54,5 +57,16 @@ enum Notifier {
     ) -> Bool {
         notificationsEnabled
             && (authorizationStatus == .authorized || authorizationStatus == .provisional)
+    }
+
+    /// 点击周报通知的横幅本身（默认动作）是否应打开总览页。
+    /// 派生动作（展开/关闭等）与其他通知不跳转——只有用户明确点了横幅
+    /// 才抢焦点弹面板。
+    static func shouldOpenOverview(
+        identifier: String,
+        actionIdentifier: String
+    ) -> Bool {
+        identifier == weeklyDigestID
+            && actionIdentifier == UNNotificationDefaultActionIdentifier
     }
 }

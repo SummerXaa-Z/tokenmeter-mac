@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 
 // 菜单栏外壳：状态栏图标 + NSPopover 承载 SwiftUI。
 // 这是原生 macOS 菜单栏应用的标准做法——面板贴着状态栏图标下拉、带小箭头。
@@ -8,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private let appState = AppState()
+    private let notificationRouter = NotificationRouter()
 #if DEBUG
     private var smokeWindow: NSWindow?
 #endif
@@ -67,6 +69,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 仅在用户开启通知时申请权限；关闭状态重启不能再次打扰用户。
         Notifier.requestAuthorizationIfEnabled(ConfigStore.shared.notificationsEnabled)
+
+        // 周报通知点击 → 回总览并弹面板。delegate 是弱引用，router 必须
+        // 由 self 持有；回调统一回主线程后再碰 AppKit。
+        notificationRouter.onOpenOverview = { [weak self] in
+            self?.openOverviewFromNotification()
+        }
+        UNUserNotificationCenter.current().delegate = notificationRouter
 
         // 启动 5s 后做每日一次的更新检查（静默，仅有新版时弹窗）
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
@@ -866,7 +875,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             HistoryStore.all(), participants: WeeklyDigest.participants(store),
             plans: store.subscriptionPlans)
         else { return }
-        Notifier.send(id: "weekly.digest", title: message.title, body: message.body)
+        Notifier.send(
+            id: Notifier.weeklyDigestID, title: message.title, body: message.body)
     }
 
     private func finishQuotaBadgeRefresh() {
@@ -1199,9 +1209,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appState.refreshEnabledSources(trigger: .panelOpen)
     }
 
+    // 点击周报通知：请求回总览（面板已开在别的页时也会导航），再弹面板。
+    private func openOverviewFromNotification() {
+        appState.pendingView = .dashboard
+        openPanel()
+    }
+
     @objc private func openPlatform() { PlatformPortal.shared.open() }
 
     @objc private func quit() { NSApp.terminate(nil) }
 
     func closePopover() { popover.performClose(nil) }
+}
+
+// 通知点击路由：只处理周报通知的默认动作（点横幅本身），派生动作与其他
+// 通知交还系统默认行为。UNUserNotificationCenter 的 delegate 是弱引用，
+// 实例由 AppDelegate 持有；回调回主线程后再碰 AppKit。
+private final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
+    var onOpenOverview: (() -> Void)?
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        if Notifier.shouldOpenOverview(
+            identifier: response.notification.request.identifier,
+            actionIdentifier: response.actionIdentifier)
+        {
+            DispatchQueue.main.async { [weak self] in
+                self?.onOpenOverview?()
+            }
+        }
+        completionHandler()
+    }
 }

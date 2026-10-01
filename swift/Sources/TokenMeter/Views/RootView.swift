@@ -141,6 +141,16 @@ struct RootView: View {
                 push(.dashboard)
             }
         }
+        // 外部导航请求（如点击周报通知）：面板可能此刻才首次挂载（onAppear
+        // 兜底消费）或已在别的页面（onChange 消费），两条路都走完即清空。
+        .onAppear { consumePendingView() }
+        .onChange(of: state.pendingView) { _, _ in consumePendingView() }
+    }
+
+    private func consumePendingView() {
+        guard let pending = state.pendingView else { return }
+        state.pendingView = nil
+        push(pending)
     }
 
     // 页面切换统一走这里：带 0.18s 交叉淡入，替代此前的瞬切

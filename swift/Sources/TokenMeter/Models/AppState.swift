@@ -56,6 +56,10 @@ final class AppState: ObservableObject {
     @Published var cursorEnabled: Bool = true
     @Published var claudeDailyLimitM: Int = 0
     @Published var menubarInfoMode: String = "claude"
+    // 外部触发的一次性导航请求（如点击周报通知回到总览）：RootView 挂载
+    // （onAppear）或已在面板上（onChange）时消费并清空；重复请求同一页
+    // 也会再次触发（两次赋值之间必然经过 nil）。
+    @Published var pendingView: AppView?
 
     // 本地源缓存：数据提到 AppState 跨 popover/tab 持久，切 tab 或重开面板
     // 不再重扫；只有手动刷新、定时器、或缓存超过 TTL 才真正重新加载。
