@@ -95,6 +95,13 @@ final class WeeklyDigestTests: XCTestCase {
         ModelUsageDay(date: date, bySource: [source: SourceDayDetail(models: models)])
     }
 
+    private func skillDay(
+        _ date: String, source: HistorySource,
+        _ skills: [String: Int]
+    ) -> ModelUsageDay {
+        ModelUsageDay(date: date, bySource: [source: SourceDayDetail(skills: skills)])
+    }
+
     func testMessageAppendsAPIEquivalentAmountWithChange() {
         // kimi-k2.6 输出价 09-25 前后 $2.44/$4 每 M:上周 3M=$9.32,上上周 1M=$2.44
         let message = WeeklyDigest.message([
@@ -299,5 +306,49 @@ final class WeeklyDigestTests: XCTestCase {
            ],
            today: date("2026-09-28"), calendar: calendar)
         XCTAssertFalse(message?.body.contains("模型") ?? true)
+    }
+
+    // MARK: - Skill Top3
+
+    func testMessageAppendsTopThreeSkillsMergedAcrossSources() {
+        // 上周(9/21-9/27)跨来源同名合并:frontend-design 走 Claude+Codex 共 9 次;
+        // 上上周/本周的同名 Skill 与未启用的 Kimi 不进榜;次数报整数不报份额
+        let message = WeeklyDigest.message([
+            day("2026-09-22", bySource: [.claude: 6_000_000, .codex: 3_000_000]),
+        ], participants: [.claude, .codex],
+           modelDays: [
+               skillDay("2026-09-22", source: .claude, ["frontend-design": 6, "pdf": 2]),
+               skillDay("2026-09-23", source: .codex, ["frontend-design": 3, "csv": 1]),
+               skillDay("2026-09-24", source: .kimi, ["frontend-design": 50]),
+               skillDay("2026-09-15", source: .claude, ["frontend-design": 20]),
+               skillDay("2026-09-28", source: .claude, ["frontend-design": 20]),
+           ],
+           today: date("2026-09-28"), calendar: calendar)
+        XCTAssertTrue(message?.body.contains(
+            "Skill Top3 frontend-design 9 次、pdf 2 次、csv 1 次") ?? false)
+    }
+
+    func testMessageSkillSegmentSingleLeaderNamesOnce() {
+        // 只有一个 Skill 时不用"Top3"字样,名字只报一次
+        let message = WeeklyDigest.message([
+            day("2026-09-22", bySource: [.claude: 3_000_000]),
+        ], participants: [.claude],
+           modelDays: [
+               skillDay("2026-09-22", source: .claude, ["pdf": 4]),
+           ],
+           today: date("2026-09-28"), calendar: calendar)
+        XCTAssertEqual(message?.body, "合计 3M；全部来自 Claude；Skill pdf 4 次")
+    }
+
+    func testMessageSkillSegmentOmittedWithoutLastWeekEvidence() {
+        // 上周只有 Token 历史,Skill 调用证据全在上上周:段省略
+        let message = WeeklyDigest.message([
+            day("2026-09-22", bySource: [.claude: 3_000_000]),
+        ], participants: [.claude],
+           modelDays: [
+               skillDay("2026-09-15", source: .claude, ["pdf": 4]),
+           ],
+           today: date("2026-09-28"), calendar: calendar)
+        XCTAssertFalse(message?.body.contains("Skill") ?? true)
     }
 }

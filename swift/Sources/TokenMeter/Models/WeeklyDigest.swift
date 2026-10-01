@@ -1,10 +1,10 @@
 import Foundation
 
 // 每周一条的"上周用量摘要"通知:上周全部 Coding 来源 Token 合计、环比、
-// 主力来源、模型 Top3、API 等价金额与订阅回本倍数(附近几周走势小抄)。
-// 数据与总览环比卡同源(PeriodCompare 日历周口径),金额按天明细 + 当日
-// 生效价重算(与总览 API 等价同口径),纯本地计算,经 Notifier 推系统
-// 通知;上周一条记录都没有就不打扰。
+// 主力来源、模型 Top3、Skill Top3、API 等价金额与订阅回本倍数(附近几周
+// 走势小抄)。数据与总览环比卡同源(PeriodCompare 日历周口径),金额按天
+// 明细 + 当日生效价重算(与总览 API 等价同口径),纯本地计算,经 Notifier
+// 推系统通知;上周一条记录都没有就不打扰。
 enum WeeklyDigest {
     struct Message: Equatable {
         let title: String
@@ -92,6 +92,11 @@ enum WeeklyDigest {
         {
             body += "；\(models)"
         }
+        if let skills = topSkillsText(
+            modelDays, allowed: allowed, lastKey: lastKey, calendar: calendar)
+        {
+            body += "；\(skills)"
+        }
         let amounts = weeklyAmounts(
             modelDays, allowed: allowed, lastKey: lastKey, priorKey: priorKey,
             calendar: calendar)
@@ -162,6 +167,41 @@ enum WeeklyDigest {
             "\(entry.key) \(Fmt.percent(Double(entry.value) / Double(total) * 100))"
         }
         return "模型 Top3 " + leaders.joined(separator: "、")
+    }
+
+    /// 上周 Skill Top3 小抄:按天明细里逐 Skill 调用次数合计(跨参与来源
+    /// 合并同名 Skill),取前三名与次数。与模型段不同,报次数不报份额——
+    /// 周调用次数是小整数,"9 次、2 次"比"69%、15%"直读。上周没有任何
+    /// 调用证据时整段省略(与模型段同约定);同名同量按 Skill 名字典序,
+    /// 通知文案可复现。
+    private static func topSkillsText(
+        _ modelDays: [ModelUsageDay],
+        allowed: Set<HistorySource>,
+        lastKey: String,
+        calendar: Calendar
+    ) -> String? {
+        var bySkill: [String: Int] = [:]
+        for day in modelDays {
+            guard let date = DateUtil.date(from: day.date),
+                  weekKey(date, calendar: calendar) == lastKey
+            else { continue }
+            for (source, detail) in day.bySource where allowed.contains(source) {
+                for (skill, count) in detail.skills where count > 0 {
+                    bySkill[skill, default: 0] += count
+                }
+            }
+        }
+        guard !bySkill.isEmpty else { return nil }
+        let ranked = bySkill.sorted { lhs, rhs in
+            lhs.value != rhs.value ? lhs.value > rhs.value : lhs.key < rhs.key
+        }
+        guard ranked.count > 1 else {
+            return "Skill \(ranked[0].key) \(Fmt.int(ranked[0].value)) 次"
+        }
+        let leaders = ranked.prefix(3).map { entry in
+            "\(entry.key) \(Fmt.int(entry.value)) 次"
+        }
+        return "Skill Top3 " + leaders.joined(separator: "、")
     }
 
     /// 回本走势小抄:近几个完整周的逐周倍数(如"近 4 周 1.8 → 2.4 → 2.1 →
