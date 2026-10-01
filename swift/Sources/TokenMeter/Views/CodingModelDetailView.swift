@@ -129,11 +129,23 @@ struct CodingModelDetailView: View {
     }
 
     private func trendCard(_ s: CodingModelDetail.Summary) -> some View {
+        // 90 天档按自然周聚合（与总览「全部」的周粒度同口径），短档逐日
+        let weekly = span == .quarter
+        let points: [(label: String, usd: Double, tally: ModelTokenTally)]
+        if weekly {
+            points = CodingModelDetail.weeklyBuckets(from: s.days).map {
+                (label: "\(Fmt.mmdd($0.weekStart))周", usd: $0.usd, tally: $0.tally)
+            }
+        } else {
+            points = s.days.map {
+                (label: Fmt.mmdd($0.date), usd: $0.usd, tally: $0.tally)
+            }
+        }
         let byLabel = Dictionary(
-            uniqueKeysWithValues: s.days.map { (Fmt.mmdd($0.date), $0) })
+            uniqueKeysWithValues: points.map { ($0.label, $0) })
         let usdFor: (String) -> String? = { label in
-            guard let day = byLabel[label], day.usd > 0 else { return nil }
-            return Fmt.usd(day.usd)
+            guard let point = byLabel[label], point.usd > 0 else { return nil }
+            return Fmt.usd(point.usd)
         }
         return Card {
             VStack(alignment: .leading, spacing: 8) {
@@ -142,19 +154,19 @@ struct CodingModelDetailView: View {
                 ChartHover.caption(
                     hover: hoverDate,
                     amountFor: usdFor,
-                    buckets: s.days.map { day in
+                    buckets: points.map { point in
                         (
-                            label: Fmt.mmdd(day.date),
-                            total: day.tokens,
-                            parts: SourceTrendCard.parts(source, of: day.tally)
+                            label: point.label,
+                            total: point.tally.total,
+                            parts: SourceTrendCard.parts(source, of: point.tally)
                                 .filter { $0.value > 0 }
                         )
                     })
                 Chart {
-                    ForEach(Array(s.days.enumerated()), id: \.offset) { _, day in
+                    ForEach(Array(points.enumerated()), id: \.offset) { _, point in
                         BarMark(
-                            x: .value("日期", Fmt.mmdd(day.date)),
-                            y: .value("金额", day.usd))
+                            x: .value(weekly ? "周" : "日期", point.label),
+                            y: .value("金额", point.usd))
                             .foregroundStyle(source.overviewColor.opacity(0.85))
                             .cornerRadius(2)
                     }
@@ -177,6 +189,10 @@ struct CodingModelDetailView: View {
                     }
                 }
                 .frame(height: 140)
+                if weekly {
+                    Text("该档按自然周聚合（周一为界，首尾周可能不足整周），柱形与悬停均为周合计。")
+                        .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                }
                 if let coverage = s.coverage, coverage < 0.999 {
                     Text("价格覆盖 \(Int((coverage * 100).rounded()))%，缺价或价格未生效的用量不计入金额。")
                         .font(Theme.footnoteFont).foregroundStyle(.tertiary)

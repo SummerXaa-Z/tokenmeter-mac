@@ -122,6 +122,30 @@ final class CodingModelDetailTests: XCTestCase {
             todayKey: "2026-09-28", windowDays: 0))
     }
 
+    func testWeeklyBucketsFoldDaysIntoMondayAnchoredWeeks() throws {
+        // 9/7、9/14、9/21 为周一;9/5 周六归到 8/31 那周(首周不足整周)
+        let days = [
+            CodingModelDetail.DayValue(date: "2026-09-05", usd: 1.0,
+                                       tally: .init(output: 100)),
+            CodingModelDetail.DayValue(date: "2026-09-07", usd: 2.0,
+                                       tally: .init(output: 200)),
+            CodingModelDetail.DayValue(date: "2026-09-08", usd: 3.0,
+                                       tally: .init(input: 50)),
+            CodingModelDetail.DayValue(date: "2026-09-20", usd: 4.0,
+                                       tally: .init(output: 400)),
+            CodingModelDetail.DayValue(date: "2026-09-21", usd: 6.0,
+                                       tally: .init(output: 600)),
+        ]
+        let weeks = CodingModelDetail.weeklyBuckets(from: days)
+        XCTAssertEqual(weeks.map(\.weekStart),
+                       ["2026-08-31", "2026-09-07", "2026-09-14", "2026-09-21"])
+        XCTAssertEqual(weeks.map(\.usd), [1.0, 5.0, 4.0, 6.0])
+        // 同周 Token 合并、跨天分量保留
+        XCTAssertEqual(weeks[1].tally, .init(input: 50, output: 200))
+        XCTAssertEqual(weeks.map(\.tokens), [100, 250, 400, 600])
+        XCTAssertEqual(CodingModelDetail.weeklyBuckets(from: []), [])
+    }
+
     func testUnpricedModelCountsTokensWithoutAmount() throws {
         // 缺价模型:快照非空、tokens/活跃天如实,金额恒 0、覆盖率 0
         let summary = try XCTUnwrap(CodingModelDetail.summary(

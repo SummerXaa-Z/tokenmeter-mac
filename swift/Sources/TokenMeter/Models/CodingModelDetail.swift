@@ -101,4 +101,39 @@ enum CodingModelDetail {
             source: source, model: model, tally: tally,
             days: days, coverage: whole.coverage)
     }
+
+    // 90 天档的趋势图按自然周聚合（与总览「全部」范围的周粒度同口径：
+    // ISO 周历、周一为界），首尾周可能不足整周（窗口是含今天的滚动窗）。
+    struct WeekValue: Equatable {
+        let weekStart: String      // 该周周一 yyyy-MM-dd
+        let usd: Double            // 周内合计 API 等价
+        let tally: ModelTokenTally // 周内合计五类 Token
+        var tokens: Int { tally.total }
+    }
+
+    static func weeklyBuckets(
+        from days: [DayValue],
+        calendar: Calendar = .current
+    ) -> [WeekValue] {
+        var iso = Calendar(identifier: .iso8601)
+        iso.timeZone = calendar.timeZone
+        var order: [String] = []
+        var byWeek: [String: (usd: Double, tally: ModelTokenTally)] = [:]
+        for day in days {
+            guard let date = DateUtil.date(from: day.date),
+                  let start = iso.dateInterval(of: .weekOfYear, for: date)?.start
+            else { continue }
+            let key = DateUtil.key(start)
+            if byWeek[key] == nil { order.append(key) }
+            let slot = byWeek[key] ?? (usd: 0, tally: ModelTokenTally())
+            byWeek[key] = (slot.usd + day.usd, slot.tally + day.tally)
+        }
+        // days 升序 → order 升序；空周不补位（滚动窗口首尾本来就可能缺天）
+        return order.map { key in
+            WeekValue(
+                weekStart: key,
+                usd: byWeek[key]?.usd ?? 0,
+                tally: byWeek[key]?.tally ?? ModelTokenTally())
+        }
+    }
 }
