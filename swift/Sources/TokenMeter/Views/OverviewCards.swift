@@ -870,7 +870,9 @@ struct OverviewRankingsCard: View {
                                     } else if sparkDay?.model == entry.model {
                                         sparkDay = nil
                                     }
-                                }
+                                },
+                                highlightOverride: previewSparkDay?.model == entry.model
+                                    ? previewSparkDay?.dayIndex : nil
                             )
                         }
                         .buttonStyle(.plain)
@@ -912,7 +914,9 @@ struct OverviewRankingsCard: View {
                                 } else if skillSparkWeek?.name == entry.name {
                                     skillSparkWeek = nil
                                 }
-                            })
+                            },
+                            highlightOverride: previewSkillSparkWeek?.name == entry.name
+                                ? previewSkillSparkWeek?.weekIndex : nil)
                             .onHover { hovering in
                                 if hovering {
                                     hoverSkill = entry
@@ -1043,7 +1047,8 @@ struct OverviewRankingsCard: View {
         showsSource: Bool,
         highlighted: Bool = false,
         sparkline: [(date: String, tokens: Int)]? = nil,
-        onDayHover: ((Int?) -> Void)? = nil
+        onDayHover: ((Int?) -> Void)? = nil,
+        highlightOverride: Int? = nil
     ) -> some View {
         HStack(spacing: 7) {
             rankLabel(rank)
@@ -1055,7 +1060,8 @@ struct OverviewRankingsCard: View {
                 ModelSparkline(
                     values: sparkline.map(\.tokens),
                     color: source.overviewColor,
-                    onDayHover: onDayHover)
+                    onDayHover: onDayHover,
+                    highlightOverride: highlightOverride)
             }
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("\(Fmt.tokensShort(tokens)) · \(Int((share * 100).rounded()))%")
@@ -1080,7 +1086,8 @@ struct OverviewRankingsCard: View {
         entry: PersonalSkillRankings.Entry,
         highlighted: Bool = false,
         weekly: [(weekOf: String, count: Int)]? = nil,
-        onWeekHover: ((Int?) -> Void)? = nil
+        onWeekHover: ((Int?) -> Void)? = nil,
+        highlightOverride: Int? = nil
     ) -> some View {
         HStack(spacing: 7) {
             rankLabel(rank)
@@ -1100,7 +1107,8 @@ struct OverviewRankingsCard: View {
                 ModelSparkline(
                     values: weekly.map(\.count),
                     color: Theme.brand,
-                    onDayHover: onWeekHover)
+                    onDayHover: onWeekHover,
+                    highlightOverride: highlightOverride)
             }
             Text("\(Fmt.int(entry.invocationCount))次 · \(Int((entry.share * 100).rounded()))%")
                 .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -1131,19 +1139,26 @@ struct OverviewRankingsCard: View {
 }
 
 /// 模型榜行尾的近 30 天逐日迷你柱图:Canvas 直绘(比 Charts 轻,
-/// 一屏最多 5 行),底对齐、峰值满高;指针在某根柱上时回调日序号,
-/// 悬停说明行由卡片显示对准日的日期与数值。
+/// 一屏最多 5 行),底对齐、峰值满高;指针在某根柱上时该柱提亮并
+/// 回调日序号,悬停说明行由卡片显示对准日的日期与数值。
 private struct ModelSparkline: View {
     let values: [Int]
     let color: Color
     var onDayHover: ((Int?) -> Void)? = nil
+    // 渲染夹具:强制提亮某根柱(离屏渲染无法模拟指针)
+    var highlightOverride: Int? = nil
+    @State private var hoveredIndex: Int?
 
     var body: some View {
-        Canvas { context, size in
-            for rect in OverviewRankingsCard.sparklineBars(
+        let active = highlightOverride ?? hoveredIndex
+        return Canvas { context, size in
+            for (index, rect) in OverviewRankingsCard.sparklineBars(
                 values: values, width: size.width, height: size.height)
+            .enumerated()
             {
-                context.fill(Path(rect), with: .color(color.opacity(0.65)))
+                context.fill(
+                    Path(rect),
+                    with: .color(color.opacity(active == index ? 1.0 : 0.65)))
             }
         }
         .frame(width: 44, height: 14)
@@ -1152,9 +1167,12 @@ private struct ModelSparkline: View {
             guard let onDayHover else { return }
             switch phase {
             case .active(let location):
-                onDayHover(OverviewRankingsCard.sparklineIndex(
-                    atX: location.x, count: values.count, width: 44))
+                let index = OverviewRankingsCard.sparklineIndex(
+                    atX: location.x, count: values.count, width: 44)
+                hoveredIndex = index
+                onDayHover(index)
             case .ended:
+                hoveredIndex = nil
                 onDayHover(nil)
             }
         }
