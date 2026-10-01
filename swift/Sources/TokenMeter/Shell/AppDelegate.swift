@@ -505,21 +505,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static func rankingsSparklineFixture() -> some View {
         let data = rankingsFixtureData()
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
         // 确定性的近 30 天走势:工作日节律 + 首行末段抬升;
-        // 缺价模型给全零以外的低量,验证非峰值柱的保底可见高度
-        let pattern: (String) -> [Int] = { model in
+        // 日期键取真实最近 30 天(渲染当日固定),悬停单日文案可预期
+        let pattern: (String) -> [(date: String, tokens: Int)] = { model in
             (0..<30).map { day in
                 let base = [3, 8, 5, 9, 6, 4, 2][day % 7]
                 let boost = (model == "opus-5-5" && day >= 20) ? 2 : 1
                 let scale = model == "mystery-model" ? 1 : 2
-                return base * boost * scale * 1_000_000
+                let key = calendar.date(byAdding: .day, value: -(29 - day), to: today)
+                    .map(DateUtil.key) ?? DateUtil.today()
+                return (date: key, tokens: base * boost * scale * 1_000_000)
             }
         }
         return ScrollView {
             VStack(spacing: 12) {
+                // 强制首行迷你柱对准第 25 根(5 天前),说明行显示单日文案
                 OverviewRankingsCard(
                     rankings: data.rankings, skillRankings: data.skills, range: .month,
-                    sparklineFor: { _, model in pattern(model) })
+                    sparklineFor: { _, model in pattern(model) },
+                    previewSparkDay: (model: "opus-5-5", dayIndex: 24))
             }
             .padding(14)
         }

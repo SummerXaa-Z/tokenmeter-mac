@@ -130,4 +130,28 @@ final class RankingsHoverPreviewTests: XCTestCase {
         XCTAssertTrue(OverviewRankingsCard.sparklineBars(
             values: [1, 2], width: 0, height: 14).isEmpty)
     }
+
+    // MARK: - 迷你柱单日悬停
+
+    func testSparklineIndexMapsPointerXToBarAndClampsEdges() {
+        // 30 柱宽 44:barWidth = (44 - 14.5)/30 ≈ 0.9833,stride ≈ 1.4833
+        XCTAssertEqual(OverviewRankingsCard.sparklineIndex(atX: 0, count: 30, width: 44), 0)
+        XCTAssertEqual(OverviewRankingsCard.sparklineIndex(atX: 1.5, count: 30, width: 44), 1)
+        // 右端并入末柱,越界返回 nil
+        XCTAssertEqual(OverviewRankingsCard.sparklineIndex(atX: 43.9, count: 30, width: 44), 29)
+        XCTAssertEqual(OverviewRankingsCard.sparklineIndex(atX: 44, count: 30, width: 44), 29)
+        XCTAssertNil(OverviewRankingsCard.sparklineIndex(atX: -0.1, count: 30, width: 44))
+        XCTAssertNil(OverviewRankingsCard.sparklineIndex(atX: 44.1, count: 30, width: 44))
+        XCTAssertNil(OverviewRankingsCard.sparklineIndex(atX: 10, count: 0, width: 44))
+    }
+
+    func testSparklineDayTextFormatsDateWeekdayAndTokens() {
+        // 2026-09-26 是周六(分隔符与悬停说明行同款 " · ")
+        XCTAssertEqual(
+            OverviewRankingsCard.sparklineDayText(date: "2026-09-26", tokens: 36_000_000),
+            "9/26（周六） · 36M")
+        XCTAssertEqual(
+            OverviewRankingsCard.sparklineDayText(date: "2026-10-01", tokens: 0),
+            "10/1（周四） · 无用量")
+    }
 }

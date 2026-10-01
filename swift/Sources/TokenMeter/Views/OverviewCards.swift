@@ -668,11 +668,16 @@ struct OverviewRankingsCard: View {
     // 悬停文案由夹具数据确定性算出,无需 override)
     var previewSkillId: String? = nil
     // 渲染夹具:注入确定性的近 30 天日序列(sparkline 真实取数
-    // 来自本机按天留存,离屏渲染不可预测)
-    var sparklineFor: ((HistorySource, String) -> [Int]?)? = nil
+    // 来自本机按天留存,离屏渲染不可预测);日期随序列携带,
+    // 悬停查日文案才能显示对准日
+    var sparklineFor: ((HistorySource, String) -> [(date: String, tokens: Int)])? = nil
+    // 渲染夹具:强制某行迷你柱进入某日悬停态(说明行显示单日文案)
+    var previewSparkDay: (model: String, dayIndex: Int)? = nil
     @EnvironmentObject private var state: AppState
     @State private var hoverEntry: PersonalUsageRankings.ModelEntry?
     @State private var hoverSkill: PersonalSkillRankings.Entry?
+    // 迷你柱悬停对准的日序号(指针在柱图上时优先于行悬停文案)
+    @State private var sparkDay: (model: String, dayIndex: Int)?
 
     /// 迷你趋势柱的布局矩形(底对齐):峰值满高、零值零高、
     /// 非零值保底 1.5pt 可见。纯函数供单元测试。
@@ -689,6 +694,27 @@ struct OverviewRankingsCard: View {
                 : max(CGFloat(value) / CGFloat(peak) * height, 1.5)
             return CGRect(x: x, y: height - barHeight, width: barWidth, height: barHeight)
         }
+    }
+
+    /// 指针 x 落在第几根柱(与 sparklineBars 同一套宽度分配;
+    /// 超出柱图范围返回 nil,末柱右半缝隙并入末柱)。纯函数供单元测试。
+    static func sparklineIndex(atX x: CGFloat, count: Int, width: CGFloat) -> Int? {
+        guard count > 0, width > 0, x >= 0, x <= width else { return nil }
+        let gap: CGFloat = count > 1 ? 0.5 : 0
+        let barWidth = max((width - CGFloat(count - 1) * gap) / CGFloat(count), 1)
+        return min(Int(x / (barWidth + gap)), count - 1)
+    }
+
+    /// 悬停单柱的说明行文案:日期(周几) + 当日 Token;零值日明示无用量。
+    /// 纯函数供单元测试。
+    static func sparklineDayText(date: String, tokens: Int, calendar: Calendar = .current) -> String {
+        var lead = Fmt.mmdd(date)
+        if let day = DateUtil.date(from: date) {
+            let names = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
+            let weekday = calendar.component(.weekday, from: day)
+            if names.indices.contains(weekday - 1) { lead += "（\(names[weekday - 1])）" }
+        }
+        return lead + " · " + (tokens > 0 ? Fmt.tokensShort(tokens) : "无用量")
     }
 
     /// 悬停说明行文案:近 7 / 30 天 Token、30 天 API 等价与活跃天数。
@@ -744,7 +770,14 @@ struct OverviewRankingsCard: View {
                                 share: entry.share,
                                 showsSource: true,
                                 highlighted: previewId == entry.id,
-                                sparkline: sparklineValues(source: entry.source, model: entry.model)
+                                sparkline: sparklineValues(source: entry.source, model: entry.model),
+                                onDayHover: { dayIndex in
+                                    if let dayIndex {
+                                        sparkDay = (model: entry.model, dayIndex: dayIndex)
+                                    } else if sparkDay?.model == entry.model {
+                                        sparkDay = nil
+                                    }
+                                }
                             )
                         }
                         .buttonStyle(.plain)
@@ -826,6 +859,15 @@ struct OverviewRankingsCard: View {
 
     private var currentHoverText: String {
         if let previewTextOverride { return previewTextOverride }
+        // 迷你柱单日悬停最具体,优先于整行合计
+        if let day = sparkDay ?? previewSparkDay,
+           let entry = rankings.models.first(where: { $0.model == day.model }),
+           let series = sparklineValues(source: entry.source, model: day.model),
+           series.indices.contains(day.dayIndex)
+        {
+            let item = series[day.dayIndex]
+            return Self.sparklineDayText(date: item.date, tokens: item.tokens)
+        }
         // 夹具强制行优先(渲染无法模拟指针),其次真实悬停行
         if let entry = hoverEntry ?? rankings.models.first(where: { $0.id == previewRowId }) {
             return Self.hoverText(for: entry, state: state)
@@ -836,14 +878,14 @@ struct OverviewRankingsCard: View {
 
     /// 迷你趋势的近 30 天日序列(升序、含补零天);夹具注入优先,
     /// 真实路径与悬停说明行同一条 summary 管线,断流返回 nil(不画)
-    private func sparklineValues(source: HistorySource, model: String) -> [Int]? {
+    private func sparklineValues(source: HistorySource, model: String) -> [(date: String, tokens: Int)]? {
         if let sparklineFor { return sparklineFor(source, model) }
         guard let summary = CodingModelDetail.summary(
             source: source, model: model,
             liveDayModels: CodingModelDetailView.liveDayModels(source, state: state),
             windowDays: 30)
         else { return nil }
-        return summary.days.map(\.tokens)
+        return summary.days.map { (date: $0.date, tokens: $0.tokens) }
     }
 
     /// 悬停行的取数与拼串:近 30 天断流时引导进详情页
@@ -889,7 +931,8 @@ struct OverviewRankingsCard: View {
         share: Double,
         showsSource: Bool,
         highlighted: Bool = false,
-        sparkline: [Int]? = nil
+        sparkline: [(date: String, tokens: Int)]? = nil,
+        onDayHover: ((Int?) -> Void)? = nil
     ) -> some View {
         HStack(spacing: 7) {
             rankLabel(rank)
@@ -898,7 +941,10 @@ struct OverviewRankingsCard: View {
             if showsSource { sourceBadge(source) }
             Spacer(minLength: 4)
             if let sparkline {
-                ModelSparkline(values: sparkline, color: source.overviewColor)
+                ModelSparkline(
+                    values: sparkline.map(\.tokens),
+                    color: source.overviewColor,
+                    onDayHover: onDayHover)
             }
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("\(Fmt.tokensShort(tokens)) · \(Int((share * 100).rounded()))%")
@@ -964,10 +1010,12 @@ struct OverviewRankingsCard: View {
 }
 
 /// 模型榜行尾的近 30 天逐日迷你柱图:Canvas 直绘(比 Charts 轻,
-/// 一屏最多 5 行),底对齐、峰值满高,悬停说明行给精确数字。
+/// 一屏最多 5 行),底对齐、峰值满高;指针在某根柱上时回调日序号,
+/// 悬停说明行由卡片显示对准日的日期与数值。
 private struct ModelSparkline: View {
     let values: [Int]
     let color: Color
+    var onDayHover: ((Int?) -> Void)? = nil
 
     var body: some View {
         Canvas { context, size in
@@ -978,6 +1026,17 @@ private struct ModelSparkline: View {
             }
         }
         .frame(width: 44, height: 14)
+        .contentShape(Rectangle())
+        .onContinuousHover { phase in
+            guard let onDayHover else { return }
+            switch phase {
+            case .active(let location):
+                onDayHover(OverviewRankingsCard.sparklineIndex(
+                    atX: location.x, count: values.count, width: 44))
+            case .ended:
+                onDayHover(nil)
+            }
+        }
         .accessibilityLabel("近 30 天日用量迷你趋势")
     }
 }
