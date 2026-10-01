@@ -361,4 +361,145 @@ final class UsageHeatmapTests: XCTestCase {
             UsageHeatmap.cellHelpText(date: "2026-09-25", total: 500, apiValue: nil),
             "9/25 · 500")
     }
+
+    // MARK: - 月视图
+
+    private func monthCells(
+        _ days: [HistoryStore.DayPoint],
+        monthCount: Int = 12,
+        monthOffset: Int = 0,
+        apiValues: [String: Double] = [:],
+        today: String = "2026-09-25"
+    ) -> [UsageHeatmap.MonthCell] {
+        UsageHeatmap.monthlyCells(
+            days, participants: [.claude, .codex], apiValues: apiValues,
+            today: DateUtil.date(from: today)!,
+            monthCount: monthCount, monthOffset: monthOffset)
+    }
+
+    func testMonthlyCellsBucketByCalendarMonthAndRequantize() {
+        // 12 个月窗口 2025-10 ... 2026-09(当月进行中,终点为今天);
+        // 逐日按自然月归桶,平台与窗口外不计,分位样本换成月合计
+        let cells = monthCells([
+            day("2026-09-01", claude: 10), day("2026-09-25", claude: 20),  // 9月 30
+            day("2026-08-31", claude: 60),                                  // 8月 60
+            day("2026-01-15", claude: 90),                                  // 1月 90
+            day("2025-10-01", claude: 5),                                   // 首月 5
+            day("2025-09-30", claude: 999),                                 // 窗口外
+            day("2026-09-10", deepseek: 9999),                              // 平台不计
+        ], apiValues: [
+            "2026-09-01": 1.0, "2026-09-25": 0.5, "2026-08-31": 2.0,
+        ])
+        XCTAssertEqual(cells.count, 12)
+        XCTAssertEqual(cells.first?.monthKey, "2025-10")
+        XCTAssertEqual(cells.last?.monthKey, "2026-09")
+        let byKey = Dictionary(uniqueKeysWithValues: cells.map { ($0.monthKey, $0) })
+        XCTAssertEqual(byKey["2026-09"]?.total, 30)
+        XCTAssertEqual(byKey["2026-09"]?.usd ?? 0, 1.5, accuracy: 0.001)
+        XCTAssertEqual(byKey["2026-08"]?.total, 60)
+        XCTAssertEqual(byKey["2026-08"]?.usd ?? 0, 2.0, accuracy: 0.001)
+        XCTAssertEqual(byKey["2026-01"]?.month, 1)
+        XCTAssertEqual(byKey["2025-10"]?.total, 5)
+        XCTAssertNil(byKey["2025-09"])
+        // 非零月 [5,30,60,90] → 阈值 30/60/90;无用量月为 0 档
+        XCTAssertEqual(byKey["2025-10"]?.level, 1)
+        XCTAssertEqual(byKey["2026-09"]?.level, 1)
+        XCTAssertEqual(byKey["2026-08"]?.level, 2)
+        XCTAssertEqual(byKey["2026-01"]?.level, 3)
+        XCTAssertEqual(byKey["2026-02"]?.level, 0)
+    }
+
+    func testMonthWindowBoundsAndPaging() {
+        let today = DateUtil.date(from: "2026-09-25")!
+        // 最近一页:含今天在内的 12 个自然月,终点即今天
+        let latest = UsageHeatmap.monthWindow(today: today, monthCount: 12, monthOffset: 0)
+        XCTAssertEqual(DateUtil.key(latest.start), "2025-10-01")
+        XCTAssertEqual(DateUtil.key(latest.end), "2026-09-25")
+        // 前移 2 个月:终点月为 2026-07,窗口终点为该月最后一天
+        let paged = UsageHeatmap.monthWindow(today: today, monthCount: 12, monthOffset: 2)
+        XCTAssertEqual(DateUtil.key(paged.start), "2025-08-01")
+        XCTAssertEqual(DateUtil.key(paged.end), "2026-07-31")
+        // 月初当天:窗口仍是完整 monthCount 个自然月
+        let firstDay = UsageHeatmap.monthWindow(
+            today: DateUtil.date(from: "2026-10-01")!, monthCount: 2, monthOffset: 0)
+        XCTAssertEqual(DateUtil.key(firstDay.start), "2026-09-01")
+        XCTAssertEqual(DateUtil.key(firstDay.end), "2026-10-01")
+    }
+
+    func testMonthlyCellsPagedByWholeMonths() {
+        // 前移 2 个月:2026-09 的数据整月离开窗口,2025-08 进入
+        let cells = monthCells([
+            day("2026-09-01", claude: 999),
+            day("2025-08-01", claude: 7),
+        ], monthOffset: 2)
+        XCTAssertEqual(cells.first?.monthKey, "2025-08")
+        XCTAssertEqual(cells.last?.monthKey, "2026-07")
+        let byKey = Dictionary(uniqueKeysWithValues: cells.map { ($0.monthKey, $0) })
+        XCTAssertEqual(byKey["2025-08"]?.total, 7)
+        XCTAssertNil(byKey["2026-09"])
+    }
+
+    func testMaxMonthOffsetBoundByEarliestCodingMonth() {
+        let days = [
+            day("2026-03-01", deepseek: 999),   // 平台账户月不算
+            day("2026-06-01", claude: 5),
+            day("2026-09-24", claude: 5),
+        ]
+        // 最早 Coding 数据在 2026-06:到 2026-09 共 3 个整月
+        XCTAssertEqual(UsageHeatmap.maxMonthOffset(
+            days, participants: [.claude, .codex],
+            today: DateUtil.date(from: "2026-09-25")!), 3)
+        // 无任何 Coding 数据 → 0
+        XCTAssertEqual(UsageHeatmap.maxMonthOffset(
+            [day("2026-09-24", deepseek: 999)],
+            participants: [.claude, .codex],
+            today: DateUtil.date(from: "2026-09-25")!), 0)
+        // 极早数据封顶 36 个月(约三年)防呆
+        XCTAssertEqual(UsageHeatmap.maxMonthOffset(
+            [day("2020-01-01", claude: 5)],
+            participants: [.claude, .codex],
+            today: DateUtil.date(from: "2026-09-25")!), 36)
+    }
+
+    func testMonthHelpTextCarriesYearAndAmount() {
+        XCTAssertEqual(
+            UsageHeatmap.monthHelpText(monthKey: "2026-09", total: 30, apiValue: 1.5),
+            "2026年9月 · 30 · $1.50")
+        XCTAssertEqual(
+            UsageHeatmap.monthHelpText(monthKey: "2025-12", total: 1_234_567, apiValue: 0),
+            "2025年12月 · 1.2M")
+        XCTAssertEqual(
+            UsageHeatmap.monthHelpText(monthKey: "2025-12", total: 500, apiValue: nil),
+            "2025年12月 · 500")
+    }
+
+    func testWeekdayAveragesFollowDateRange() {
+        // 2026-09-20(周日)...09-26(周六):每个星期几恰好一天
+        let stats = UsageHeatmap.weekdayAverages(
+            [
+                day("2026-09-20", claude: 70),   // 周日
+                day("2026-09-21", claude: 14),   // 周一
+            ],
+            participants: [.claude, .codex],
+            dateRange: (
+                DateUtil.date(from: "2026-09-20")!, DateUtil.date(from: "2026-09-26")!))
+        XCTAssertEqual(stats.map(\.label), ["一", "二", "三", "四", "五", "六", "日"])
+        XCTAssertEqual(stats.map(\.average), [14, 0, 0, 0, 0, 0, 70])
+        XCTAssertEqual(stats.map(\.days), [1, 1, 1, 1, 1, 1, 1])
+    }
+
+    func testDailyAPIValuesFoldDateRange() {
+        // 月窗口口径:区间外的天数不计价
+        let values = UsageHeatmap.dailyAPIValues(
+            participants: [.kimi],
+            persisted: [
+                modelDay("2026-08-10", source: .kimi, ["kimi-k2.6": .init(output: 1_000_000)]),
+                modelDay("2026-07-31", source: .kimi, ["kimi-k2.6": .init(output: 9_000_000)]),
+                modelDay("2026-10-01", source: .kimi, ["kimi-k2.6": .init(output: 9_000_000)]),
+            ],
+            dateRange: (
+                DateUtil.date(from: "2026-08-01")!, DateUtil.date(from: "2026-09-30")!))
+        XCTAssertEqual(values.count, 1)
+        XCTAssertEqual(values["2026-08-10"] ?? 0, 2.44, accuracy: 0.001)
+    }
 }

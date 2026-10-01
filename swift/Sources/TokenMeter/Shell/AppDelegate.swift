@@ -177,6 +177,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         .padding(14)
     }
 
+    // 月视图单卡成页:合成约 25 个月数据(本机留存远没有这么久),覆盖
+    // 1 年 / 2 年两档的月份条、月份标签密度、当月描边与翻页态。
+    private static func heatmapMonthCard(
+        monthSpan: OverviewHeatmapCard.MonthSpan, monthOffset: Int = 0
+    ) -> some View {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        var days: [HistoryStore.DayPoint] = []
+        for offset in stride(from: 761, through: 0, by: -1) {
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: today),
+                  offset % 23 != 5   // 周期性休整天,制造空白月内的深浅差
+            else { continue }
+            let weekday = calendar.component(.weekday, from: date)
+            let base = [15, 60, 45, 70, 55, 40, 10][weekday - 1]
+            let monthOfYear = calendar.component(.month, from: date)
+            let season = monthOfYear >= 11 || monthOfYear <= 2 ? -6 : 0   // 年末回落
+            let growth = max(0, 25 - offset / 31)   // 越近的月份越大
+            days.append(HistoryStore.DayPoint(
+                date: DateUtil.key(date),
+                bySource: [.claude: (base + season + growth) * 1_000_000],
+                cost: 0))
+        }
+        return VStack(spacing: 12) {
+            OverviewHeatmapCard(
+                history: days, participants: [.claude, .codex],
+                initialGranularity: .month, initialMonthSpan: monthSpan,
+                initialMonthOffset: monthOffset)
+        }
+        .padding(14)
+    }
+
+    private static func heatmapMonthFixture() -> some View {
+        heatmapMonthCard(monthSpan: .year)
+    }
+
+    private static func heatmapMonthTwoFixture() -> some View {
+        heatmapMonthCard(monthSpan: .twoYears)
+    }
+
+    private static func heatmapMonthPagedFixture() -> some View {
+        heatmapMonthCard(monthSpan: .year, monthOffset: 3)
+    }
+
     private static func paceFixture() -> some View {
         let now = Date()
         let hour: TimeInterval = 3600
@@ -708,6 +751,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("heatmap-fixture", hosting(Self.heatmapFixture(), height: 780)),
             ("heatmap-week-fixture", hosting(Self.heatmapWeekFixture(), height: 380)),
             ("heatmap-week-half-fixture", hosting(Self.heatmapWeekHalfFixture(), height: 380)),
+            ("heatmap-month-fixture", hosting(Self.heatmapMonthFixture(), height: 380)),
+            ("heatmap-month-two-fixture", hosting(Self.heatmapMonthTwoFixture(), height: 380)),
+            ("heatmap-month-paged-fixture", hosting(Self.heatmapMonthPagedFixture(), height: 380)),
         ]
 
         var windows: [NSWindow] = []

@@ -26,6 +26,16 @@ enum UsageHeatmap {
         let monthLabel: String?
     }
 
+    // 月视图格:一个自然月折成一块。深浅按非零月合计的分位分档
+    // (与日/周视图同一套分位逻辑,只是分位样本换成月合计)。
+    struct MonthCell: Equatable {
+        let monthKey: String    // "yyyy-MM"
+        let month: Int          // Calendar month,1...12
+        let total: Int          // 月内合计(最新一页的当月为进行中)
+        let level: Int          // 0=无用量,1...4 逐档加深
+        let usd: Double         // 月内 API 等价合计;0 = 无计价金额
+    }
+
     // 周内节律:窗口内该星期几的日均。分母是出现次数而非有量天数——
     // 休整天计入分母,反映"这一天通常用多少"而不是"用的时候有多猛"。
     struct WeekdayStat: Equatable {
@@ -79,6 +89,61 @@ enum UsageHeatmap {
         return min(max(0, daysBack / 7), 156)
     }
 
+    /// 月视图窗口:calendar 自然月锚定。offset 0 = 含今天在内的最近
+    /// monthCount 个自然月(当月进行中,窗口终点为今天);k = 整体前移
+    /// k 个自然月(终点为该月最后一天),任何偏移下月数恒为 monthCount。
+    static func monthWindow(
+        today: Date,
+        monthCount: Int,
+        monthOffset: Int,
+        calendar: Calendar = .current
+    ) -> (start: Date, end: Date) {
+        guard monthCount > 0 else { return (today, today) }
+        let anchorMonthStart = calendar.dateInterval(of: .month, for: today)?.start ?? today
+        let endMonthStart = monthOffset > 0
+            ? calendar.date(byAdding: .month, value: -monthOffset, to: anchorMonthStart)
+                ?? anchorMonthStart
+            : anchorMonthStart
+        let start = calendar.date(
+            byAdding: .month, value: -(monthCount - 1), to: endMonthStart) ?? endMonthStart
+        let end: Date
+        if monthOffset == 0 {
+            end = calendar.startOfDay(for: today)
+        } else if let nextMonth = calendar.date(byAdding: .month, value: 1, to: endMonthStart) {
+            end = calendar.date(byAdding: .day, value: -1, to: nextMonth) ?? endMonthStart
+        } else {
+            end = endMonthStart
+        }
+        return (start, end)
+    }
+
+    /// 月视图还能往回翻几个自然月:窗口终点月不能早于最早有数据的那个月,
+    /// 再以 36 个月(约三年,与周视图 156 周同款上限)兜底防呆。
+    static func maxMonthOffset(
+        _ days: [HistoryStore.DayPoint],
+        participants: some Sequence<HistorySource>,
+        today: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Int {
+        let allowed = Set(participants)
+        var earliest: Date?
+        for day in days {
+            let total = day.bySource.reduce(0) { sum, entry in
+                allowed.contains(entry.key) ? sum + max(entry.value, 0) : sum
+            }
+            guard total > 0, let date = DateUtil.date(from: day.date) else { continue }
+            if let seen = earliest, date >= seen { continue }
+            earliest = date
+        }
+        guard let earliest else { return 0 }
+        let months = calendar.dateComponents(
+            [.month],
+            from: calendar.dateInterval(of: .month, for: earliest)?.start ?? earliest,
+            to: calendar.dateInterval(of: .month, for: today)?.start ?? today
+        ).month ?? 0
+        return min(max(0, months), 36)
+    }
+
     /// 窗口内逐日 API 等价美元（自然日键 → USD）：participants 的本地来源
     /// 合并到同一天，与总览/来源页同一价格口径（按用量当日生效的快照重算、
     /// 缺价模型不计入）。只读本机留存明细——热力图窗口远超实时采集的
@@ -92,13 +157,26 @@ enum UsageHeatmap {
         weekOffset: Int = 0,
         calendar: Calendar = .current
     ) -> [String: Double] {
-        let allowed = Set(participants)
-        guard allowed.contains(where: \.isCodingAgent) else { return [:] }
         let anchor = anchorDate(today: today, weekOffset: weekOffset, calendar: calendar)
         let start = calendar.date(
             byAdding: .day, value: -(windowWeeks * 7 - 1), to: anchor) ?? anchor
+        return dailyAPIValues(
+            participants: participants, persisted: persisted,
+            dateRange: (start, anchor), calendar: calendar)
+    }
+
+    /// 指定自然日区间（含两端）的逐日 API 等价：周窗口与月视图共用同一口径。
+    static func dailyAPIValues(
+        participants: some Sequence<HistorySource>,
+        persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
+        dateRange: (start: Date, end: Date),
+        calendar: Calendar = .current
+    ) -> [String: Double] {
+        let allowed = Set(participants)
+        guard allowed.contains(where: \.isCodingAgent) else { return [:] }
         var keys = Set<String>()
-        var cursor = start
+        var cursor = calendar.startOfDay(for: dateRange.start)
+        let anchor = calendar.startOfDay(for: dateRange.end)
         while cursor <= anchor {
             keys.insert(DateUtil.key(cursor))
             guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
@@ -172,6 +250,75 @@ enum UsageHeatmap {
                 usd: usd,
                 monthLabel: column.monthLabel)
         }
+    }
+
+    /// 月格悬停说明：年月 · 月合计 Token，有金额时追加美元金额。
+    /// 月视图动辄跨两年，悬停文案带年份消歧。
+    static func monthHelpText(monthKey: String, total: Int, apiValue: Double?) -> String {
+        let parts = monthKey.split(separator: "-")
+        let title: String
+        if parts.count == 2, let year = Int(parts[0]), let month = Int(parts[1]) {
+            title = "\(year)年\(month)月"
+        } else {
+            title = monthKey
+        }
+        var text = "\(title) · \(Fmt.tokensShort(total))"
+        if let apiValue, apiValue > 0 {
+            text += " · \(Fmt.usd(apiValue))"
+        }
+        return text
+    }
+
+    /// 月视图：把窗口内逐日合计按自然月归桶折成逐月一块，月合计参与
+    /// 分位分档；apiValues 为 dailyAPIValues 的逐日金额，折成月内合计。
+    /// 窗口外、非参与来源与平台账户不计。
+    static func monthlyCells(
+        _ days: [HistoryStore.DayPoint],
+        participants: some Sequence<HistorySource>,
+        apiValues: [String: Double] = [:],
+        today: Date = Date(),
+        monthCount: Int = 12,
+        monthOffset: Int = 0,
+        calendar: Calendar = .current
+    ) -> [MonthCell] {
+        let allowed = Set(participants)
+        var totals: [String: Int] = [:]
+        for day in days {
+            let total = day.bySource.reduce(0) { sum, entry in
+                allowed.contains(entry.key) ? sum + max(entry.value, 0) : sum
+            }
+            guard total > 0, day.date.count >= 7 else { continue }
+            totals[String(day.date.prefix(7)), default: 0] += total
+        }
+
+        let range = monthWindow(
+            today: today, monthCount: monthCount, monthOffset: monthOffset, calendar: calendar)
+        let thresholds = quantileThresholds(Array(totals.values))
+
+        var cells: [MonthCell] = []
+        var seen = Set<String>()
+        var cursor = range.start
+        while cursor <= range.end {
+            let key = String(DateUtil.key(cursor).prefix(7))
+            if !seen.contains(key) {
+                seen.insert(key)
+                let total = totals[key] ?? 0
+                let usd = apiValues.isEmpty
+                    ? 0
+                    : apiValues.reduce(0.0) { sum, entry in
+                        entry.key.hasPrefix(key) ? sum + entry.value : sum
+                    }
+                cells.append(MonthCell(
+                    monthKey: key,
+                    month: calendar.component(.month, from: cursor),
+                    total: total,
+                    level: level(for: total, thresholds: thresholds),
+                    usd: usd))
+            }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+        return cells
     }
 
     static func window(
@@ -268,6 +415,20 @@ enum UsageHeatmap {
         weekOffset: Int = 0,
         calendar: Calendar = .current
     ) -> [WeekdayStat] {
+        let anchor = anchorDate(today: today, weekOffset: weekOffset, calendar: calendar)
+        let start = calendar.date(
+            byAdding: .day, value: -(windowWeeks * 7 - 1), to: anchor) ?? anchor
+        return weekdayAverages(
+            days, participants: participants, dateRange: (start, anchor), calendar: calendar)
+    }
+
+    /// 指定自然日区间（含两端、不含未来）的按星期几日均：周窗口与月视图共用。
+    static func weekdayAverages(
+        _ days: [HistoryStore.DayPoint],
+        participants: some Sequence<HistorySource>,
+        dateRange: (start: Date, end: Date),
+        calendar: Calendar = .current
+    ) -> [WeekdayStat] {
         let allowed = Set(participants)
         var totals: [String: Int] = [:]
         for day in days {
@@ -280,10 +441,8 @@ enum UsageHeatmap {
 
         var sums = [Int: Int]()
         var counts = [Int: Int]()
-        let anchor = anchorDate(today: today, weekOffset: weekOffset, calendar: calendar)
-        let start = calendar.date(
-            byAdding: .day, value: -(windowWeeks * 7 - 1), to: anchor) ?? anchor
-        var cursor = start
+        var cursor = calendar.startOfDay(for: dateRange.start)
+        let anchor = calendar.startOfDay(for: dateRange.end)
         while cursor <= anchor {
             let weekday = calendar.component(.weekday, from: cursor)
             sums[weekday, default: 0] += totals[DateUtil.key(cursor)] ?? 0
