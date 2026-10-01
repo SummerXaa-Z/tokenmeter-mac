@@ -70,10 +70,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 仅在用户开启通知时申请权限；关闭状态重启不能再次打扰用户。
         Notifier.requestAuthorizationIfEnabled(ConfigStore.shared.notificationsEnabled)
 
-        // 周报通知点击 → 回总览并弹面板。delegate 是弱引用，router 必须
-        // 由 self 持有；回调统一回主线程后再碰 AppKit。
-        notificationRouter.onOpenOverview = { [weak self] in
-            self?.openOverviewFromNotification()
+        // 周报/告警通知点击 → 打开对应页面并弹面板。delegate 是弱引用，
+        // router 必须由 self 持有；回调统一回主线程后再碰 AppKit。
+        notificationRouter.onOpen = { [weak self] target in
+            self?.openPanelForNotification(target)
         }
         UNUserNotificationCenter.current().delegate = notificationRouter
 
@@ -1209,9 +1209,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appState.refreshEnabledSources(trigger: .panelOpen)
     }
 
-    // 点击周报通知：请求回总览（面板已开在别的页时也会导航），再弹面板。
-    private func openOverviewFromNotification() {
-        appState.pendingView = .dashboard
+    // 点击通知（周报/配额告警）：请求跳到目标页（面板已开在别的页时也会
+    // 导航），再弹面板。与 @objc 的 openPanel() 分开命名,避免选择器歧义。
+    private func openPanelForNotification(_ target: AppView) {
+        appState.pendingView = target
         openPanel()
     }
 
@@ -1222,23 +1223,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func closePopover() { popover.performClose(nil) }
 }
 
-// 通知点击路由：只处理周报通知的默认动作（点横幅本身），派生动作与其他
-// 通知交还系统默认行为。UNUserNotificationCenter 的 delegate 是弱引用，
-// 实例由 AppDelegate 持有；回调回主线程后再碰 AppKit。
+// 通知点击路由：把「横幅本身的点击」映射为目标页面（Notifier.openTarget），
+// 派生动作与其他通知交还系统默认行为。UNUserNotificationCenter 的 delegate
+// 是弱引用，实例由 AppDelegate 持有；回调回主线程后再碰 AppKit。
 private final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
-    var onOpenOverview: (() -> Void)?
+    var onOpen: ((AppView) -> Void)?
 
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        if Notifier.shouldOpenOverview(
+        if let target = Notifier.openTarget(
             identifier: response.notification.request.identifier,
             actionIdentifier: response.actionIdentifier)
         {
             DispatchQueue.main.async { [weak self] in
-                self?.onOpenOverview?()
+                self?.onOpen?(target)
             }
         }
         completionHandler()

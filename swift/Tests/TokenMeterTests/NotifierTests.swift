@@ -42,16 +42,61 @@ final class NotifierTests: XCTestCase {
         ))
     }
 
-    func testOverviewOpensOnlyForDigestBannerClick() {
-        // 点横幅本身（默认动作）才打开总览；派生动作与其它通知不跳转
-        XCTAssertTrue(Notifier.shouldOpenOverview(
-            identifier: Notifier.weeklyDigestID,
-            actionIdentifier: UNNotificationDefaultActionIdentifier))
-        XCTAssertFalse(Notifier.shouldOpenOverview(
+    func testOpenTargetMapsAlertsToTheirPages() {
+        // 点横幅本身（默认动作）才跳转；各告警跳对应来源页
+        XCTAssertEqual(
+            Notifier.openTarget(
+                identifier: Notifier.weeklyDigestID,
+                actionIdentifier: UNNotificationDefaultActionIdentifier),
+            .dashboard)
+        XCTAssertEqual(
+            Notifier.openTarget(
+                identifier: "codex.quota.low",
+                actionIdentifier: UNNotificationDefaultActionIdentifier),
+            .source(.codex))
+        XCTAssertEqual(
+            Notifier.openTarget(
+                identifier: "claude.daily.over",
+                actionIdentifier: UNNotificationDefaultActionIdentifier),
+            .source(.claude))
+        XCTAssertEqual(
+            Notifier.openTarget(
+                identifier: "kimi.quota.low",
+                actionIdentifier: UNNotificationDefaultActionIdentifier),
+            .source(.kimi))
+        XCTAssertEqual(
+            Notifier.openTarget(
+                identifier: "deepseek.balance.low",
+                actionIdentifier: UNNotificationDefaultActionIdentifier),
+            .source(.deepseek))
+        // 智谱/方舟额度只在总览露面;节奏预警 key 带窗口重置时刻,前缀匹配
+        XCTAssertEqual(
+            Notifier.openTarget(
+                identifier: "zhipu.quota.low",
+                actionIdentifier: UNNotificationDefaultActionIdentifier),
+            .dashboard)
+        XCTAssertEqual(
+            Notifier.openTarget(
+                identifier: "ark.quota.low",
+                actionIdentifier: UNNotificationDefaultActionIdentifier),
+            .dashboard)
+        XCTAssertEqual(
+            Notifier.openTarget(
+                identifier: "quota.pace.codex-weekly@1723",
+                actionIdentifier: UNNotificationDefaultActionIdentifier),
+            .dashboard)
+    }
+
+    func testOpenTargetIgnoresDerivedActionsAndUnknownIds() {
+        // 派生动作（关闭/展开等）与未知通知不跳转,不抢焦点
+        XCTAssertNil(Notifier.openTarget(
             identifier: Notifier.weeklyDigestID,
             actionIdentifier: UNNotificationDismissActionIdentifier))
-        XCTAssertFalse(Notifier.shouldOpenOverview(
-            identifier: "quota.warning",
+        XCTAssertNil(Notifier.openTarget(
+            identifier: "codex.quota.low",
+            actionIdentifier: UNNotificationDismissActionIdentifier))
+        XCTAssertNil(Notifier.openTarget(
+            identifier: "update.available",
             actionIdentifier: UNNotificationDefaultActionIdentifier))
         // 周报通知键由发送方与路由共用，锁定不改名
         XCTAssertEqual(Notifier.weeklyDigestID, "weekly.digest")

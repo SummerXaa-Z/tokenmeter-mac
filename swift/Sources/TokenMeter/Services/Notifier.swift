@@ -59,14 +59,27 @@ enum Notifier {
             && (authorizationStatus == .authorized || authorizationStatus == .provisional)
     }
 
-    /// 点击周报通知的横幅本身（默认动作）是否应打开总览页。
-    /// 派生动作（展开/关闭等）与其他通知不跳转——只有用户明确点了横幅
-    /// 才抢焦点弹面板。
-    static func shouldOpenOverview(
+    /// 通知横幅本身的点击（默认动作）应打开的页面：周报回总览；配额/用量
+    /// 告警跳对应来源页；跨来源的节奏预警与只在总览露面的订阅额度
+    /// （智谱/方舟）也回总览。派生动作（展开/关闭等）与未知通知返回
+    /// nil 不跳转——只有用户明确点了横幅才抢焦点弹面板。
+    static func openTarget(
         identifier: String,
         actionIdentifier: String
-    ) -> Bool {
-        identifier == weeklyDigestID
-            && actionIdentifier == UNNotificationDefaultActionIdentifier
+    ) -> AppView? {
+        guard actionIdentifier == UNNotificationDefaultActionIdentifier else {
+            return nil
+        }
+        if identifier == weeklyDigestID { return .dashboard }
+        switch identifier {
+        case "codex.quota.low": return .source(.codex)
+        case "claude.daily.over": return .source(.claude)
+        case "kimi.quota.low": return .source(.kimi)
+        case "deepseek.balance.low": return .source(.deepseek)
+        case "zhipu.quota.low", "ark.quota.low": return .dashboard
+        default:
+            // 节奏预警 key 带窗口重置时刻（quota.pace.<period>@<reset>），前缀匹配
+            return identifier.hasPrefix("quota.pace.") ? .dashboard : nil
+        }
     }
 }
