@@ -83,6 +83,45 @@ final class CodingModelDetailTests: XCTestCase {
         XCTAssertEqual(summary.activeDays, 30)
     }
 
+    func testWindowDaysParameterScopesRollingWindow() throws {
+        // 95 天连续 1M 输出:windowDays 7 与 90 分别取最近 7/90 天
+        let calendar = Calendar.current
+        let base = DateUtil.date(from: "2026-09-28")!
+        let persisted = (0..<95).compactMap { offset -> ModelUsageDay? in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: base)
+            else { return nil }
+            return modelDay(DateUtil.key(date), source: .kimi, model: "kimi-k2.6",
+                            .init(output: 1_000_000))
+        }
+        let week = try XCTUnwrap(CodingModelDetail.summary(
+            source: .kimi, model: "kimi-k2.6",
+            liveDayModels: nil, persisted: persisted,
+            todayKey: "2026-09-28", windowDays: 7))
+        XCTAssertEqual(week.days.count, 7)
+        XCTAssertEqual(week.days.first?.date, "2026-09-22")
+        XCTAssertEqual(week.days.last?.date, "2026-09-28")
+        XCTAssertEqual(week.activeDays, 7)
+        // 9/22–9/24 调价前 $2.44,9/25–9/28 $4.00 → 3×2.44 + 4×4
+        XCTAssertEqual(week.totalUSD, 23.32, accuracy: 0.001)
+
+        let quarter = try XCTUnwrap(CodingModelDetail.summary(
+            source: .kimi, model: "kimi-k2.6",
+            liveDayModels: nil, persisted: persisted,
+            todayKey: "2026-09-28", windowDays: 90))
+        XCTAssertEqual(quarter.days.count, 90)
+        XCTAssertEqual(quarter.days.first?.date, "2026-07-01")
+        XCTAssertEqual(quarter.tally.total, 90_000_000)
+        // 7/1–9/24 共 86 天 × $2.44 + 4 天 × $4.00
+        XCTAssertEqual(quarter.totalUSD, 225.84, accuracy: 0.001)
+        XCTAssertEqual(quarter.coverage ?? 0, 1.0, accuracy: 0.0001)
+
+        // 非法窗口直接判无数据
+        XCTAssertNil(CodingModelDetail.summary(
+            source: .kimi, model: "kimi-k2.6",
+            liveDayModels: nil, persisted: persisted,
+            todayKey: "2026-09-28", windowDays: 0))
+    }
+
     func testUnpricedModelCountsTokensWithoutAmount() throws {
         // 缺价模型:快照非空、tokens/活跃天如实,金额恒 0、覆盖率 0
         let summary = try XCTUnwrap(CodingModelDetail.summary(

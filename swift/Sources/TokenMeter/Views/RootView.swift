@@ -5,7 +5,7 @@ enum AppView: Equatable {
     case source(Provider)
     case settings
     case detail(String)   // model key: "flash" | "pro"
-    // 模型榜下钻：来源 + 模型名，固定「近 30 天」明细页
+    // 模型榜下钻：来源 + 模型名，7|30|90 天可切的明细页
     case codingModel(HistorySource, String)
 }
 

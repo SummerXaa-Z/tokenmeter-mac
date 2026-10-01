@@ -1,33 +1,61 @@
 import SwiftUI
 import Charts
 
-// Coding 模型下钻页：从总览模型榜点入。页面自成「近 30 天」固定口径
-// （榜单行的 Token 随总览所选范围变化），Token 构成、逐日 API 等价
+// Coding 模型下钻页：从总览模型榜点入。页面自成固定窗口口径（榜单行的
+// Token 随总览所选范围变化），7|30|90 天切换；Token 构成、逐日 API 等价
 // 金额与覆盖率全部同窗，数字之间可直接对照。
 struct CodingModelDetailView: View {
+    enum Span: Int, CaseIterable {
+        case week = 7
+        case month = 30
+        case quarter = 90
+
+        var title: String { "\(rawValue)天" }
+    }
+
     let source: HistorySource
     let model: String
-    var onBack: () -> Void
-    // 渲染/测试注入固定快照；nil 时按实时采集 + 本机留存自算（与模型榜同源）
-    var injected: CodingModelDetail.Summary? = nil
+    let onBack: () -> Void
+    // 渲染/测试注入固定快照（入参为窗口天数）；nil 时按实时采集 + 本机
+    // 留存自算（与模型榜同源）
+    var injectedFor: ((Int) -> CodingModelDetail.Summary?)? = nil
     @EnvironmentObject var state: AppState
+    @State private var span: Span
     @State private var hoverDate: String?
 
-    private var summary: CodingModelDetail.Summary? {
-        injected ?? CodingModelDetail.summary(
+    init(
+        source: HistorySource,
+        model: String,
+        onBack: @escaping () -> Void,
+        injectedFor: ((Int) -> CodingModelDetail.Summary?)? = nil,
+        initialSpan: Span = .month
+    ) {
+        self.source = source
+        self.model = model
+        self.onBack = onBack
+        self.injectedFor = injectedFor
+        _span = State(initialValue: initialSpan)
+    }
+
+    private func summary(for span: Span) -> CodingModelDetail.Summary? {
+        if let injectedFor {
+            return injectedFor(span.rawValue)
+        }
+        return CodingModelDetail.summary(
             source: source, model: model,
-            liveDayModels: Self.liveDayModels(source, state: state))
+            liveDayModels: Self.liveDayModels(source, state: state),
+            windowDays: span.rawValue)
     }
 
     var body: some View {
         VStack(spacing: 12) {
             header
-            if let s = summary {
+            if let s = summary(for: span) {
                 statsCard(s)
                 breakdownCard(s)
                 trendCard(s)
             } else {
-                SourceStateView(message: "近 30 天暂无该模型明细")
+                SourceStateView(message: "近 \(span.rawValue) 天暂无该模型明细，可切到更长范围")
             }
             Spacer(minLength: 0)
         }
@@ -45,8 +73,21 @@ struct CodingModelDetailView: View {
     private func statsCard(_ s: CodingModelDetail.Summary) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("模型用量", systemImage: "chart.bar.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Picker("范围", selection: $span) {
+                        ForEach(Span.allCases, id: \.self) { item in
+                            Text(item.title).tag(item)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .controlSize(.mini)
+                    .frame(width: 130)
+                }
                 HStack(spacing: 16) {
-                    stat("近 30 天 Token", Fmt.tokensShort(s.tally.total))
+                    stat("近 \(span.rawValue) 天 Token", Fmt.tokensShort(s.tally.total))
                     stat("活跃天数", "\(s.activeDays)")
                     stat("API 等价", Fmt.usd(s.totalUSD))
                 }
@@ -64,7 +105,7 @@ struct CodingModelDetailView: View {
     private func breakdownCard(_ s: CodingModelDetail.Summary) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Token 构成（近 30 天）")
+                Text("Token 构成（近 \(span.rawValue) 天）")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                 let parts = SourceTrendCard.parts(source, of: s.tally).filter { $0.value > 0 }
@@ -96,7 +137,7 @@ struct CodingModelDetailView: View {
         }
         return Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("近 30 天 API 等价（USD）", systemImage: "dollarsign.circle")
+                Label("近 \(span.rawValue) 天 API 等价（USD）", systemImage: "dollarsign.circle")
                     .font(.system(size: 12, weight: .semibold))
                 ChartHover.caption(
                     hover: hoverDate,

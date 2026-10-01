@@ -686,11 +686,11 @@ struct OverviewRankingsCard: View {
                             )
                         }
                         .buttonStyle(.plain)
-                        .help("查看该模型近 30 天明细与 API 等价走势")
+                        .help("查看该模型明细与 API 等价走势（7|30|90 天可切）")
                     }
                 }
 
-                Text("模型名右侧为其当前生效的参考单价（输入 / 输出，每百万 tokens）；缺价模型不标注，等价金额见「API 等价参考」卡。点击模型行查看近 30 天明细与 API 等价走势。")
+                Text("模型名右侧为其当前生效的参考单价（输入 / 输出，每百万 tokens）；缺价模型不标注，等价金额见「API 等价参考」卡。点击模型行查看模型明细与 API 等价走势（7|30|90 天可切）。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
                 Text("模型榜保留采集来源；Cursor 当前只有订阅周期聚合，暂不混入模型榜。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)

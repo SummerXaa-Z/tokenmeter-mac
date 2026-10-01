@@ -7,7 +7,7 @@ struct OverviewView: View {
     let range: UsageHistoryRange
     let sources: [Provider]
     let onOpenSource: (Provider) -> Void
-    // 模型榜下钻：(来源, 模型名) → 近 30 天明细页
+    // 模型榜下钻：(来源, 模型名) → 7|30|90 天可切的明细页
     var onOpenModel: (HistorySource, String) -> Void = { _, _ in }
     var onSettings: () -> Void
     @State private var history: [HistoryStore.DayPoint] = []

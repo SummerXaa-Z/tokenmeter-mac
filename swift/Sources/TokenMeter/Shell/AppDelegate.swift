@@ -339,7 +339,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // 模型榜下钻页的合成数据:已计价(opus-5-5,交错峰值)与缺价
-    // (mystery-model)两分支。只在内存构造,不读也不写真实按天留存。
+    // (mystery-model)两分支,并用 initialSpan 覆盖 30|90|7 三档外观。
+    // 只在内存构造,不读也不写真实按天留存。
     private static func modelDetailFixture() -> some View {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -349,30 +350,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return DateUtil.key(date)
         }
         var opusDays: [String: [String: ModelTokenTally]] = [:]
-        for daysAgo in stride(from: 27, through: 0, by: -3) {
-            let big = daysAgo % 6 == 0
+        for daysAgo in stride(from: 89, through: 0, by: -3) {
+            // stride 落在 ≡2 (mod 3) 的日子上,大小日按序号交错,
+            // 不能用 daysAgo % 6(永远不命中)
+            let big = ((89 - daysAgo) / 3) % 2 == 0
             opusDays[key(daysAgo)] = ["opus-5-5": .init(
                 input: 300_000,
                 cached: big ? 9_000_000 : 4_000_000,
                 cacheWrite: big ? 900_000 : 300_000,
                 output: big ? 1_200_000 : 400_000)]
         }
-        let priced = CodingModelDetail.summary(
-            source: .claude, model: "opus-5-5",
-            liveDayModels: opusDays, persisted: [], todayKey: key(0))
+        let pricedFor: (Int) -> CodingModelDetail.Summary? = { days in
+            CodingModelDetail.summary(
+                source: .claude, model: "opus-5-5",
+                liveDayModels: opusDays, persisted: [],
+                todayKey: key(0), windowDays: days)
+        }
         var mysteryDays: [String: [String: ModelTokenTally]] = [:]
-        for daysAgo in stride(from: 25, through: 0, by: -5) {
+        for daysAgo in stride(from: 85, through: 0, by: -5) {
             mysteryDays[key(daysAgo)] = ["mystery-model": .init(output: 800_000)]
         }
-        let unpriced = CodingModelDetail.summary(
-            source: .kimi, model: "mystery-model",
-            liveDayModels: mysteryDays, persisted: [], todayKey: key(0))
+        let unpricedFor: (Int) -> CodingModelDetail.Summary? = { days in
+            CodingModelDetail.summary(
+                source: .kimi, model: "mystery-model",
+                liveDayModels: mysteryDays, persisted: [],
+                todayKey: key(0), windowDays: days)
+        }
         return ScrollView {
             VStack(spacing: 12) {
                 CodingModelDetailView(
-                    source: .claude, model: "opus-5-5", onBack: {}, injected: priced)
+                    source: .claude, model: "opus-5-5", onBack: {},
+                    injectedFor: pricedFor, initialSpan: .month)
                 CodingModelDetailView(
-                    source: .kimi, model: "mystery-model", onBack: {}, injected: unpriced)
+                    source: .claude, model: "opus-5-5", onBack: {},
+                    injectedFor: pricedFor, initialSpan: .quarter)
+                CodingModelDetailView(
+                    source: .kimi, model: "mystery-model", onBack: {},
+                    injectedFor: unpricedFor, initialSpan: .week)
             }
             .padding(14)
         }
@@ -470,7 +484,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 用固定快照覆盖"会提前用完 / 撑得到重置 / 余额偏低"各分支
             ("pace-fixture", hosting(Self.paceFixture(), height: 1100)),
             ("cost-fixture", hosting(Self.costFixture(), height: 2920)),
-            ("model-detail-fixture", hosting(Self.modelDetailFixture(), height: 1500)),
+            ("model-detail-fixture", hosting(Self.modelDetailFixture(), height: 2400)),
             // 热力图 13|26 周档合成数据页:本机留存未必覆盖 26 周,
             // 用确定性周节律验证双倍列数下的格宽收窄、月份标签、脚注与翻页态
             ("heatmap-fixture", hosting(Self.heatmapFixture(), height: 780)),
