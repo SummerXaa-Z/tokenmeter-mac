@@ -667,9 +667,29 @@ struct OverviewRankingsCard: View {
     // 渲染夹具:强制某个 Skill 行进入悬停态(Skill 榜纯内存聚合,
     // 悬停文案由夹具数据确定性算出,无需 override)
     var previewSkillId: String? = nil
+    // 渲染夹具:注入确定性的近 30 天日序列(sparkline 真实取数
+    // 来自本机按天留存,离屏渲染不可预测)
+    var sparklineFor: ((HistorySource, String) -> [Int]?)? = nil
     @EnvironmentObject private var state: AppState
     @State private var hoverEntry: PersonalUsageRankings.ModelEntry?
     @State private var hoverSkill: PersonalSkillRankings.Entry?
+
+    /// 迷你趋势柱的布局矩形(底对齐):峰值满高、零值零高、
+    /// 非零值保底 1.5pt 可见。纯函数供单元测试。
+    static func sparklineBars(values: [Int], width: CGFloat, height: CGFloat) -> [CGRect] {
+        guard !values.isEmpty, width > 0, height > 0 else { return [] }
+        let count = values.count
+        let gap: CGFloat = count > 1 ? 0.5 : 0
+        let barWidth = max((width - CGFloat(count - 1) * gap) / CGFloat(count), 1)
+        let peak = max(values.max() ?? 0, 1)
+        return values.enumerated().map { index, value in
+            let x = CGFloat(index) * (barWidth + gap)
+            let barHeight: CGFloat = value <= 0
+                ? 0
+                : max(CGFloat(value) / CGFloat(peak) * height, 1.5)
+            return CGRect(x: x, y: height - barHeight, width: barWidth, height: barHeight)
+        }
+    }
 
     /// 悬停说明行文案:近 7 / 30 天 Token、30 天 API 等价与活跃天数。
     /// 近 30 天无用量时明示(榜单「全部」范围会列出只剩更早历史的模型)。
@@ -723,7 +743,8 @@ struct OverviewRankingsCard: View {
                                 tokens: entry.totalTokens,
                                 share: entry.share,
                                 showsSource: true,
-                                highlighted: previewId == entry.id
+                                highlighted: previewId == entry.id,
+                                sparkline: sparklineValues(source: entry.source, model: entry.model)
                             )
                         }
                         .buttonStyle(.plain)
@@ -739,7 +760,7 @@ struct OverviewRankingsCard: View {
                     modelHoverCaption
                 }
 
-                Text("模型名右侧为其当前生效的参考单价（输入 / 输出，每百万 tokens）；缺价模型不标注，等价金额见「API 等价参考」卡。悬停模型行先看近 7 / 30 天关键数字，点击进入详情页（7|30|90 天可切）。")
+                Text("模型名右侧为其当前生效的参考单价（输入 / 输出，每百万 tokens，缺价不标）；行尾小柱图为该模型近 30 天逐日 Token 走势（口径同悬停数字，近 30 天断流的行不画）。悬停模型行先看近 7 / 30 天关键数字，点击进入详情页（7|30|90 天可切）。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
                 Text("模型榜保留采集来源；Cursor 当前只有订阅周期聚合，暂不混入模型榜。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
@@ -813,11 +834,22 @@ struct OverviewRankingsCard: View {
         return "悬停模型行查看近 7 / 30 天 Token、30 天 API 等价与活跃天数"
     }
 
+    /// 迷你趋势的近 30 天日序列(升序、含补零天);夹具注入优先,
+    /// 真实路径与悬停说明行同一条 summary 管线,断流返回 nil(不画)
+    private func sparklineValues(source: HistorySource, model: String) -> [Int]? {
+        if let sparklineFor { return sparklineFor(source, model) }
+        guard let summary = CodingModelDetail.summary(
+            source: source, model: model,
+            liveDayModels: CodingModelDetailView.liveDayModels(source, state: state),
+            windowDays: 30)
+        else { return nil }
+        return summary.days.map(\.tokens)
+    }
+
     /// 悬停行的取数与拼串:近 30 天断流时引导进详情页
     static func hoverText(
         for entry: PersonalUsageRankings.ModelEntry, state: AppState
-    ) -> String {
-        let live = CodingModelDetailView.liveDayModels(entry.source, state: state)
+    ) -> String {        let live = CodingModelDetailView.liveDayModels(entry.source, state: state)
         guard let month = CodingModelDetail.summary(
             source: entry.source, model: entry.model,
             liveDayModels: live, windowDays: 30)
@@ -856,7 +888,8 @@ struct OverviewRankingsCard: View {
         tokens: Int,
         share: Double,
         showsSource: Bool,
-        highlighted: Bool = false
+        highlighted: Bool = false,
+        sparkline: [Int]? = nil
     ) -> some View {
         HStack(spacing: 7) {
             rankLabel(rank)
@@ -864,6 +897,9 @@ struct OverviewRankingsCard: View {
             Text(name).font(.system(size: 11, weight: .medium)).lineLimit(1)
             if showsSource { sourceBadge(source) }
             Spacer(minLength: 4)
+            if let sparkline {
+                ModelSparkline(values: sparkline, color: source.overviewColor)
+            }
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("\(Fmt.tokensShort(tokens)) · \(Int((share * 100).rounded()))%")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -924,6 +960,25 @@ struct OverviewRankingsCard: View {
             .foregroundStyle(source.overviewColor)
             .padding(.horizontal, 5).padding(.vertical, 2)
             .background(source.overviewColor.opacity(0.1), in: Capsule())
+    }
+}
+
+/// 模型榜行尾的近 30 天逐日迷你柱图:Canvas 直绘(比 Charts 轻,
+/// 一屏最多 5 行),底对齐、峰值满高,悬停说明行给精确数字。
+private struct ModelSparkline: View {
+    let values: [Int]
+    let color: Color
+
+    var body: some View {
+        Canvas { context, size in
+            for rect in OverviewRankingsCard.sparklineBars(
+                values: values, width: size.width, height: size.height)
+            {
+                context.fill(Path(rect), with: .color(color.opacity(0.65)))
+            }
+        }
+        .frame(width: 44, height: 14)
+        .accessibilityLabel("近 30 天日用量迷你趋势")
     }
 }
 

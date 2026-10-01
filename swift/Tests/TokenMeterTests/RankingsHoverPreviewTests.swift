@@ -93,4 +93,41 @@ final class RankingsHoverPreviewTests: XCTestCase {
             OverviewRankingsCard.hoverSkillText(for: empty),
             "该 Skill 暂无调用记录")
     }
+
+    // MARK: - 迷你趋势柱布局
+
+    func testSparklineBarsNormalizePeakFloorZeroesAndSplitWidth() {
+        let bars = OverviewRankingsCard.sparklineBars(
+            values: [0, 5, 10, 0, 7], width: 46, height: 14)
+        XCTAssertEqual(bars.count, 5)
+        // 5 柱 4 缝(0.5):每柱 (46 - 2) / 5 = 8.8
+        XCTAssertEqual(bars[0].width, 8.8, accuracy: 0.01)
+        XCTAssertEqual(bars[2].minX, 2 * 9.3, accuracy: 0.01)
+        // 峰值满高、底对齐
+        XCTAssertEqual(bars[2].height, 14, accuracy: 0.01)
+        XCTAssertEqual(bars[2].minY, 0)
+        // 零值零高(贴底的空矩形)
+        XCTAssertEqual(bars[0].height, 0)
+        XCTAssertEqual(bars[0].minY, 14)
+        // 非零低值保底 1.5pt 可见:5/10 ≈ 7 → 7 不触发保底,
+        // 但全同值序列里也不断柱
+        XCTAssertEqual(bars[1].height, 7, accuracy: 0.01)
+        XCTAssertEqual(bars[4].height, 9.8, accuracy: 0.01)
+    }
+
+    func testSparklineBarsFloorMinimumHeightAndEdgeCases() {
+        // 峰值 1000、低值 1:1/1000 × 14 < 1.5 → 保底 1.5
+        let bars = OverviewRankingsCard.sparklineBars(
+            values: [1000, 1], width: 10, height: 14)
+        XCTAssertEqual(bars[1].height, 1.5, accuracy: 0.01)
+        // 全零序列:峰值按 1 兜底,柱高 0
+        let flat = OverviewRankingsCard.sparklineBars(
+            values: [0, 0, 0], width: 30, height: 14)
+        XCTAssertTrue(flat.allSatisfy { $0.height == 0 })
+        // 空序列 / 非正尺寸:空返回
+        XCTAssertTrue(OverviewRankingsCard.sparklineBars(
+            values: [], width: 44, height: 14).isEmpty)
+        XCTAssertTrue(OverviewRankingsCard.sparklineBars(
+            values: [1, 2], width: 0, height: 14).isEmpty)
+    }
 }

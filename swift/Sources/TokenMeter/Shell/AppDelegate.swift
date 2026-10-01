@@ -503,6 +503,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private static func rankingsSparklineFixture() -> some View {
+        let data = rankingsFixtureData()
+        // 确定性的近 30 天走势:工作日节律 + 首行末段抬升;
+        // 缺价模型给全零以外的低量,验证非峰值柱的保底可见高度
+        let pattern: (String) -> [Int] = { model in
+            (0..<30).map { day in
+                let base = [3, 8, 5, 9, 6, 4, 2][day % 7]
+                let boost = (model == "opus-5-5" && day >= 20) ? 2 : 1
+                let scale = model == "mystery-model" ? 1 : 2
+                return base * boost * scale * 1_000_000
+            }
+        }
+        return ScrollView {
+            VStack(spacing: 12) {
+                OverviewRankingsCard(
+                    rankings: data.rankings, skillRankings: data.skills, range: .month,
+                    sparklineFor: { _, model in pattern(model) })
+            }
+            .padding(14)
+        }
+    }
+
     // 用法：TokenMeter --ui-render=<dir>。为每个页面在亮/暗两种外观下
     // 生成 <page>-<appearance>.png 后退出。窗口放在屏幕外，用户无感。
     private func runUIRender(outputPath: String) {
@@ -562,18 +584,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("settings-section-tools", hosting(
                 SettingsView(onBack: {}, initialSection: .tools), height: 1400)),
             // RootView 自钉 420×600，长视口需直接 host 总览页本体
-            // (高度含模型榜悬停说明行的余量)
+            // (高度含模型榜悬停说明行与加长脚注的余量)
             ("overview-full", hosting(
                 OverviewView(
                     range: .month, sources: Provider.allCases,
                     onOpenSource: { _ in }, onSettings: {}),
-                height: 2230)),
+                height: 2330)),
             // 1D 档总览:hero 的"今日 vs 近 7 天日均"等只在 1D 出现
             ("overview-day-full", hosting(
                 OverviewView(
                     range: .day, sources: Provider.allCases,
                     onOpenSource: { _ in }, onSettings: {}),
-                height: 2230)),
+                height: 2270)),
             // 来源页整页高度导出:600pt 视口下滚动区折叠线以下的内容
             // (如历史环比卡)在普通页面渲染里永远看不到
             ("claude-full", hosting(
@@ -605,6 +627,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("rankings-idle-fixture", hosting(Self.rankingsIdleFixture(), height: 560)),
             ("rankings-skill-preview-fixture", hosting(
                 Self.rankingsSkillPreviewFixture(), height: 560)),
+            ("rankings-sparkline-fixture", hosting(
+                Self.rankingsSparklineFixture(), height: 560)),
             // 热力图 13|26 周档合成数据页:本机留存未必覆盖 26 周,
             // 用确定性周节律验证双倍列数下的格宽收窄、月份标签、脚注与翻页态
             ("heatmap-fixture", hosting(Self.heatmapFixture(), height: 780)),
