@@ -440,7 +440,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ])
         let skills = PersonalSkillRankings(
             samples: [
+                // 双来源 Skill:悬停拆解文案有内容可显示
                 .init(source: .claude, name: "frontend-design", invocationCount: 12),
+                .init(source: .codex, name: "frontend-design", invocationCount: 4),
                 .init(source: .copilot, name: "pdf", invocationCount: 3),
             ],
             enabledSources: HistorySource.codingAgents)
@@ -482,6 +484,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // 未悬停:说明行显示占位提示,与悬停态占同一行高,版面不跳
                 OverviewRankingsCard(
                     rankings: data.rankings, skillRankings: data.skills, range: .month)
+            }
+            .padding(14)
+        }
+    }
+
+    private static func rankingsSkillPreviewFixture() -> some View {
+        let data = rankingsFixtureData()
+        return ScrollView {
+            VStack(spacing: 12) {
+                // 悬停双来源 Skill:行高亮 + 说明行拆解各来源调用次数
+                // (Skill 榜纯内存聚合,文案由夹具数据确定性算出)
+                OverviewRankingsCard(
+                    rankings: data.rankings, skillRankings: data.skills, range: .month,
+                    previewSkillId: "frontend-design")
             }
             .padding(14)
         }
@@ -587,6 +603,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("rankings-preview-fixture", hosting(Self.rankingsPreviewFixture(), height: 560)),
             ("rankings-unpriced-fixture", hosting(Self.rankingsUnpricedFixture(), height: 560)),
             ("rankings-idle-fixture", hosting(Self.rankingsIdleFixture(), height: 560)),
+            ("rankings-skill-preview-fixture", hosting(
+                Self.rankingsSkillPreviewFixture(), height: 560)),
             // 热力图 13|26 周档合成数据页:本机留存未必覆盖 26 周,
             // 用确定性周节律验证双倍列数下的格宽收窄、月份标签、脚注与翻页态
             ("heatmap-fixture", hosting(Self.heatmapFixture(), height: 780)),

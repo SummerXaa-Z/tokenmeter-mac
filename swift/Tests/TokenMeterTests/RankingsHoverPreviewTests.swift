@@ -63,4 +63,34 @@ final class RankingsHoverPreviewTests: XCTestCase {
                 month: month),
             "近 7 天 12M · 近 30 天 96M · 30 天 API 等价缺价 · 活跃 1 天")
     }
+
+    // MARK: - Skills 榜悬停说明行
+
+    func testHoverSkillTextSplitsBySourceInGivenOrder() {
+        // sources 已由模型层按次数降序排好,视图层只负责拼串
+        let entry = PersonalSkillRankings.Entry(
+            name: "frontend-design", invocationCount: 16, share: 0.84,
+            sources: [
+                .init(source: .claude, invocationCount: 12),
+                .init(source: .codex, invocationCount: 4),
+            ])
+        XCTAssertEqual(
+            OverviewRankingsCard.hoverSkillText(for: entry),
+            "Claude 12 次 · Codex 4 次")
+    }
+
+    func testHoverSkillTextSingleSourceAndEmptySources() {
+        let single = PersonalSkillRankings.Entry(
+            name: "pdf", invocationCount: 3, share: 1,
+            sources: [.init(source: .copilot, invocationCount: 3)])
+        XCTAssertEqual(
+            OverviewRankingsCard.hoverSkillText(for: single),
+            "GitHub Copilot 3 次")
+
+        let empty = PersonalSkillRankings.Entry(
+            name: "ghost", invocationCount: 0, share: 0, sources: [])
+        XCTAssertEqual(
+            OverviewRankingsCard.hoverSkillText(for: empty),
+            "该 Skill 暂无调用记录")
+    }
 }

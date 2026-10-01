@@ -664,8 +664,12 @@ struct OverviewRankingsCard: View {
     // 离屏渲染无法模拟指针悬停
     var previewRowId: String? = nil
     var previewTextOverride: String? = nil
+    // 渲染夹具:强制某个 Skill 行进入悬停态(Skill 榜纯内存聚合,
+    // 悬停文案由夹具数据确定性算出,无需 override)
+    var previewSkillId: String? = nil
     @EnvironmentObject private var state: AppState
     @State private var hoverEntry: PersonalUsageRankings.ModelEntry?
+    @State private var hoverSkill: PersonalSkillRankings.Entry?
 
     /// 悬停说明行文案:近 7 / 30 天 Token、30 天 API 等价与活跃天数。
     /// 近 30 天无用量时明示(榜单「全部」范围会列出只剩更早历史的模型)。
@@ -685,6 +689,15 @@ struct OverviewRankingsCard: View {
             parts.append("30 天 API 等价 \(Fmt.usd(month.totalUSD))")
         }
         parts.append("活跃 \(month.activeDays) 天")
+        return parts.joined(separator: " · ")
+    }
+
+    /// Skills 榜悬停说明行:该 Skill 各来源的调用次数(已按次数降序)。
+    static func hoverSkillText(for entry: PersonalSkillRankings.Entry) -> String {
+        let parts = entry.sources.map {
+            "\($0.source.overviewName) \(Fmt.int($0.invocationCount)) 次"
+        }
+        guard !parts.isEmpty else { return "该 Skill 暂无调用记录" }
         return parts.joined(separator: " · ")
     }
 
@@ -742,8 +755,18 @@ struct OverviewRankingsCard: View {
                 } else {
                     ForEach(Array(skillRankings.entries.prefix(5).enumerated()), id: \.element.id) {
                         index, entry in
-                        skillRow(rank: index + 1, entry: entry)
+                        skillRow(
+                            rank: index + 1, entry: entry,
+                            highlighted: (hoverSkill ?? previewSkillEntry)?.id == entry.id)
+                            .onHover { hovering in
+                                if hovering {
+                                    hoverSkill = entry
+                                } else if hoverSkill == entry {
+                                    hoverSkill = nil
+                                }
+                            }
                     }
+                    skillHoverCaption
                 }
 
                 Text("Claude 统计原生 Skill 工具；Codex 统计工具实际读取标准 SKILL.md；Copilot 统计 skill.invoked。普通消息提及不计入。")
@@ -806,6 +829,26 @@ struct OverviewRankingsCard: View {
         return hoverPreviewText(week: week, month: month)
     }
 
+    /// 当前悬停(或夹具强制)的 Skill 行;真实悬停优先
+    private var previewSkillEntry: PersonalSkillRankings.Entry? {
+        if let previewSkillId {
+            return skillRankings.entries.first { $0.id == previewSkillId }
+        }
+        return nil
+    }
+
+    /// Skills 榜悬停说明行:常驻一行,未悬停时显示占位提示,版面不跳
+    private var skillHoverCaption: some View {
+        Text(
+            hoverSkill.map(Self.hoverSkillText)
+                ?? previewSkillEntry.map(Self.hoverSkillText)
+                ?? "悬停 Skill 行看各来源调用次数"
+        )
+        .font(.system(size: 10)).foregroundStyle(.tertiary)
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private func rankingRow(
         rank: Int,
         name: String,
@@ -839,7 +882,9 @@ struct OverviewRankingsCard: View {
         }
     }
 
-    private func skillRow(rank: Int, entry: PersonalSkillRankings.Entry) -> some View {
+    private func skillRow(
+        rank: Int, entry: PersonalSkillRankings.Entry, highlighted: Bool = false
+    ) -> some View {
         HStack(spacing: 7) {
             rankLabel(rank)
             Image(systemName: "sparkles")
@@ -857,6 +902,12 @@ struct OverviewRankingsCard: View {
             Text("\(Fmt.int(entry.invocationCount))次 · \(Int((entry.share * 100).rounded()))%")
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
+        }
+        .background {
+            // 高亮底色向两侧出血 4pt,行文本与卡内标题/脚注保持对齐
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.primary.opacity(highlighted ? 0.05 : 0))
+                .padding(.horizontal, -4)
         }
     }
 
