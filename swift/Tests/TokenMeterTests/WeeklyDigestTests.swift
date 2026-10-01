@@ -60,7 +60,7 @@ final class WeeklyDigestTests: XCTestCase {
            modelDays: [],
            today: date("2026-09-28"), calendar: calendar)
         XCTAssertEqual(message?.title, "TokenMeter 上周用量摘要")
-        XCTAssertEqual(message?.body, "合计 400M，环比 ↑ 100%；主力 Claude 75%")
+        XCTAssertEqual(message?.body, "合计 400M，环比 ↑ 100%；主力 Claude 75%；活跃 1 天")
     }
 
     func testMessageNilWhenLastWeekEmpty() {
@@ -78,7 +78,7 @@ final class WeeklyDigestTests: XCTestCase {
             day("2026-09-22", bySource: [.codex: 2_000_000]),
         ], participants: [.claude, .codex], modelDays: [],
            today: date("2026-09-28"), calendar: calendar)
-        XCTAssertEqual(message?.body, "合计 2M；全部来自 Codex")
+        XCTAssertEqual(message?.body, "合计 2M；全部来自 Codex；活跃 1 天")
     }
 
     // MARK: - API 等价金额
@@ -102,6 +102,13 @@ final class WeeklyDigestTests: XCTestCase {
         ModelUsageDay(date: date, bySource: [source: SourceDayDetail(skills: skills)])
     }
 
+    private func sessionDay(
+        _ date: String, source: HistorySource,
+        sessions: Int
+    ) -> ModelUsageDay {
+        ModelUsageDay(date: date, bySource: [source: SourceDayDetail(sessions: sessions)])
+    }
+
     func testMessageAppendsAPIEquivalentAmountWithChange() {
         // kimi-k2.6 输出价 09-25 前后 $2.44/$4 每 M:上周 3M=$9.32,上上周 1M=$2.44
         let message = WeeklyDigest.message([
@@ -116,7 +123,7 @@ final class WeeklyDigestTests: XCTestCase {
         // 3M×2.44 = 7.32 → 环比 (7.32-2.44)/2.44 = 200%
         XCTAssertEqual(
             message?.body,
-            "合计 3M，环比 ↑ 200%；全部来自 Kimi Code；模型 kimi-k2.6；API 等价 $7.32（环比 ↑ 200%）\(checkedAt)")
+            "合计 3M，环比 ↑ 200%；全部来自 Kimi Code；活跃 1 天；模型 kimi-k2.6；API 等价 $7.32（环比 ↑ 200%）\(checkedAt)")
     }
 
     func testMessageAmountOmittedWithoutModelDetail() {
@@ -125,7 +132,7 @@ final class WeeklyDigestTests: XCTestCase {
             day("2026-09-22", bySource: [.kimi: 1_000_000]),
         ], participants: [.kimi], modelDays: [],
            today: date("2026-09-28"), calendar: calendar)
-        XCTAssertEqual(message?.body, "合计 1M；全部来自 Kimi Code")
+        XCTAssertEqual(message?.body, "合计 1M；全部来自 Kimi Code；活跃 1 天")
     }
 
     func testMessageAmountNotesCoverageForUnpricedModels() {
@@ -142,7 +149,7 @@ final class WeeklyDigestTests: XCTestCase {
         // 上上周无金额基期:不拼环比;缺价一半:覆盖 50%,低于阈值点名缺价模型
         XCTAssertEqual(
             message?.body,
-            "合计 2M；全部来自 Kimi Code；模型 Top3 kimi-k2.6 50%、mystery-model 50%；API 等价 $2.44，价格覆盖 50%\(checkedAt)，缺价 mystery-model")
+            "合计 2M；全部来自 Kimi Code；活跃 1 天；模型 Top3 kimi-k2.6 50%、mystery-model 50%；API 等价 $2.44，价格覆盖 50%\(checkedAt)，缺价 mystery-model")
     }
 
     func testMessageAmountIgnoresDisabledSourcesAndCurrentWeek() {
@@ -159,7 +166,7 @@ final class WeeklyDigestTests: XCTestCase {
         // 未启用的 Codex 与本周(09-28)的明细都不进金额,金额段只算 Kimi $2.44
         XCTAssertEqual(
             message?.body,
-            "合计 1M；全部来自 Kimi Code；模型 kimi-k2.6；API 等价 $2.44\(checkedAt)")
+            "合计 1M；全部来自 Kimi Code；活跃 1 天；模型 kimi-k2.6；API 等价 $2.44\(checkedAt)")
     }
 
     func testMessageCapsUnpricedModelNamesAtTwo() {
@@ -179,7 +186,7 @@ final class WeeklyDigestTests: XCTestCase {
         // 模型 Top3 同量并列按名字典序,只取前三(mystery-c 不进榜)
         XCTAssertEqual(
             message?.body,
-            "合计 4M；全部来自 Kimi Code；模型 Top3 kimi-k2.6 25%、mystery-a 25%、mystery-b 25%；API 等价 $2.44，价格覆盖 25%\(checkedAt)，缺价 mystery-a、mystery-b 等")
+            "合计 4M；全部来自 Kimi Code；活跃 1 天；模型 Top3 kimi-k2.6 25%、mystery-a 25%、mystery-b 25%；API 等价 $2.44，价格覆盖 25%\(checkedAt)，缺价 mystery-a、mystery-b 等")
     }
 
     func testMessageOmitsUnpricedNamesAboveCoverageThreshold() {
@@ -196,7 +203,7 @@ final class WeeklyDigestTests: XCTestCase {
            today: date("2026-09-28"), calendar: calendar)
         XCTAssertEqual(
             message?.body,
-            "合计 25M；全部来自 Kimi Code；模型 Top3 kimi-k2.6 96%、mystery-model 4%；API 等价 $58.56，价格覆盖 96%\(checkedAt)")
+            "合计 25M；全部来自 Kimi Code；活跃 1 天；模型 Top3 kimi-k2.6 96%、mystery-model 4%；API 等价 $58.56，价格覆盖 96%\(checkedAt)")
     }
 
     // MARK: - 订阅回本
@@ -214,7 +221,7 @@ final class WeeklyDigestTests: XCTestCase {
            today: date("2026-09-28"), calendar: calendar)
         XCTAssertEqual(
             message?.body,
-            "合计 3M；全部来自 Kimi Code；模型 kimi-k2.6；API 等价 $7.32\(checkedAt)；订阅回本 约 1.9 倍")
+            "合计 3M；全部来自 Kimi Code；活跃 1 天；模型 kimi-k2.6；API 等价 $7.32\(checkedAt)；订阅回本 约 1.9 倍")
         // 留存只覆盖上周一周:有数据的周不足两个,走势小抄不拼
     }
 
@@ -236,7 +243,7 @@ final class WeeklyDigestTests: XCTestCase {
         // 用量(0.0)、上周(0.3);留存更早的周不足两个时不拼(见上一测试)
         XCTAssertEqual(
             message?.body,
-            "合计 3M；全部来自 Kimi Code；模型 kimi-k2.6；API 等价 $7.32\(checkedAt)；订阅回本 约 0.3 倍，近 3 周 0.2 → 0.0 → 0.3")
+            "合计 3M；全部来自 Kimi Code；活跃 1 天；模型 kimi-k2.6；API 等价 $7.32\(checkedAt)；订阅回本 约 0.3 倍，近 3 周 0.2 → 0.0 → 0.3")
     }
 
     func testMessageAppendsRoiTrendOfRecentCompleteWeeks() {
@@ -256,7 +263,7 @@ final class WeeklyDigestTests: XCTestCase {
            today: date("2026-09-28"), calendar: calendar)
         XCTAssertEqual(
             message?.body,
-            "合计 3M；全部来自 Kimi Code；模型 kimi-k2.6；API 等价 $7.32（环比 ↓ 40%）\(checkedAt)；订阅回本 约 0.3 倍，近 4 周 0.1 → 0.2 → 0.5 → 0.3")
+            "合计 3M；全部来自 Kimi Code；活跃 1 天；模型 kimi-k2.6；API 等价 $7.32（环比 ↓ 40%）\(checkedAt)；订阅回本 约 0.3 倍，近 4 周 0.1 → 0.2 → 0.5 → 0.3")
     }
 
     func testMessageSubscriptionOmittedWithoutPositiveFee() {
@@ -271,7 +278,7 @@ final class WeeklyDigestTests: XCTestCase {
            today: date("2026-09-28"), calendar: calendar)
         XCTAssertEqual(
             message?.body,
-            "合计 1M；全部来自 Kimi Code；模型 kimi-k2.6；API 等价 $2.44\(checkedAt)")
+            "合计 1M；全部来自 Kimi Code；活跃 1 天；模型 kimi-k2.6；API 等价 $2.44\(checkedAt)")
     }
 
     // MARK: - 模型 Top3
@@ -337,7 +344,7 @@ final class WeeklyDigestTests: XCTestCase {
                skillDay("2026-09-22", source: .claude, ["pdf": 4]),
            ],
            today: date("2026-09-28"), calendar: calendar)
-        XCTAssertEqual(message?.body, "合计 3M；全部来自 Claude；Skill pdf 4 次")
+        XCTAssertEqual(message?.body, "合计 3M；全部来自 Claude；活跃 1 天；Skill pdf 4 次")
     }
 
     func testMessageSkillSegmentOmittedWithoutLastWeekEvidence() {
@@ -350,5 +357,39 @@ final class WeeklyDigestTests: XCTestCase {
            ],
            today: date("2026-09-28"), calendar: calendar)
         XCTAssertFalse(message?.body.contains("Skill") ?? true)
+    }
+
+    // MARK: - 活跃天数与会话数
+
+    func testMessageAppendsActiveDaysAndSessions() {
+        // 上周(9/21-9/27)3 个有 Token 的活跃日;会话数跨来源相加(20+16+9);
+        // 上上周/本周的会话与未启用来源的会话不计;零 Token 日不进活跃天数,
+        // 但它的会话照算——会话开了没耗 token 也是真实的会话
+        let message = WeeklyDigest.message([
+            day("2026-09-22", bySource: [.claude: 6_000_000]),
+            day("2026-09-23", bySource: [.claude: 0]),
+            day("2026-09-24", bySource: [.codex: 3_000_000]),
+            day("2026-09-26", bySource: [.claude: 1_000_000]),
+        ], participants: [.claude, .codex],
+           modelDays: [
+               sessionDay("2026-09-22", source: .claude, sessions: 20),
+               sessionDay("2026-09-23", source: .claude, sessions: 9),
+               sessionDay("2026-09-24", source: .codex, sessions: 16),
+               sessionDay("2026-09-15", source: .claude, sessions: 40),
+               sessionDay("2026-09-26", source: .kimi, sessions: 99),
+               sessionDay("2026-09-28", source: .claude, sessions: 40),
+           ],
+           today: date("2026-09-28"), calendar: calendar)
+        XCTAssertTrue(message?.body.contains("；活跃 3 天、45 个会话") ?? false)
+    }
+
+    func testMessageSessionsOmittedWithoutDetail() {
+        // 明细断流:活跃天数照报(来自 Token 历史),会话数省略不冒充 0
+        let message = WeeklyDigest.message([
+            day("2026-09-22", bySource: [.claude: 2_000_000]),
+            day("2026-09-24", bySource: [.claude: 1_000_000]),
+        ], participants: [.claude], modelDays: [],
+           today: date("2026-09-28"), calendar: calendar)
+        XCTAssertEqual(message?.body, "合计 3M；全部来自 Claude；活跃 2 天")
     }
 }

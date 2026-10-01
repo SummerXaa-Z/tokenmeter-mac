@@ -1,10 +1,10 @@
 import Foundation
 
 // 每周一条的"上周用量摘要"通知:上周全部 Coding 来源 Token 合计、环比、
-// 主力来源、模型 Top3、Skill Top3、API 等价金额与订阅回本倍数(附近几周
-// 走势小抄)。数据与总览环比卡同源(PeriodCompare 日历周口径),金额按天
-// 明细 + 当日生效价重算(与总览 API 等价同口径),纯本地计算,经 Notifier
-// 推系统通知;上周一条记录都没有就不打扰。
+// 主力来源、活跃天数与会话数、模型 Top3、Skill Top3、API 等价金额与订阅
+// 回本倍数(附近几周走势小抄)。数据与总览环比卡同源(PeriodCompare 日历
+// 周口径),金额按天明细 + 当日生效价重算(与总览 API 等价同口径),纯本地
+// 计算,经 Notifier 推系统通知;上周一条记录都没有就不打扰。
 enum WeeklyDigest {
     struct Message: Equatable {
         let title: String
@@ -57,10 +57,16 @@ enum WeeklyDigest {
 
         var lastBySource: [HistorySource: Int] = [:]
         var priorBySource: [HistorySource: Int] = [:]
+        var lastActiveDates = Set<String>()
         for day in days {
             guard let date = DateUtil.date(from: day.date) else { continue }
             let key = weekKey(date, calendar: calendar)
             guard key == lastKey || key == priorKey else { continue }
+            if key == lastKey,
+               day.bySource.contains(where: { allowed.contains($0.key) && $0.value > 0 })
+            {
+                lastActiveDates.insert(day.date)
+            }
             for (source, tokens) in day.bySource where allowed.contains(source) {
                 if key == lastKey {
                     lastBySource[source, default: 0] += tokens
@@ -86,6 +92,15 @@ enum WeeklyDigest {
             } else {
                 body += "；全部来自 \(top.key.overviewName)"
             }
+        }
+        // 强度维度:活跃天数按"当天有参与来源的 Token"计(与合计同一条
+        // Token 历史,总在);会话数来自按天明细留存——断流或合计为 0 时
+        // 只报活跃天数,不冒充「0 个会话」。
+        body += "；活跃 \(lastActiveDates.count) 天"
+        let sessions = lastWeekSessions(
+            modelDays, allowed: allowed, lastKey: lastKey, calendar: calendar)
+        if sessions > 0 {
+            body += "、\(Fmt.int(sessions)) 个会话"
         }
         if let models = topModelsText(
             modelDays, allowed: allowed, lastKey: lastKey, calendar: calendar)
@@ -167,6 +182,28 @@ enum WeeklyDigest {
             "\(entry.key) \(Fmt.percent(Double(entry.value) / Double(total) * 100))"
         }
         return "模型 Top3 " + leaders.joined(separator: "、")
+    }
+
+    /// 上周会话数合计:按天明细里逐日 sessions 跨参与来源相加。明细断流
+    /// (近几周没留存)时合计为 0,调用方只报活跃天数,不冒充「0 个会话」;
+    /// 零 Token 的日子只要明细里有会话也照算——会话开了没耗 token 是真实
+    /// 的会话,活跃天数不因它 +1。
+    private static func lastWeekSessions(
+        _ modelDays: [ModelUsageDay],
+        allowed: Set<HistorySource>,
+        lastKey: String,
+        calendar: Calendar
+    ) -> Int {
+        var total = 0
+        for day in modelDays {
+            guard let date = DateUtil.date(from: day.date),
+                  weekKey(date, calendar: calendar) == lastKey
+            else { continue }
+            for (source, detail) in day.bySource where allowed.contains(source) {
+                total += max(detail.sessions, 0)
+            }
+        }
+        return total
     }
 
     /// 上周 Skill Top3 小抄:按天明细里逐 Skill 调用次数合计(跨参与来源
