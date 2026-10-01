@@ -658,8 +658,35 @@ struct OverviewRankingsCard: View {
     let skillRankings: PersonalSkillRankings
     let range: UsageHistoryRange
     var coverageNote: String? = nil
-    // 模型行点击下钻到「近 30 天」明细页；默认空实现（渲染/预览可省）
+    // 模型行点击下钻到详情页；默认空实现（渲染/预览可省）
     var onOpenModel: (HistorySource, String) -> Void = { _, _ in }
+    // 渲染夹具:强制某行进入悬停态(行高亮 + 说明行用固定文案),
+    // 离屏渲染无法模拟指针悬停
+    var previewRowId: String? = nil
+    var previewTextOverride: String? = nil
+    @EnvironmentObject private var state: AppState
+    @State private var hoverEntry: PersonalUsageRankings.ModelEntry?
+
+    /// 悬停说明行文案:近 7 / 30 天 Token、30 天 API 等价与活跃天数。
+    /// 近 30 天无用量时明示(榜单「全部」范围会列出只剩更早历史的模型)。
+    static func hoverPreviewText(
+        week: CodingModelDetail.Summary?, month: CodingModelDetail.Summary?
+    ) -> String {
+        guard let month else {
+            return "近 30 天无用量（该行来自更早历史），点进详情页看 90 天"
+        }
+        var parts = [
+            "近 7 天 \(Fmt.tokensShort(week?.tally.total ?? 0))",
+            "近 30 天 \(Fmt.tokensShort(month.tally.total))",
+        ]
+        if (month.coverage ?? 1) <= 0 {
+            parts.append("30 天 API 等价缺价")
+        } else {
+            parts.append("30 天 API 等价 \(Fmt.usd(month.totalUSD))")
+        }
+        parts.append("活跃 \(month.activeDays) 天")
+        return parts.joined(separator: " · ")
+    }
 
     var body: some View {
         Card {
@@ -682,15 +709,24 @@ struct OverviewRankingsCard: View {
                                 source: entry.source,
                                 tokens: entry.totalTokens,
                                 share: entry.share,
-                                showsSource: true
+                                showsSource: true,
+                                highlighted: previewId == entry.id
                             )
                         }
                         .buttonStyle(.plain)
                         .help("查看该模型明细与 API 等价走势（7|30|90 天可切）")
+                        .onHover { hovering in
+                            if hovering {
+                                hoverEntry = entry
+                            } else if hoverEntry == entry {
+                                hoverEntry = nil
+                            }
+                        }
                     }
+                    modelHoverCaption
                 }
 
-                Text("模型名右侧为其当前生效的参考单价（输入 / 输出，每百万 tokens）；缺价模型不标注，等价金额见「API 等价参考」卡。点击模型行查看模型明细与 API 等价走势（7|30|90 天可切）。")
+                Text("模型名右侧为其当前生效的参考单价（输入 / 输出，每百万 tokens）；缺价模型不标注，等价金额见「API 等价参考」卡。悬停模型行先看近 7 / 30 天关键数字，点击进入详情页（7|30|90 天可切）。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
                 Text("模型榜保留采集来源；Cursor 当前只有订阅周期聚合，暂不混入模型榜。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
@@ -731,13 +767,53 @@ struct OverviewRankingsCard: View {
             .padding(.vertical, 3)
     }
 
+    /// 当前悬停(或夹具强制)的行 id:真实悬停优先,夹具覆盖次之
+    private var previewId: String? {
+        hoverEntry?.id ?? previewRowId
+    }
+
+    /// 悬停说明行:常驻一行,未悬停时显示占位提示,版面不跳动
+    private var modelHoverCaption: some View {
+        Text(currentHoverText)
+            .font(.system(size: 10)).foregroundStyle(.tertiary)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var currentHoverText: String {
+        if let previewTextOverride { return previewTextOverride }
+        // 夹具强制行优先(渲染无法模拟指针),其次真实悬停行
+        if let entry = hoverEntry ?? rankings.models.first(where: { $0.id == previewRowId }) {
+            return Self.hoverText(for: entry, state: state)
+        }
+        // 未悬停:占位提示占住同一行高,悬停时版面不跳
+        return "悬停模型行查看近 7 / 30 天 Token、30 天 API 等价与活跃天数"
+    }
+
+    /// 悬停行的取数与拼串:近 30 天断流时引导进详情页
+    static func hoverText(
+        for entry: PersonalUsageRankings.ModelEntry, state: AppState
+    ) -> String {
+        let live = CodingModelDetailView.liveDayModels(entry.source, state: state)
+        guard let month = CodingModelDetail.summary(
+            source: entry.source, model: entry.model,
+            liveDayModels: live, windowDays: 30)
+        else { return "近 30 天无用量（该行来自更早历史），点进详情页看 90 天" }
+        // 周窗可以比月窗更早断流(月内有量但最近 7 天没有),nil 按 0 处理
+        let week = CodingModelDetail.summary(
+            source: entry.source, model: entry.model,
+            liveDayModels: live, windowDays: 7)
+        return hoverPreviewText(week: week, month: month)
+    }
+
     private func rankingRow(
         rank: Int,
         name: String,
         source: HistorySource,
         tokens: Int,
         share: Double,
-        showsSource: Bool
+        showsSource: Bool,
+        highlighted: Bool = false
     ) -> some View {
         HStack(spacing: 7) {
             rankLabel(rank)
@@ -754,6 +830,12 @@ struct OverviewRankingsCard: View {
                         .font(.system(size: 9)).foregroundStyle(.tertiary)
                 }
             }
+        }
+        .background {
+            // 高亮底色向两侧出血 4pt,行文本与卡内标题/脚注保持对齐
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.primary.opacity(highlighted ? 0.05 : 0))
+                .padding(.horizontal, -4)
         }
     }
 

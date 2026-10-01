@@ -427,6 +427,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // 模型榜悬停预览的合成数据:悬停态说明行的数字来自真实按天留存,
+    // 离屏渲染无法预测,故用固定文案 override;取数路径由单元测试覆盖。
+    // 合成数据只在内存构造,不读也不写真实按天留存。
+    private static func rankingsFixtureData() -> (rankings: PersonalUsageRankings, skills: PersonalSkillRankings) {
+        let rankings = PersonalUsageRankings(
+            history: [], enabledSources: HistorySource.codingAgents,
+            modelSamples: [
+                .init(source: .claude, model: "opus-5-5", totalTokens: 524_000_000),
+                .init(source: .kimi, model: "mystery-model", totalTokens: 96_000_000),
+                .init(source: .codex, model: "gpt-5.4 (xhigh)", totalTokens: 86_000_000),
+            ])
+        let skills = PersonalSkillRankings(
+            samples: [
+                .init(source: .claude, name: "frontend-design", invocationCount: 12),
+                .init(source: .copilot, name: "pdf", invocationCount: 3),
+            ],
+            enabledSources: HistorySource.codingAgents)
+        return (rankings, skills)
+    }
+
+    private static func rankingsPreviewFixture() -> some View {
+        let data = rankingsFixtureData()
+        return ScrollView {
+            VStack(spacing: 12) {
+                // 悬停首行:行底高亮 + 说明行显示近 7/30 天关键数字
+                OverviewRankingsCard(
+                    rankings: data.rankings, skillRankings: data.skills, range: .month,
+                    previewRowId: data.rankings.models.first?.id,
+                    previewTextOverride: "近 7 天 84M · 近 30 天 524M · 30 天 API 等价 $54.50 · 活跃 10 天")
+            }
+            .padding(14)
+        }
+    }
+
+    private static func rankingsUnpricedFixture() -> some View {
+        let data = rankingsFixtureData()
+        return ScrollView {
+            VStack(spacing: 12) {
+                // 悬停缺价模型:说明行明示缺价,不显示 $0.00
+                OverviewRankingsCard(
+                    rankings: data.rankings, skillRankings: data.skills, range: .month,
+                    previewRowId: data.rankings.models.dropFirst().first?.id,
+                    previewTextOverride: "近 7 天 12M · 近 30 天 96M · 30 天 API 等价缺价 · 活跃 18 天")
+            }
+            .padding(14)
+        }
+    }
+
+    private static func rankingsIdleFixture() -> some View {
+        let data = rankingsFixtureData()
+        return ScrollView {
+            VStack(spacing: 12) {
+                // 未悬停:说明行显示占位提示,与悬停态占同一行高,版面不跳
+                OverviewRankingsCard(
+                    rankings: data.rankings, skillRankings: data.skills, range: .month)
+            }
+            .padding(14)
+        }
+    }
+
     // 用法：TokenMeter --ui-render=<dir>。为每个页面在亮/暗两种外观下
     // 生成 <page>-<appearance>.png 后退出。窗口放在屏幕外，用户无感。
     private func runUIRender(outputPath: String) {
@@ -486,17 +546,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("settings-section-tools", hosting(
                 SettingsView(onBack: {}, initialSection: .tools), height: 1400)),
             // RootView 自钉 420×600，长视口需直接 host 总览页本体
+            // (高度含模型榜悬停说明行的余量)
             ("overview-full", hosting(
                 OverviewView(
                     range: .month, sources: Provider.allCases,
                     onOpenSource: { _ in }, onSettings: {}),
-                height: 2200)),
+                height: 2230)),
             // 1D 档总览:hero 的"今日 vs 近 7 天日均"等只在 1D 出现
             ("overview-day-full", hosting(
                 OverviewView(
                     range: .day, sources: Provider.allCases,
                     onOpenSource: { _ in }, onSettings: {}),
-                height: 2200)),
+                height: 2230)),
             // 来源页整页高度导出:600pt 视口下滚动区折叠线以下的内容
             // (如历史环比卡)在普通页面渲染里永远看不到
             ("claude-full", hosting(
@@ -518,8 +579,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 额度节奏/余额可用天数的合成数据页:本机未必有实时配额与平台消费,
             // 用固定快照覆盖"会提前用完 / 撑得到重置 / 余额偏低"各分支
             ("pace-fixture", hosting(Self.paceFixture(), height: 1100)),
-            ("cost-fixture", hosting(Self.costFixture(), height: 2920)),
+            ("cost-fixture", hosting(Self.costFixture(), height: 2940)),
             ("model-detail-fixture", hosting(Self.modelDetailFixture(), height: 2400)),
+            // 模型榜悬停预览的合成数据页:离屏渲染无法模拟指针悬停,
+            // 用 previewRowId/previewTextOverride 强制某行进入悬停态(行高亮 +
+            // 说明行固定文案);取数与拼串由单元测试覆盖,每页单卡防状态串扰
+            ("rankings-preview-fixture", hosting(Self.rankingsPreviewFixture(), height: 560)),
+            ("rankings-unpriced-fixture", hosting(Self.rankingsUnpricedFixture(), height: 560)),
+            ("rankings-idle-fixture", hosting(Self.rankingsIdleFixture(), height: 560)),
             // 热力图 13|26 周档合成数据页:本机留存未必覆盖 26 周,
             // 用确定性周节律验证双倍列数下的格宽收窄、月份标签、脚注与翻页态
             ("heatmap-fixture", hosting(Self.heatmapFixture(), height: 780)),
