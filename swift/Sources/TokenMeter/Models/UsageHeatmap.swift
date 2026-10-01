@@ -16,6 +16,16 @@ enum UsageHeatmap {
         let monthLabel: String?  // 与前一列月份不同时给出,如 "9月"
     }
 
+    // 周视图格:把一周的日格折成一块。深浅按非零周合计的分位分档
+    // (与日视图同一套分位逻辑,只是分位样本换成周合计)。
+    struct WeekCell: Equatable {
+        let weekOf: String       // 该周周一日期键
+        let total: Int           // 周内合计
+        let level: Int           // 0=无用量,1...4 逐档加深
+        let usd: Double          // 周内 API 等价合计;0 = 无计价金额
+        let monthLabel: String?
+    }
+
     // 周内节律:窗口内该星期几的日均。分母是出现次数而非有量天数——
     // 休整天计入分母,反映"这一天通常用多少"而不是"用的时候有多猛"。
     struct WeekdayStat: Equatable {
@@ -131,6 +141,37 @@ enum UsageHeatmap {
             text += " · \(Fmt.usd(apiValue))"
         }
         return text
+    }
+
+    /// 周格悬停说明：周（周一日期）· 周合计 Token，有金额时追加美元金额。
+    static func weekHelpText(weekOf: String, total: Int, apiValue: Double?) -> String {
+        var text = "\(Fmt.mmdd(weekOf))周 · \(Fmt.tokensShort(total))"
+        if let apiValue, apiValue > 0 {
+            text += " · \(Fmt.usd(apiValue))"
+        }
+        return text
+    }
+
+    /// 周视图：把日历格的周列折成逐周一块，周合计参与分位分档；
+    /// apiValues 为 dailyAPIValues 的逐日金额，折成周内合计。
+    static func weeklyCells(
+        from columns: [WeekColumn],
+        apiValues: [String: Double] = [:]
+    ) -> [WeekCell] {
+        let totals = columns.map { column in
+            column.cells.reduce(0) { $0 + $1.total }
+        }
+        let thresholds = quantileThresholds(totals)
+        return columns.indices.map { index in
+            let column = columns[index]
+            let usd = column.cells.reduce(0.0) { $0 + (apiValues[$1.date] ?? 0) }
+            return WeekCell(
+                weekOf: column.weekOf,
+                total: totals[index],
+                level: level(for: totals[index], thresholds: thresholds),
+                usd: usd,
+                monthLabel: column.monthLabel)
+        }
     }
 
     static func window(

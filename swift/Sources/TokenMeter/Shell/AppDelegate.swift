@@ -142,6 +142,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         .padding(14)
     }
 
+    // 周视图单卡成页:渲染管线会同时建活所有页面窗口,同一 VStack 里
+    // 多张同类型热力图卡的状态会在布局稳定前串读(网格拿到兄弟卡的档,
+    // 脚注却正确),真实 App 每屏只有一张卡不受影响;夹具里每页只放一张。
+    private static func heatmapWeekFixture() -> some View {
+        heatmapWeekCard(initialSpan: .quarter)
+    }
+
+    private static func heatmapWeekHalfFixture() -> some View {
+        heatmapWeekCard(initialSpan: .half)
+    }
+
+    private static func heatmapWeekCard(initialSpan: OverviewHeatmapCard.Span) -> some View {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        var days: [HistoryStore.DayPoint] = []
+        for offset in stride(from: 189, through: 0, by: -1) {
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: today),
+                  offset % 17 != 3
+            else { continue }
+            let weekday = calendar.component(.weekday, from: date)
+            let base = [15, 60, 45, 70, 55, 40, 10][weekday - 1]
+            let surge = (offset / 28) % 3 == 0 ? 40 : 0
+            days.append(HistoryStore.DayPoint(
+                date: DateUtil.key(date),
+                bySource: [.claude: (base + surge) * 1_000_000],
+                cost: 0))
+        }
+        return VStack(spacing: 12) {
+            OverviewHeatmapCard(
+                history: days, participants: [.claude, .codex],
+                initialSpan: initialSpan, initialGranularity: .week)
+        }
+        .padding(14)
+    }
+
     private static func paceFixture() -> some View {
         let now = Date()
         let hour: TimeInterval = 3600
@@ -488,6 +523,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 热力图 13|26 周档合成数据页:本机留存未必覆盖 26 周,
             // 用确定性周节律验证双倍列数下的格宽收窄、月份标签、脚注与翻页态
             ("heatmap-fixture", hosting(Self.heatmapFixture(), height: 780)),
+            ("heatmap-week-fixture", hosting(Self.heatmapWeekFixture(), height: 380)),
+            ("heatmap-week-half-fixture", hosting(Self.heatmapWeekHalfFixture(), height: 380)),
         ]
 
         var windows: [NSWindow] = []

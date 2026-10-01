@@ -63,6 +63,34 @@ final class UsageHeatmapTests: XCTestCase {
         XCTAssertEqual(columns[1].cells.last?.weekday, 6)    // 周五
     }
 
+    func testWeeklyCellsFoldColumnsAndRequantizeByWeekTotals() {
+        // windowWeeks=2 → 9/12–9/25:残周(0) + 整周 30 + 到周五的残周 180;
+        // 分位样本换成周合计后重算档位,金额按周内逐日累加
+        let columns = window([
+            day("2026-09-14", claude: 10), day("2026-09-15", claude: 20),
+            day("2026-09-21", claude: 30), day("2026-09-22", claude: 0),
+            day("2026-09-23", claude: 40), day("2026-09-24", claude: 50),
+            day("2026-09-25", claude: 60),
+        ], windowWeeks: 2)
+        let cells = UsageHeatmap.weeklyCells(from: columns, apiValues: [
+            "2026-09-15": 1.5, "2026-09-21": 2.0, "2026-09-25": 0.5,
+        ])
+        XCTAssertEqual(cells.map(\.weekOf), ["2026-09-07", "2026-09-14", "2026-09-21"])
+        XCTAssertEqual(cells.map(\.total), [0, 30, 180])
+        // 非零周合计 [30, 180] → 阈值 30/180/180:最大值与 q2/q3 打平,
+        // 档位封在 2(与日视图同款分位行为,样本少时顶档压不上去)
+        XCTAssertEqual(cells.map(\.level), [0, 1, 2])
+        XCTAssertEqual(cells.map(\.usd), [0, 1.5, 2.5])
+        XCTAssertEqual(cells[0].monthLabel, "9月")
+        XCTAssertNil(cells[1].monthLabel)
+        XCTAssertEqual(
+            UsageHeatmap.weekHelpText(weekOf: "2026-09-14", total: 30, apiValue: 1.5),
+            "9/14周 · 30 · $1.50")
+        XCTAssertEqual(
+            UsageHeatmap.weekHelpText(weekOf: "2026-09-14", total: 30, apiValue: 0),
+            "9/14周 · 30")
+    }
+
     func testHalfYearWindowSpans27Columns() {
         // 26 周档(半年档):起点 3/28(周六),首列六/日两天,共 27 列
         let columns = window([day("2026-09-25", claude: 100)], windowWeeks: 26)

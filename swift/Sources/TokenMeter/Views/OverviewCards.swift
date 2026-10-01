@@ -1271,7 +1271,9 @@ struct OverviewCompareCard: View {
 
 // 近 13/26 周用量热力图：周为列、周一到周日为行，颜色越深当日合计越大；
 // 可按周翻页回看更早历史（上限为最早数据，颜色分档跨页可比）。
-// 纯本机按天历史渲染，悬停查看当日数值。
+// 「日|周」粒度切换：周档把每天的格子折成逐周一块（周合计参与分位分档），
+// 看更长跨度的周合计走势；翻页与 13|26 周窗口两档共用。
+// 纯本机按天历史渲染，悬停查看当日/当周数值。
 struct OverviewHeatmapCard: View {
     // 热力图窗口档位:13 周为默认档;26 周档格宽收窄到 11pt 以容纳双倍列数
     enum Span: Int, CaseIterable {
@@ -1281,9 +1283,16 @@ struct OverviewHeatmapCard: View {
         var title: String { "\(rawValue)周" }
     }
 
+    // 粒度:日 = 日历格;周 = 每周折成一块的周合计条
+    enum Granularity: String, CaseIterable {
+        case day = "日"
+        case week = "周"
+    }
+
     let history: [HistoryStore.DayPoint]
     let participants: Set<HistorySource>
     @State private var span: Span
+    @State private var granularity: Granularity
     @State private var hoverWeekday: String?
     // 按周翻页:0 = 最近(终点今天),k = 整体前移 k 周;上限由最早数据决定
     @State private var weekOffset: Int
@@ -1292,11 +1301,13 @@ struct OverviewHeatmapCard: View {
         history: [HistoryStore.DayPoint],
         participants: Set<HistorySource>,
         initialSpan: Span = .quarter,
+        initialGranularity: Granularity = .day,
         initialWeekOffset: Int = 0
     ) {
         self.history = history
         self.participants = participants
         _span = State(initialValue: initialSpan)
+        _granularity = State(initialValue: initialGranularity)
         _weekOffset = State(initialValue: initialWeekOffset)
     }
 
@@ -1335,6 +1346,14 @@ struct OverviewHeatmapCard: View {
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
                     weekNavigator(columns: columns, maxOffset: maxOffset)
+                    Picker("粒度", selection: $granularity) {
+                        ForEach(Granularity.allCases, id: \.self) { item in
+                            Text(item.rawValue).tag(item)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .controlSize(.mini)
+                    .frame(width: 40)
                     Picker("热力图窗口", selection: $span) {
                         ForEach(OverviewHeatmapCard.Span.allCases, id: \.self) { item in
                             Text(item.title).tag(item)
@@ -1348,7 +1367,11 @@ struct OverviewHeatmapCard: View {
                     Text("近 \(span.rawValue) 周暂无 Coding 用量记录")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 } else {
-                    grid(columns, apiValues: apiValues)
+                    if granularity == .week {
+                        weekStrip(UsageHeatmap.weeklyCells(from: columns, apiValues: apiValues))
+                    } else {
+                        grid(columns, apiValues: apiValues)
+                    }
                     rhythmChart
                     HStack(spacing: 4) {
                         Text("少")
@@ -1365,9 +1388,7 @@ struct OverviewHeatmapCard: View {
                                 .font(Theme.footnoteFont).foregroundStyle(.tertiary)
                         }
                         Spacer(minLength: 0)
-                        Text(weekOffset == 0
-                             ? "近 \(span.rawValue) 周 · 悬停查值 · 描边为今天"
-                             : "悬停查值")
+                        Text(footnoteText)
                             .font(Theme.footnoteFont).foregroundStyle(.tertiary)
                     }
                 }
@@ -1430,6 +1451,55 @@ struct OverviewHeatmapCard: View {
                 }
             }
             .disabled(weekOffset == 0)
+        }
+    }
+
+    private var footnoteText: String {
+        if granularity == .week {
+            return weekOffset == 0
+                ? "近 \(span.rawValue) 周 · 周合计 · 悬停查值 · 描边为本周"
+                : "周合计 · 悬停查值"
+        }
+        return weekOffset == 0
+            ? "近 \(span.rawValue) 周 · 悬停查值 · 描边为今天"
+            : "悬停查值"
+    }
+
+    // 周视图:每周折成一块纵向长条,高度与日历格的整列一致(切换不跳动);
+    // 颜色按周合计的分位分档,月份标签与日视图同一列对齐
+    private func weekStrip(_ cells: [UsageHeatmap.WeekCell]) -> some View {
+        let thisWeek = UsageHeatmap.mondayKey(of: Date(), calendar: .current)
+        return HStack(alignment: .top, spacing: 6) {
+            Color.clear.frame(width: 12, height: 1)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 2) {
+                    ForEach(cells, id: \.weekOf) { cell in
+                        Text(cell.monthLabel ?? " ")
+                            .font(.system(size: 9)).foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(width: cellWidth, height: 10, alignment: .leading)
+                    }
+                }
+                HStack(spacing: 2) {
+                    ForEach(cells, id: \.weekOf) { cell in
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Self.levelFills[cell.level])
+                            .overlay {
+                                if weekOffset == 0, cell.weekOf == thisWeek {
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .stroke(Color.primary.opacity(0.55), lineWidth: 1)
+                                }
+                            }
+                            .help(UsageHeatmap.weekHelpText(
+                                weekOf: cell.weekOf, total: cell.total,
+                                apiValue: cell.usd))
+                            .accessibilityLabel(UsageHeatmap.weekHelpText(
+                                weekOf: cell.weekOf, total: cell.total,
+                                apiValue: cell.usd))
+                            .frame(width: cellWidth, height: 89)
+                    }
+                }
+            }
         }
     }
 
