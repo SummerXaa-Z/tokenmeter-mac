@@ -528,6 +528,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private static func rankingsSortFixture(
+        sort: OverviewRankingsCard.ModelSort,
+        value: @escaping (String) -> Double
+    ) -> some View {
+        let data = rankingsFixtureData()
+        return ScrollView {
+            VStack(spacing: 12) {
+                OverviewRankingsCard(
+                    rankings: data.rankings, skillRankings: data.skills, range: .month,
+                    previewSort: sort,
+                    sortValueFor: { _, model, _ in value(model) })
+            }
+            .padding(14)
+        }
+    }
+
+    private static func rankingsSortUSDFixture() -> some View {
+        // 等价档:缺价的 mystery 沉底,等价高的 gpt-5.4 升到第 2
+        rankingsSortFixture(sort: .usd) { model in
+            switch model {
+            case "opus-5-5": return 54.5
+            case "gpt-5.4 (xhigh)": return 61.2
+            default: return 0
+            }
+        }
+    }
+
+    private static func rankingsSortWeekFixture() -> some View {
+        // 近7天档:榜尾 gpt-5.4 逆袭登顶,opus 断流沉底
+        rankingsSortFixture(sort: .week) { model in
+            switch model {
+            case "opus-5-5": return 0
+            case "mystery-model": return 40_000_000
+            case "gpt-5.4 (xhigh)": return 84_000_000
+            default: return 0
+            }
+        }
+    }
+
     private static func rankingsSparklineFixture() -> some View {
         let data = rankingsFixtureData()
         let calendar = Calendar.current
@@ -660,6 +699,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Self.rankingsSkillPreviewFixture(), height: 560)),
             ("rankings-skill-spark-fixture", hosting(
                 Self.rankingsSkillSparkFixture(), height: 560)),
+            ("rankings-sort-usd-fixture", hosting(Self.rankingsSortUSDFixture(), height: 560)),
+            ("rankings-sort-week-fixture", hosting(Self.rankingsSortWeekFixture(), height: 560)),
             ("rankings-sparkline-fixture", hosting(
                 Self.rankingsSparklineFixture(), height: 560)),
             // 热力图 13|26 周档合成数据页:本机留存未必覆盖 26 周,

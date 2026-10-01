@@ -678,6 +678,10 @@ struct OverviewRankingsCard: View {
     var skillSparkFor: ((String) -> [(weekOf: String, count: Int)])? = nil
     // 渲染夹具:强制某行迷你条进入某周悬停态(说明行显示单周文案)
     var previewSkillSparkWeek: (name: String, weekIndex: Int)? = nil
+    // 渲染夹具:强制排序档(离屏渲染无法模拟点选);
+    // 等价/近7天档的排序值也可注入,渲染机真实留存不可预测
+    var previewSort: ModelSort? = nil
+    var sortValueFor: ((HistorySource, String, ModelSort) -> Double)? = nil
     @EnvironmentObject private var state: AppState
     @State private var hoverEntry: PersonalUsageRankings.ModelEntry?
     @State private var hoverSkill: PersonalSkillRankings.Entry?
@@ -685,6 +689,52 @@ struct OverviewRankingsCard: View {
     @State private var sparkDay: (model: String, dayIndex: Int)?
     // Skill 迷你条悬停对准的周序号
     @State private var skillSparkWeek: (name: String, weekIndex: Int)?
+    @State private var sort: ModelSort = .usage
+
+    /// 模型榜排序档:用量=所选范围 Token(默认);等价/近7天来自
+    /// 近 30 天明细留存(与悬停数字同管线,缺价模型的等价按 0 沉底)
+    enum ModelSort: String, CaseIterable {
+        case usage = "用量"
+        case usd = "等价"
+        case week = "近7天"
+
+        var help: String {
+            switch self {
+            case .usage: return "按所选范围 Token 合计排序（默认）"
+            case .usd: return "按近 30 天 API 等价美元排序（缺价模型沉底）"
+            case .week: return "按近 7 天 Token 排序（近 30 天断流的行沉底）"
+            }
+        }
+    }
+
+    private var activeSort: ModelSort { previewSort ?? sort }
+
+    /// 稳定降序排序(键相等保持原顺序)。纯函数供单元测试。
+    static func sortedBySortValue(
+        _ models: [PersonalUsageRankings.ModelEntry],
+        value: (PersonalUsageRankings.ModelEntry) -> Double
+    ) -> [PersonalUsageRankings.ModelEntry] {
+        models.enumerated().sorted { lhs, rhs in
+            let left = value(lhs.element)
+            let right = value(rhs.element)
+            return left != right ? left > right : lhs.offset < rhs.offset
+        }.map(\.element)
+    }
+
+    /// 当前排序档下的完整榜单(排序作用于全量,再由调用方取前 5,
+    /// 避免「范围用量第 6 名」在别的维度下进不了榜)
+    private var sortedModels: [PersonalUsageRankings.ModelEntry] {
+        if activeSort == .usage { return rankings.models }
+        return Self.sortedBySortValue(rankings.models) { entry in
+            if let sortValueFor { return sortValueFor(entry.source, entry.model, activeSort) }
+            guard let summary = CodingModelDetail.summary(
+                source: entry.source, model: entry.model,
+                liveDayModels: CodingModelDetailView.liveDayModels(entry.source, state: state),
+                windowDays: 30)
+            else { return -1 }
+            return activeSort == .usd ? summary.totalUSD : Double(summary.tally.total)
+        }
+    }
 
     /// 迷你趋势柱的布局矩形(底对齐):峰值满高、零值零高、
     /// 非零值保底 1.5pt 可见。纯函数供单元测试。
@@ -784,11 +834,23 @@ struct OverviewRankingsCard: View {
                 Label("模型与 Skills", systemImage: "list.number")
                     .font(.system(size: 12, weight: .semibold))
 
-                header("模型榜", detail: "\(range.scopeTitle) · 工具与模型分开统计")
+                HStack {
+                    Text("模型榜").font(.system(size: 11, weight: .semibold))
+                    Spacer()
+                    Picker("排序", selection: $sort) {
+                        ForEach(ModelSort.allCases, id: \.self) { option in
+                            Text(option.rawValue).tag(option)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .controlSize(.mini)
+                    .frame(width: 132)
+                    .help("用量 = \(range.scopeTitle)合计；等价 / 近7天来自近 30 天明细留存")
+                }
                 if rankings.models.isEmpty {
                     empty("刷新任一本地用量来源后生成")
                 } else {
-                    ForEach(Array(rankings.models.prefix(5).enumerated()), id: \.element.id) {
+                    ForEach(Array(sortedModels.prefix(5).enumerated()), id: \.element.id) {
                         index, entry in
                         Button {
                             onOpenModel(entry.source, entry.model)
@@ -824,7 +886,7 @@ struct OverviewRankingsCard: View {
                     modelHoverCaption
                 }
 
-                Text("模型名右侧为其当前生效的参考单价（输入 / 输出，每百万 tokens，缺价不标）；行尾小柱图为该模型近 30 天逐日 Token 走势（口径同悬停数字，近 30 天断流的行不画）。悬停模型行先看近 7 / 30 天关键数字，点击进入详情页（7|30|90 天可切）。")
+                Text("榜默认按所选范围用量排序，可切近 30 天 API 等价或近 7 天用量（无 30 天明细的行沉底）。模型名右侧为其当前生效的参考单价（输入 / 输出，每百万 tokens，缺价不标）；行尾小柱图为该模型近 30 天逐日 Token 走势（口径同悬停数字，断流行不画）。悬停模型行先看近 7 / 30 天关键数字，点击进入详情页（7|30|90 天可切）。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
                 Text("模型榜保留采集来源；Cursor 当前只有订阅周期聚合，暂不混入模型榜。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)

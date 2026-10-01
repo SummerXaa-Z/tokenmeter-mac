@@ -154,4 +154,32 @@ final class RankingsHoverPreviewTests: XCTestCase {
             OverviewRankingsCard.sparklineDayText(date: "2026-10-01", tokens: 0),
             "10/1（周四） · 无用量")
     }
+
+    // MARK: - 模型榜排序
+
+    private func modelEntry(_ model: String, tokens: Int) -> PersonalUsageRankings.ModelEntry {
+        PersonalUsageRankings.ModelEntry(
+            source: .claude, model: model, totalTokens: tokens, share: 0.5)
+    }
+
+    func testSortedBySortValueDescendingStableAndFloor() {
+        let models = [
+            modelEntry("opus-5-5", tokens: 524),
+            modelEntry("mystery-model", tokens: 96),
+            modelEntry("gpt-5.4", tokens: 86),
+        ]
+        // 降序重排:近 7 天 gpt 登顶、opus 断流沉底
+        let byWeek = OverviewRankingsCard.sortedBySortValue(models) { entry in
+            entry.model == "gpt-5.4" ? 84.0 : (entry.model == "mystery-model" ? 40.0 : 0)
+        }
+        XCTAssertEqual(byWeek.map(\.model), ["gpt-5.4", "mystery-model", "opus-5-5"])
+        // 键相等保持原顺序(稳定排序)
+        let ties = OverviewRankingsCard.sortedBySortValue(models) { _ in 3.0 }
+        XCTAssertEqual(ties.map(\.model), ["opus-5-5", "mystery-model", "gpt-5.4"])
+        // 混合相等键:有值的在前,同值内保持原序
+        let mixed = OverviewRankingsCard.sortedBySortValue(models) { entry in
+            entry.model == "mystery-model" ? 10.0 : 0
+        }
+        XCTAssertEqual(mixed.map(\.model), ["mystery-model", "opus-5-5", "gpt-5.4"])
+    }
 }
