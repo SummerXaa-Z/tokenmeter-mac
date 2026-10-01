@@ -2018,7 +2018,7 @@ struct OverviewHeatmapCard: View {
     private var footnoteText: String {
         if granularity == .month {
             return monthOffset == 0
-                ? "近 \(monthSpan.rawValue) 个月 · 月合计 · 悬停查值 · 描边为本月"
+                ? "近 \(monthSpan.rawValue) 个月 · 月合计 · 悬停查值 · 描边为本月（进行中）"
                 : "月合计 · 悬停查值"
         }
         if granularity == .week {
@@ -2050,20 +2050,25 @@ struct OverviewHeatmapCard: View {
                 }
                 HStack(spacing: monthGap) {
                     ForEach(cells, id: \.monthKey) { cell in
+                        let isCurrent = monthOffset == 0 && cell.monthKey == currentMonth
                         RoundedRectangle(cornerRadius: 2)
                             .fill(Self.levelFills[cell.level])
                             .overlay {
-                                if monthOffset == 0, cell.monthKey == currentMonth {
+                                if isCurrent {
+                                    // 虚线描边 = 月份进行中(统计至今天),
+                                    // 与图表悬停参考线同款虚线语汇;完整月无描边
                                     RoundedRectangle(cornerRadius: 2)
-                                        .stroke(Color.primary.opacity(0.55), lineWidth: 1)
+                                        .stroke(
+                                            Color.primary.opacity(0.55),
+                                            style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
                                 }
                             }
                             .help(UsageHeatmap.monthHelpText(
                                 monthKey: cell.monthKey, total: cell.total,
-                                apiValue: cell.usd))
+                                apiValue: cell.usd, inProgress: isCurrent))
                             .accessibilityLabel(UsageHeatmap.monthHelpText(
                                 monthKey: cell.monthKey, total: cell.total,
-                                apiValue: cell.usd))
+                                apiValue: cell.usd, inProgress: isCurrent))
                             .frame(width: monthBarWidth, height: 89)
                     }
                 }

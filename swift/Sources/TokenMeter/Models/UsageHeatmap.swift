@@ -253,8 +253,15 @@ enum UsageHeatmap {
     }
 
     /// 月格悬停说明：年月 · 月合计 Token，有金额时追加美元金额。
-    /// 月视图动辄跨两年，悬停文案带年份消歧。
-    static func monthHelpText(monthKey: String, total: Int, apiValue: Double?) -> String {
+    /// 月视图动辄跨两年，悬停文案带年份消歧；进行中的当月（仅最近一页）
+    /// 由调用方传 inProgress，明示"统计至今天"——月条按月合计分档着色，
+    /// 没这半句容易把进行中的当月误读成用量骤降。
+    static func monthHelpText(
+        monthKey: String,
+        total: Int,
+        apiValue: Double?,
+        inProgress: Bool = false
+    ) -> String {
         let parts = monthKey.split(separator: "-")
         let title: String
         if parts.count == 2, let year = Int(parts[0]), let month = Int(parts[1]) {
@@ -262,7 +269,9 @@ enum UsageHeatmap {
         } else {
             title = monthKey
         }
-        var text = "\(title) · \(Fmt.tokensShort(total))"
+        var text = title
+        if inProgress { text += "（进行中，统计至今天）" }
+        text += " · \(Fmt.tokensShort(total))"
         if let apiValue, apiValue > 0 {
             text += " · \(Fmt.usd(apiValue))"
         }

@@ -471,6 +471,15 @@ final class UsageHeatmapTests: XCTestCase {
         XCTAssertEqual(
             UsageHeatmap.monthHelpText(monthKey: "2025-12", total: 500, apiValue: nil),
             "2025年12月 · 500")
+        // 进行中的当月:标题后明示统计至今天,防止把进行中月份读成骤降
+        XCTAssertEqual(
+            UsageHeatmap.monthHelpText(
+                monthKey: "2026-10", total: 36_000_000, apiValue: 4.5, inProgress: true),
+            "2026年10月（进行中，统计至今天） · 36M · $4.50")
+        XCTAssertEqual(
+            UsageHeatmap.monthHelpText(
+                monthKey: "2026-10", total: 500, apiValue: nil, inProgress: true),
+            "2026年10月（进行中，统计至今天） · 500")
     }
 
     func testWeekdayAveragesFollowDateRange() {
