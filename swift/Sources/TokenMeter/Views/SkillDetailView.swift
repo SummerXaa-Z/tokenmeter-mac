@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import AppKit
 
 // Skill 下钻页：从总览 Skills 榜点入。范围统计直接携带所点行的 Entry
 //（与点击时榜单所见完全一致，不重算），近 13 周逐周调用次数为全宽柱图
@@ -86,8 +87,23 @@ struct SkillDetailView: View {
         let active = points.first { $0.label == hoverWeek } ?? points.last
         return Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("近 13 周调用次数", systemImage: "chart.bar.fill")
-                    .font(.system(size: 12, weight: .semibold))
+                HStack {
+                    Label("近 13 周调用次数", systemImage: "chart.bar.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    // 与热力图/模型榜/Skills 榜导出同款入口；卡只在有
+                    // 13 周数据时出现，按钮无需禁用态
+                    Button {
+                        exportCSV(weekly)
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("导出近 13 周走势 CSV（逐周次数，附范围与来源口径行）")
+                    .accessibilityLabel("导出 Skill 走势 CSV")
+                }
                 HStack(spacing: 6) {
                     Text(active?.label ?? "")
                         .font(Theme.rowTitleFont)
@@ -139,6 +155,31 @@ struct SkillDetailView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 导出近 13 周走势 CSV；保存面板流程与模型榜/Skills 榜导出同款，
+    /// 写盘失败弹系统错误框。来源拆解复用榜内悬停文案。
+    private func exportCSV(_ weekly: [(weekOf: String, count: Int)]) {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSSavePanel()
+        panel.title = "导出 Skill 走势 CSV"
+        panel.nameFieldStringValue = SkillDetailCSVExport.suggestedFilename(skill: entry.name)
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowedContentTypes = [.commaSeparatedText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try SkillDetailCSVExport.makeCSV(
+                entry: entry,
+                weekly: weekly,
+                sourceNote: OverviewRankingsCard.hoverSkillText(for: entry),
+                scopeTitle: rangeTitle
+            ).write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.messageText = "导出 Skill 走势 CSV 失败"
+            alert.runModal()
+        }
     }
 
     /// 周标签：与榜内迷你条悬停文案同一写法（mmdd + 周）

@@ -82,6 +82,7 @@
 		871E720D9F3FF8A32BFBDBB4 /* SkillRankingCSVExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D713A0E68D4B58162A0CCC6 /* SkillRankingCSVExportTests.swift */; };
 		873DB3C644359CE2D1C9B0FD /* SkillUsageTrendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EEC24E82A38D4C48A2F91D2 /* SkillUsageTrendTests.swift */; };
 		87C9A2CFDC42A7DD9139EB1B /* OverviewSourceSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82107C1666FA3E1EBD6FADB /* OverviewSourceSelection.swift */; };
+		8D62E77AF164BA5E3D913428 /* SkillDetailCSVExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08877AC10BF772B7E2C5EFC7 /* SkillDetailCSVExport.swift */; };
 		8F0C6B1D77FB3247BF010F05 /* ZhipuQuotaServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 080188017FF759CF86F06172 /* ZhipuQuotaServiceTests.swift */; };
 		9130F93DD0C058FA7B74774F /* CursorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB5C8B4A29701DC68C925D9 /* CursorView.swift */; };
 		9131EAE8DCDB12D0F6D6261D /* CollectAttemptLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA044209B655A0E78CEA3150 /* CollectAttemptLogTests.swift */; };
@@ -94,6 +95,7 @@
 		9C2E867510CA8A5D712AF9C6 /* CodingModelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372739A9480AFBF43B560A05 /* CodingModelDetailView.swift */; };
 		9C4B3B44EC1921CAE309E26E /* OpenCodeUsageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10C5D68C952CC99005CB4E46 /* OpenCodeUsageTests.swift */; };
 		9D36C76D986B393BB51BE38C /* KimiView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3A6CC9B0D4EEEB3CFAD389D /* KimiView.swift */; };
+		9D4D28724A72EEB26224A565 /* SkillDetailCSVExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26205B31CF6BA42553338CAA /* SkillDetailCSVExportTests.swift */; };
 		9E32529492F2279C8A84BC5A /* ModelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE4C8E58EADDC75850B46AE4 /* ModelDetailView.swift */; };
 		9F762C6D7503AD31ACDB354E /* SourceDashboardComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE348B8A6F5BBC274C411539 /* SourceDashboardComponents.swift */; };
 		9FE335AE9AF7F517C707217C /* ModelUsageHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0260716BFC52AA0CE7823EA6 /* ModelUsageHistoryTests.swift */; };
@@ -162,6 +164,7 @@
 		061B7355FA469C3D6652B6B1 /* OverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewView.swift; sourceTree = "<group>"; };
 		066AB6165D30EBC039D73A14 /* AppStateRefreshTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateRefreshTests.swift; sourceTree = "<group>"; };
 		080188017FF759CF86F06172 /* ZhipuQuotaServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZhipuQuotaServiceTests.swift; sourceTree = "<group>"; };
+		08877AC10BF772B7E2C5EFC7 /* SkillDetailCSVExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillDetailCSVExport.swift; sourceTree = "<group>"; };
 		0A96A717B32EC8A930DC3947 /* ChartHover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartHover.swift; sourceTree = "<group>"; };
 		0AB5C8B4A29701DC68C925D9 /* CursorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorView.swift; sourceTree = "<group>"; };
 		0CBDEBD7A8663EF892B78924 /* CodingModelDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodingModelDetail.swift; sourceTree = "<group>"; };
@@ -173,6 +176,7 @@
 		1E0277D82C8B231C115599EB /* PersonalSkillRankingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalSkillRankingsTests.swift; sourceTree = "<group>"; };
 		21D9FAD2975109A06D1A9B98 /* HistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryStore.swift; sourceTree = "<group>"; };
 		22064562B364186A960DC06C /* NotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotifierTests.swift; sourceTree = "<group>"; };
+		26205B31CF6BA42553338CAA /* SkillDetailCSVExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillDetailCSVExportTests.swift; sourceTree = "<group>"; };
 		2629AD65E076D2C7A7CBB0FC /* SubscriptionPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionPlan.swift; sourceTree = "<group>"; };
 		27C0AE619FF776948DDE5842 /* OverviewSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewSnapshotTests.swift; sourceTree = "<group>"; };
 		2B59876F53BE2581617A36DA /* TokenMeterTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TokenMeterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -405,6 +409,7 @@
 				D4E17B42B074FE9B38451148 /* QuotaPaceTests.swift */,
 				8834DFDCCF5EAD81A03BD730 /* QwenCodeUsageTests.swift */,
 				4238C0B2D1E4556D6B6D9C94 /* RankingsHoverPreviewTests.swift */,
+				26205B31CF6BA42553338CAA /* SkillDetailCSVExportTests.swift */,
 				5D713A0E68D4B58162A0CCC6 /* SkillRankingCSVExportTests.swift */,
 				4EEC24E82A38D4C48A2F91D2 /* SkillUsageTrendTests.swift */,
 				0087DD57EDD330A00C55AEB2 /* SourceAPICostTests.swift */,
@@ -471,6 +476,7 @@
 				DD11D2DC6163A46FA5BD2D91 /* PersonalUsageProfile.swift */,
 				E13A57349BE9B8FC76B5A9D2 /* PersonalUsageRankings.swift */,
 				DF3C50BBEA971A783811E602 /* QuotaPace.swift */,
+				08877AC10BF772B7E2C5EFC7 /* SkillDetailCSVExport.swift */,
 				45C6BF73F119A341F9B01E8E /* SkillRankingCSVExport.swift */,
 				E8F00C8AE1EB5973EE978D88 /* SkillUsageTrend.swift */,
 				2629AD65E076D2C7A7CBB0FC /* SubscriptionPlan.swift */,
@@ -645,6 +651,7 @@
 				BA0F9E5B4851F8D2EFB2E494 /* QuotaPaceTests.swift in Sources */,
 				0529AE6F8025E874DBE31CA6 /* QwenCodeUsageTests.swift in Sources */,
 				C09E3F2EB4DFF5C9AD4FAC25 /* RankingsHoverPreviewTests.swift in Sources */,
+				9D4D28724A72EEB26224A565 /* SkillDetailCSVExportTests.swift in Sources */,
 				871E720D9F3FF8A32BFBDBB4 /* SkillRankingCSVExportTests.swift in Sources */,
 				873DB3C644359CE2D1C9B0FD /* SkillUsageTrendTests.swift in Sources */,
 				F40813B2CD34605201547713 /* SourceAPICostTests.swift in Sources */,
@@ -726,6 +733,7 @@
 				652CB7783E44E227E2183D40 /* QwenCodeView.swift in Sources */,
 				099AF48C316A4AEAA44557B0 /* RootView.swift in Sources */,
 				6F61B832C0A969BE3C20F6DC /* SettingsView.swift in Sources */,
+				8D62E77AF164BA5E3D913428 /* SkillDetailCSVExport.swift in Sources */,
 				57A587164158832410D7A4CF /* SkillDetailView.swift in Sources */,
 				E9E982DD90551044A1623ABB /* SkillRankingCSVExport.swift in Sources */,
 				724F811D27BE42FCC499A6E3 /* SkillUsageTrend.swift in Sources */,
