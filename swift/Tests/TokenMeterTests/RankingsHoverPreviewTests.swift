@@ -94,6 +94,35 @@ final class RankingsHoverPreviewTests: XCTestCase {
             "该 Skill 暂无调用记录")
     }
 
+    func testSkillsSourceFilterKeepsOrderAndEmptyPassThrough() {
+        let entries = [
+            PersonalSkillRankings.Entry(
+                name: "pdf", invocationCount: 42, share: 0.62,
+                sources: [
+                    .init(source: .claude, invocationCount: 30),
+                    .init(source: .codex, invocationCount: 12),
+                ]),
+            PersonalSkillRankings.Entry(
+                name: "frontend-design", invocationCount: 26, share: 0.38,
+                sources: [.init(source: .copilot, invocationCount: 26)]),
+            PersonalSkillRankings.Entry(
+                name: "csv", invocationCount: 4, share: 0.06,
+                sources: [.init(source: .claude, invocationCount: 4)]),
+        ]
+        // 不过滤:原样
+        XCTAssertEqual(
+            OverviewRankingsCard.skills(entries, filteredBy: nil).map(\.name),
+            ["pdf", "frontend-design", "csv"])
+        // 筛 Claude:只留含 Claude 的行,榜单顺序不变
+        XCTAssertEqual(
+            OverviewRankingsCard.skills(entries, filteredBy: .claude).map(\.name),
+            ["pdf", "csv"])
+        // 无命中的来源给空榜(界面走"该来源暂无"空态)
+        XCTAssertEqual(OverviewRankingsCard.skills(entries, filteredBy: .gemini), [])
+        // 空榜入参原样穿透
+        XCTAssertEqual(OverviewRankingsCard.skills([], filteredBy: .claude), [])
+    }
+
     // MARK: - 迷你趋势柱布局
 
     func testSparklineBarsNormalizePeakFloorZeroesAndSplitWidth() {

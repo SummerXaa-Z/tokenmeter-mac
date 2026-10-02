@@ -591,6 +591,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private static func rankingsSkillFilterFixture() -> some View {
+        let data = rankingsFixtureData()
+        return ScrollView {
+            VStack(spacing: 12) {
+                // 来源筛选态:头部出现可点清除的筛选胶囊、Claude 徽标激活、
+                // 榜里只剩含 Claude 的行(pdf 只有 Copilot,被筛掉)
+                OverviewRankingsCard(
+                    rankings: data.rankings, skillRankings: data.skills, range: .month,
+                    previewSkillSourceFilter: .claude)
+            }
+            .padding(14)
+        }
+    }
+
     private static func rankingsSkillSparkFixture() -> some View {
         let data = rankingsFixtureData()
         let calendar = Calendar.current
@@ -786,6 +800,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("rankings-idle-fixture", hosting(Self.rankingsIdleFixture(), height: 560)),
             ("rankings-skill-preview-fixture", hosting(
                 Self.rankingsSkillPreviewFixture(), height: 560)),
+            ("rankings-skill-filter-fixture", hosting(
+                Self.rankingsSkillFilterFixture(), height: 560)),
             ("rankings-skill-spark-fixture", hosting(
                 Self.rankingsSkillSparkFixture(), height: 560)),
             ("rankings-sort-usd-fixture", hosting(Self.rankingsSortUSDFixture(), height: 560)),

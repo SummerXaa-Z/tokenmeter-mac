@@ -670,6 +670,8 @@ struct OverviewRankingsCard: View {
     // 渲染夹具:强制某个 Skill 行进入悬停态(Skill 榜纯内存聚合,
     // 悬停文案由夹具数据确定性算出,无需 override)
     var previewSkillId: String? = nil
+    // 渲染夹具:强制 Skills 榜来源筛选(离屏渲染无法模拟点徽标)
+    var previewSkillSourceFilter: HistorySource? = nil
     // 渲染夹具:注入确定性的近 30 天日序列(sparkline 真实取数
     // 来自本机按天留存,离屏渲染不可预测);日期随序列携带,
     // 悬停查日文案才能显示对准日
@@ -688,6 +690,8 @@ struct OverviewRankingsCard: View {
     @EnvironmentObject private var state: AppState
     @State private var hoverEntry: PersonalUsageRankings.ModelEntry?
     @State private var hoverSkill: PersonalSkillRankings.Entry?
+    // Skills 榜来源筛选:点行内来源徽标只看该来源的 Skill,再点还原
+    @State private var skillSourceFilter: HistorySource?
     // 迷你柱悬停对准的日序号(指针在柱图上时优先于行悬停文案)
     @State private var sparkDay: (model: String, dayIndex: Int)?
     // Skill 迷你条悬停对准的周序号
@@ -811,6 +815,18 @@ struct OverviewRankingsCard: View {
     /// 纯函数供单元测试。
     static func skillWeekText(weekOf: String, count: Int) -> String {
         "\(Fmt.mmdd(weekOf))周 · " + (count > 0 ? "\(Fmt.int(count)) 次" : "无调用")
+    }
+
+    /// Skills 榜可见行:来源筛选时只留含该来源的行,榜单顺序不变。
+    /// 纯函数供单元测试。
+    static func skills(
+        _ entries: [PersonalSkillRankings.Entry],
+        filteredBy source: HistorySource?
+    ) -> [PersonalSkillRankings.Entry] {
+        guard let source else { return entries }
+        return entries.filter { entry in
+            entry.sources.contains { $0.source == source }
+        }
     }
 
     /// 各来源实时采集的逐日 Skill 调用(与 dayModels 同窗口同语义)。
@@ -966,11 +982,26 @@ struct OverviewRankingsCard: View {
                 }
 
                 Divider()
-                HStack {
+                HStack(spacing: 6) {
                     Text("Skills 榜").font(.system(size: 11, weight: .semibold))
                     Spacer()
                     Text("\(range.scopeTitle) · 只认明确调用证据")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
+                    // 筛选激活时给一颗可点的清除胶囊(与徽标同色系)
+                    if let filter = activeSkillSourceFilter {
+                        Button {
+                            skillSourceFilter = nil
+                        } label: {
+                            Text("\(filter.overviewName) ×")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(filter.overviewColor)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(filter.overviewColor.opacity(0.14), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .help("清除来源筛选（当前只看 \(filter.overviewName) 的 Skill 调用）")
+                        .accessibilityLabel("清除 Skill 来源筛选")
+                    }
                     // 导出完整 Skills 榜（不只前 5）为 CSV
                     Button {
                         exportSkillsCSV()
@@ -986,8 +1017,10 @@ struct OverviewRankingsCard: View {
                 }
                 if skillRankings.entries.isEmpty {
                     empty("Claude / Codex / Copilot 暂无可确认的 Skill 调用")
+                } else if visibleSkills.isEmpty {
+                    empty("\(activeSkillSourceFilter?.overviewName ?? "") 在该范围内暂无 Skill 调用")
                 } else {
-                    ForEach(Array(skillRankings.entries.prefix(5).enumerated()), id: \.element.id) {
+                    ForEach(Array(visibleSkills.prefix(5).enumerated()), id: \.element.id) {
                         index, entry in
                         Button {
                             onOpenSkill(entry)
@@ -1004,7 +1037,11 @@ struct OverviewRankingsCard: View {
                                     }
                                 },
                                 highlightOverride: previewSkillSparkWeek?.name == entry.name
-                                    ? previewSkillSparkWeek?.weekIndex : nil)
+                                    ? previewSkillSparkWeek?.weekIndex : nil,
+                                onSourceTap: { source in
+                                    skillSourceFilter = skillSourceFilter == source ? nil : source
+                                },
+                                activeFilter: activeSkillSourceFilter)
                         }
                         .buttonStyle(.plain)
                         .help("查看该 Skill 近 13 周调用走势与来源拆解")
@@ -1019,7 +1056,7 @@ struct OverviewRankingsCard: View {
                     skillHoverCaption
                 }
 
-                Text("Claude 统计原生 Skill 工具；Codex 统计工具实际读取标准 SKILL.md；Copilot 统计 skill.invoked。普通消息提及不计入。行尾小条为近 13 周逐周调用次数（悬停查单周）；点击行进入详情页（近 13 周全宽走势与来源拆解）；右上按钮导出完整 Skills 榜 CSV（周列为近 13 周次数，无调用留空）。")
+                Text("Claude 统计原生 Skill 工具；Codex 统计工具实际读取标准 SKILL.md；Copilot 统计 skill.invoked。普通消息提及不计入。行尾小条为近 13 周逐周调用次数（悬停查单周）；点来源徽标只看该来源的 Skill 调用（再点或点头部胶囊还原）；点击行进入详情页（近 13 周全宽走势与来源拆解）；右上按钮导出完整 Skills 榜 CSV（跟随当前来源筛选，周列为近 13 周次数，无调用留空）。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
         }
@@ -1039,7 +1076,7 @@ struct OverviewRankingsCard: View {
         do {
             try SkillRankingCSVExport.makeCSV(
                 rows: exportSkillRows,
-                scopeTitle: range.scopeTitle
+                scopeTitle: exportScopeTitle
             ).write(to: url, atomically: true, encoding: .utf8)
         } catch {
             let alert = NSAlert(error: error)
@@ -1049,7 +1086,8 @@ struct OverviewRankingsCard: View {
     }
 
     private var exportSkillRows: [SkillRankingCSVExport.Row] {
-        skillRankings.entries.enumerated().map { index, entry in
+        // 导出与所见一致:来源筛选时只导该来源的行,口径行注明已筛
+        visibleSkills.enumerated().map { index, entry in
             SkillRankingCSVExport.Row(
                 rank: index + 1,
                 skill: entry.name,
@@ -1060,6 +1098,14 @@ struct OverviewRankingsCard: View {
                     .joined(separator: "、"),
                 weekly: skillWeeklyCounts(name: entry.name))
         }
+    }
+
+    /// 导出口径行里的范围说明:来源筛选激活时注明已筛
+    private var exportScopeTitle: String {
+        if let filter = activeSkillSourceFilter {
+            return "\(range.scopeTitle) · 已筛 \(filter.overviewName)"
+        }
+        return range.scopeTitle
     }
 
     private func empty(_ text: String) -> some View {
@@ -1097,8 +1143,9 @@ struct OverviewRankingsCard: View {
         if let entry = hoverEntry ?? rankings.models.first(where: { $0.id == previewRowId }) {
             return Self.hoverText(for: entry, state: state)
         }
-        // 未悬停:占位提示占住同一行高,悬停时版面不跳
-        return "悬停模型行查看近 7 / 30 天 Token、30 天 API 等价与活跃天数"
+        // 未悬停:占位提示占住同一行高,悬停时版面不跳;附当前排序档,
+        // 切档后说明行自证口径(文案保持单行放得下,长档名也不截断)
+        return "悬停看近 7/30 天 Token、API 等价与活跃天数 · 当前按\(activeSort.rawValue)排序"
     }
 
     /// 迷你趋势的近 30 天日序列(升序、含补零天);夹具注入优先,
@@ -1134,6 +1181,16 @@ struct OverviewRankingsCard: View {
             return skillRankings.entries.first { $0.id == previewSkillId }
         }
         return nil
+    }
+
+    /// 生效中的来源筛选(夹具注入优先);nil = 不过滤
+    private var activeSkillSourceFilter: HistorySource? {
+        previewSkillSourceFilter ?? skillSourceFilter
+    }
+
+    /// 筛选后的 Skills 榜可见行(榜单顺序不变)
+    private var visibleSkills: [PersonalSkillRankings.Entry] {
+        Self.skills(skillRankings.entries, filteredBy: activeSkillSourceFilter)
     }
 
     /// Skills 榜悬停说明行:常驻一行,未悬停时显示占位提示,版面不跳。
@@ -1207,7 +1264,9 @@ struct OverviewRankingsCard: View {
         highlighted: Bool = false,
         weekly: [(weekOf: String, count: Int)]? = nil,
         onWeekHover: ((Int?) -> Void)? = nil,
-        highlightOverride: Int? = nil
+        highlightOverride: Int? = nil,
+        onSourceTap: ((HistorySource) -> Void)? = nil,
+        activeFilter: HistorySource? = nil
     ) -> some View {
         HStack(spacing: 7) {
             rankLabel(rank)
@@ -1216,7 +1275,17 @@ struct OverviewRankingsCard: View {
                 .foregroundStyle(Theme.brand)
             Text(entry.name).font(.system(size: 11, weight: .medium)).lineLimit(1)
             ForEach(Array(entry.sources.prefix(2))) { sourceCount in
-                sourceBadge(sourceCount.source)
+                // 徽标可点:只看该来源的 Skill 调用(再点/点胶囊还原)。
+                // 行本身是 Button(进详情),嵌套 Button 的命中区各自独立。
+                Button {
+                    onSourceTap?(sourceCount.source)
+                } label: {
+                    sourceBadge(
+                        sourceCount.source,
+                        active: sourceCount.source == activeFilter)
+                }
+                .buttonStyle(.plain)
+                .help("只看 \(sourceCount.source.overviewName) 的 Skill 调用")
             }
             if entry.sources.count > 2 {
                 Text("+\(entry.sources.count - 2)")
@@ -1249,12 +1318,12 @@ struct OverviewRankingsCard: View {
             .frame(width: 14)
     }
 
-    private func sourceBadge(_ source: HistorySource) -> some View {
+    private func sourceBadge(_ source: HistorySource, active: Bool = false) -> some View {
         Text(source.overviewName)
-            .font(.system(size: 10, weight: .medium))
+            .font(.system(size: 10, weight: active ? .semibold : .medium))
             .foregroundStyle(source.overviewColor)
             .padding(.horizontal, 5).padding(.vertical, 2)
-            .background(source.overviewColor.opacity(0.1), in: Capsule())
+            .background(source.overviewColor.opacity(active ? 0.22 : 0.1), in: Capsule())
     }
 }
 

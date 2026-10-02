@@ -140,9 +140,10 @@ final class NotifierTests: XCTestCase {
     }
 
     func testAlertSamplesAllRouteSomewhere() {
-        // 每个样例的 id 都在跳转路由里(点横幅必有落点),派生动作不跳
+        // 每个样例的 id 都在跳转路由里(点横幅必有落点),派生动作不跳;
+        // 第 8 条为周报样例(按所述周派生 id),一次验证留痕+分组+跳转
         let samples = Notifier.alertSamples()
-        XCTAssertEqual(samples.count, 7)
+        XCTAssertEqual(samples.count, 8)
         for sample in samples {
             XCTAssertNotNil(Notifier.openTarget(
                 identifier: sample.id,
@@ -169,10 +170,11 @@ final class NotifierTests: XCTestCase {
         for sample in Notifier.alertSamples() {
             XCTAssertTrue(sample.body.hasPrefix("【样例】"))
         }
-        // 推样例同时能验证分组:六种告警落告警组、节奏样例落节奏组
+        // 推样例同时能验证分组:六种告警落告警组、节奏样例落节奏组、
+        // 周报样例落周报组(按所述周派生的 id 仍归 weekly.digest 组)
         let threads = Set(Notifier.alertSamples().map {
             Notifier.threadIdentifier(for: $0.id)
         })
-        XCTAssertEqual(threads, ["quota.alert", "quota.pace"])
+        XCTAssertEqual(threads, ["quota.alert", "quota.pace", "weekly.digest"])
     }
 }

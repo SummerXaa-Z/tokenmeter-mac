@@ -578,7 +578,7 @@ struct SettingsView: View {
                     }
                 }
                 HStack {
-                    Text("推样例立即发送各告警（id 与真实告警同键），点横幅验证各自跳转。")
+                    Text("推样例立即发送周报与各告警样例（id 与真实通知同键），点横幅验证各自跳转，通知中心按组折叠。")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                     Spacer()
                     Button("推样例") { pushAlertSamples() }

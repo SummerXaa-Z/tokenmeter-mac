@@ -115,6 +115,11 @@ enum Notifier {
             (id: "quota.pace.sample",
              title: "Codex 周额度可能提前用完",
              body: "【样例】已用 78%，窗口时间才过 40%；按当前速度约 周四 21:00 耗尽，早于 周一 09:00 重置"),
+            // 周报样例:id 与真实周报同构造(按所述周派生),一次验证
+            // 留痕、分组与点击回总览三件事
+            (id: Notifier.weeklyDigestID(forWeek: WeeklyDigest.summarizedWeekKey()),
+             title: "TokenMeter 上周用量摘要",
+             body: "【样例】合计 312M · 环比 +12% · 主力 Claude · 活跃 6 天 · API 等价 $8.40"),
         ]
     }
 
