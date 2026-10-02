@@ -222,11 +222,30 @@ enum UsageHeatmap {
         return result
     }
 
-    /// 格子悬停说明：日期 · 合计 Token，有金额的日子追加美元金额。
-    static func cellHelpText(date: String, total: Int, apiValue: Double?) -> String {
+    /// Calendar weekday（1=周日 ... 7=周六）→ 一到日的单字；与周内节律
+    /// 同一套标签。越界返回 nil。
+    static func weekdayName(_ weekday: Int) -> String? {
+        (1...7).contains(weekday) ? ["日", "一", "二", "三", "四", "五", "六"][weekday - 1] : nil
+    }
+
+    /// 格子悬停说明：日期 · 合计 Token，有金额的日子追加美元金额；再附
+    /// 该周几的窗口日均（来自周内节律同一条口径，休整天计入分母）——
+    /// 单日数字与「这一天通常用多少」可直接对照。日均 0（该周几整窗
+    /// 休整）与越界周几不给段。
+    static func cellHelpText(
+        date: String,
+        total: Int,
+        apiValue: Double?,
+        weekdayAverage: (weekday: Int, average: Int)? = nil
+    ) -> String {
         var text = "\(Fmt.mmdd(date)) · \(Fmt.tokensShort(total))"
         if let apiValue, apiValue > 0 {
             text += " · \(Fmt.usd(apiValue))"
+        }
+        if let weekdayAverage,
+           let name = weekdayName(weekdayAverage.weekday),
+           weekdayAverage.average > 0 {
+            text += " · 周\(name)日均 \(Fmt.tokensShort(weekdayAverage.average))"
         }
         return text
     }

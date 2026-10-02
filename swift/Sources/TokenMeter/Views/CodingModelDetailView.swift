@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import AppKit
 
 // Coding 模型下钻页：从总览模型榜点入。页面自成固定窗口口径（榜单行的
 // Token 随总览所选范围变化），7|30|90 天切换；Token 构成、逐日 API 等价
@@ -149,8 +150,23 @@ struct CodingModelDetailView: View {
         }
         return Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("近 \(span.rawValue) 天 API 等价（USD）", systemImage: "dollarsign.circle")
-                    .font(.system(size: 12, weight: .semibold))
+                HStack {
+                    Label("近 \(span.rawValue) 天 API 等价（USD）", systemImage: "dollarsign.circle")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    // 导出当前档走势（7/30 天逐日、90 天按周聚合），与
+                    // Skill 详情页导出同款入口
+                    Button {
+                        exportCSV(s)
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("导出当前档 CSV（Token 与 API 等价，附口径行）")
+                    .accessibilityLabel("导出模型明细 CSV")
+                }
                 ChartHover.caption(
                     hover: hoverDate,
                     amountFor: usdFor,
@@ -210,6 +226,41 @@ struct CodingModelDetailView: View {
             Text(value).font(.system(size: 15, weight: .bold, design: .rounded))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 导出当前档明细 CSV；保存面板流程与模型榜/Skill 详情导出同款，
+    /// 写盘失败弹系统错误框。90 天档按周聚合、短档逐日，与趋势图同桶。
+    private func exportCSV(_ s: CodingModelDetail.Summary) {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSSavePanel()
+        panel.title = "导出模型明细 CSV"
+        panel.nameFieldStringValue = CodingModelDetailCSVExport.suggestedFilename(model: model)
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowedContentTypes = [.commaSeparatedText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let rows: [CodingModelDetailCSVExport.Row]
+        if span == .quarter {
+            rows = CodingModelDetail.weeklyBuckets(from: s.days).map {
+                CodingModelDetailCSVExport.Row(
+                    bucket: $0.weekStart, tokens: $0.tokens, usd: $0.usd)
+            }
+        } else {
+            rows = s.days.map {
+                CodingModelDetailCSVExport.Row(
+                    bucket: $0.date, tokens: $0.tokens, usd: $0.usd)
+            }
+        }
+        do {
+            try CodingModelDetailCSVExport.makeCSV(
+                source: source, model: model, spanDays: span.rawValue,
+                rows: rows, coverage: s.coverage
+            ).write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.messageText = "导出模型明细 CSV 失败"
+            alert.runModal()
+        }
     }
 
     /// 各来源实时采集的逐日模型明细；平台账户与 Cursor 榜单天然不进此页。

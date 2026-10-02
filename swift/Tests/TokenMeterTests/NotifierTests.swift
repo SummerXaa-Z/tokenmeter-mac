@@ -120,6 +120,25 @@ final class NotifierTests: XCTestCase {
             actionIdentifier: UNNotificationDefaultActionIdentifier))
     }
 
+    func testThreadIdentifierGroupsNotificationFamilies() {
+        // 周报一组:裸键与按周派生键同组(通知中心折叠成一条堆叠)
+        XCTAssertEqual(Notifier.threadIdentifier(for: Notifier.weeklyDigestID), "weekly.digest")
+        XCTAssertEqual(
+            Notifier.threadIdentifier(for: Notifier.weeklyDigestID(forWeek: "2026-W39")),
+            "weekly.digest")
+        // 配额/用量/余额告警一组
+        XCTAssertEqual(Notifier.threadIdentifier(for: "codex.quota.low"), "quota.alert")
+        XCTAssertEqual(Notifier.threadIdentifier(for: "claude.daily.over"), "quota.alert")
+        XCTAssertEqual(Notifier.threadIdentifier(for: "deepseek.balance.low"), "quota.alert")
+        XCTAssertEqual(Notifier.threadIdentifier(for: "zhipu.quota.low"), "quota.alert")
+        // 节奏预警自成一组(key 带窗口重置时刻,前缀匹配)
+        XCTAssertEqual(
+            Notifier.threadIdentifier(for: "quota.pace.codex-weekly@1723"),
+            "quota.pace")
+        // 未知键自成一组(用 id 本身),绝不与已知组混叠
+        XCTAssertEqual(Notifier.threadIdentifier(for: "update.available"), "update.available")
+    }
+
     func testAlertSamplesAllRouteSomewhere() {
         // 每个样例的 id 都在跳转路由里(点横幅必有落点),派生动作不跳
         let samples = Notifier.alertSamples()
@@ -150,5 +169,10 @@ final class NotifierTests: XCTestCase {
         for sample in Notifier.alertSamples() {
             XCTAssertTrue(sample.body.hasPrefix("【样例】"))
         }
+        // 推样例同时能验证分组:六种告警落告警组、节奏样例落节奏组
+        let threads = Set(Notifier.alertSamples().map {
+            Notifier.threadIdentifier(for: $0.id)
+        })
+        XCTAssertEqual(threads, ["quota.alert", "quota.pace"])
     }
 }

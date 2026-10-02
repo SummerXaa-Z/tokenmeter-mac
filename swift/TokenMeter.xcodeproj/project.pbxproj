@@ -23,6 +23,7 @@
 		2343BAD53DB56CD403D15ED5 /* UsageWindowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62890B90C6F6A2E390BE13C8 /* UsageWindowTests.swift */; };
 		259D400B2FAE84619F116E35 /* ArkPlanQuotaServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 984396E82E950E7EFB0A1977 /* ArkPlanQuotaServiceTests.swift */; };
 		275ADAFFFD56430E5983696C /* SourceTrendCardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9C3B1C71EB83DB3D7498B0A /* SourceTrendCardTests.swift */; };
+		28B32E0B2EF0915364B6156C /* CodingModelDetailCSVExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F09A6C0E3E3F9C3500CF3F /* CodingModelDetailCSVExport.swift */; };
 		2B8677054F6C2550061477DE /* UsageHistoryRangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4932B96A06DCA921753A07DD /* UsageHistoryRangeTests.swift */; };
 		2B8F5C2958EC0198D8B74D89 /* ModelRankingCSVExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E03F7BA72A6BFB2CCFFC42E9 /* ModelRankingCSVExport.swift */; };
 		2CF639B933D9E249A7AC60D5 /* DiagnosticReportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 847F5B5A0A9B9ECF7B3C10D1 /* DiagnosticReportTests.swift */; };
@@ -90,6 +91,7 @@
 		92520D2ADF2A2E1BBD989629 /* OpenCodeUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FF0EE60FD4468E9768B8562 /* OpenCodeUsage.swift */; };
 		92F95A043BD876CB2F16A817 /* DeepSeekAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = E81E92812623068BE00FF7D7 /* DeepSeekAPI.swift */; };
 		942A472A69D2D9F0C3523EFE /* OpenCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C9B4C3D49A91E30309B5D63 /* OpenCodeView.swift */; };
+		966DC4C9834BDF6419B2FE71 /* CodingModelDetailCSVExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D0146EBDA94E3114EFA8883 /* CodingModelDetailCSVExportTests.swift */; };
 		96DDA924E25136694B16F9AD /* ForcedRefreshCoalescerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69102B74FE1F50DD2D8C39FA /* ForcedRefreshCoalescerTests.swift */; };
 		9AEC94AAF3DC62F6726AC688 /* CodingModelDetailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD9551A1BAC0C24BAAA035AE /* CodingModelDetailTests.swift */; };
 		9C2E867510CA8A5D712AF9C6 /* CodingModelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372739A9480AFBF43B560A05 /* CodingModelDetailView.swift */; };
@@ -224,8 +226,10 @@
 		8834DFDCCF5EAD81A03BD730 /* QwenCodeUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QwenCodeUsageTests.swift; sourceTree = "<group>"; };
 		89096F146AC2E7E7E5F0ADFE /* TokenMeter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TokenMeter.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8CFB858EB03D6FCC2B3563D3 /* ClaudeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeView.swift; sourceTree = "<group>"; };
+		8D0146EBDA94E3114EFA8883 /* CodingModelDetailCSVExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodingModelDetailCSVExportTests.swift; sourceTree = "<group>"; };
 		8E998735A139325388C73D70 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		8F3143113E09EDC5443D060F /* LoginSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginSync.swift; sourceTree = "<group>"; };
+		90F09A6C0E3E3F9C3500CF3F /* CodingModelDetailCSVExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodingModelDetailCSVExport.swift; sourceTree = "<group>"; };
 		9224BE2374E1ADD0C0ABF8FB /* KimiQuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimiQuotaService.swift; sourceTree = "<group>"; };
 		925ECE5B69FE0A6F93DD9ECD /* ZhipuQuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZhipuQuotaService.swift; sourceTree = "<group>"; };
 		951968B35E5CD5AD3814C04C /* MenubarTodayTotalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenubarTodayTotalTests.swift; sourceTree = "<group>"; };
@@ -383,6 +387,7 @@
 				066AB6165D30EBC039D73A14 /* AppStateRefreshTests.swift */,
 				984396E82E950E7EFB0A1977 /* ArkPlanQuotaServiceTests.swift */,
 				7546D54798D07DFF4CEB314F /* ChartHoverPartsTests.swift */,
+				8D0146EBDA94E3114EFA8883 /* CodingModelDetailCSVExportTests.swift */,
 				AD9551A1BAC0C24BAAA035AE /* CodingModelDetailTests.swift */,
 				AA044209B655A0E78CEA3150 /* CollectAttemptLogTests.swift */,
 				2EFB577C0D476CA6A97A5BCB /* ConfigStoreTests.swift */,
@@ -464,6 +469,7 @@
 				3D2915C7233A87D1969A2E15 /* APICostEstimator.swift */,
 				8E998735A139325388C73D70 /* AppState.swift */,
 				0CBDEBD7A8663EF892B78924 /* CodingModelDetail.swift */,
+				90F09A6C0E3E3F9C3500CF3F /* CodingModelDetailCSVExport.swift */,
 				6BE2676BB49AC73AF2BA8531 /* Format.swift */,
 				C224B79FE51DA6B0498097C7 /* HeatmapCSVExport.swift */,
 				F7B29B6ED6B08B1BE7855470 /* MenubarTodayTotal.swift */,
@@ -625,6 +631,7 @@
 				D6F5BA21904C57DC0B1FC419 /* AppStateRefreshTests.swift in Sources */,
 				259D400B2FAE84619F116E35 /* ArkPlanQuotaServiceTests.swift in Sources */,
 				4B67CEFB5A42F8C8D086DC30 /* ChartHoverPartsTests.swift in Sources */,
+				966DC4C9834BDF6419B2FE71 /* CodingModelDetailCSVExportTests.swift in Sources */,
 				9AEC94AAF3DC62F6726AC688 /* CodingModelDetailTests.swift in Sources */,
 				9131EAE8DCDB12D0F6D6261D /* CollectAttemptLogTests.swift in Sources */,
 				FA481456C6EA4B00B754850A /* ConfigStoreTests.swift in Sources */,
@@ -687,6 +694,7 @@
 				FA53D44363DFE6554598222B /* CodexUsage.swift in Sources */,
 				5705E0A4C3A0149E9C376765 /* CodexView.swift in Sources */,
 				EF30DC7B9F1DE35DADEDF146 /* CodingModelDetail.swift in Sources */,
+				28B32E0B2EF0915364B6156C /* CodingModelDetailCSVExport.swift in Sources */,
 				9C2E867510CA8A5D712AF9C6 /* CodingModelDetailView.swift in Sources */,
 				DF88E958543EE0DF9564F1F8 /* CollectAttemptLog.swift in Sources */,
 				3F60A655CE88CB5A4CC13645 /* CopilotUsage.swift in Sources */,
@@ -828,7 +836,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 3.73.0;
+				MARKETING_VERSION = 3.74.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.deepseek.monitor.mac;
@@ -931,7 +939,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 3.73.0;
+				MARKETING_VERSION = 3.74.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

@@ -30,19 +30,10 @@ enum SkillDetailCSVExport {
         return lines.map { $0.joined(separator: ",") }.joined(separator: "\n") + "\n"
     }
 
-    /// 文件名：Skill 名清掉路径分隔符等不安全字符（折叠连续连字符、
-    /// 超长截断），空名回退通用名。
+    /// 文件名：Skill 名净化为安全段（共享助手），空名回退通用名。
     static func suggestedFilename(skill: String) -> String {
-        var sanitized = ""
-        for ch in skill {
-            if ch == "-" && sanitized.hasSuffix("-") { continue }
-            sanitized.append((ch.isLetter || ch.isNumber || ch == "-" || ch == "_") ? ch : "-")
-        }
-        let trimmed = sanitized
-            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-            .prefix(40)
-        let safe = trimmed.isEmpty ? "skill" : String(trimmed)
-        return "TokenMeter-skill-\(safe)-\(DateUtil.today()).csv"
+        let safe = ModelRankingCSVExport.sanitizedNameToken(skill)
+        return "TokenMeter-skill-\(safe.isEmpty ? "skill" : safe)-\(DateUtil.today()).csv"
     }
 
     private static func escaped(_ field: String) -> String {

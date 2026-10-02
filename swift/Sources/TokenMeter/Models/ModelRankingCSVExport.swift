@@ -65,6 +65,23 @@ enum ModelRankingCSVExport {
         return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 
+    /// 名字段净化为文件名安全段：路径分隔符等不安全字符换连字符、
+    /// 连续连字符（含转换来的）折叠为一个、截断超长（40 字符）；全部
+    /// 不安全时返回空串，由调用方回退各自领域的通用名。Skill/模型明细
+    /// 导出共用。
+    static func sanitizedNameToken(_ raw: String) -> String {
+        var sanitized = ""
+        for ch in raw {
+            let safe = (ch.isLetter || ch.isNumber || ch == "-" || ch == "_") ? ch : "-"
+            if safe == "-" && sanitized.hasSuffix("-") { continue }
+            sanitized.append(safe)
+        }
+        let trimmed = sanitized
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+            .prefix(40)
+        return String(trimmed)
+    }
+
     static func suggestedFilename() -> String {
         "TokenMeter-models-\(DateUtil.today()).csv"
     }

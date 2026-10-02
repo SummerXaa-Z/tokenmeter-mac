@@ -380,6 +380,32 @@ final class UsageHeatmapTests: XCTestCase {
             "9/25 · 500")
     }
 
+    func testCellHelpTextAppendsWeekdayAverageSegment() {
+        // 2026-09-25 是周五(weekday 6);附同周几日均段(周内节律同口径)
+        XCTAssertEqual(
+            UsageHeatmap.cellHelpText(
+                date: "2026-09-25", total: 1_234_567, apiValue: 12.5,
+                weekdayAverage: (weekday: 6, average: 80_000_000)),
+            "9/25 · 1.2M · $12.50 · 周五日均 80M")
+        // 无金额时段序不变;空格子也可对照(该日 0 但周几有日均)
+        XCTAssertEqual(
+            UsageHeatmap.cellHelpText(
+                date: "2026-09-25", total: 0, apiValue: nil,
+                weekdayAverage: (weekday: 6, average: 500)),
+            "9/25 · 0 · 周五日均 500")
+        // 日均 0(该周几整窗休整)与越界周几不给段
+        XCTAssertEqual(
+            UsageHeatmap.cellHelpText(
+                date: "2026-09-25", total: 500, apiValue: nil,
+                weekdayAverage: (weekday: 6, average: 0)),
+            "9/25 · 500")
+        XCTAssertEqual(
+            UsageHeatmap.cellHelpText(
+                date: "2026-09-25", total: 500, apiValue: nil,
+                weekdayAverage: (weekday: 0, average: 800)),
+            "9/25 · 500")
+    }
+
     // MARK: - 月视图
 
     private func monthCells(

@@ -1880,6 +1880,11 @@ struct OverviewHeatmapCard: View {
                 participants: participants,
                 windowWeeks: span.rawValue, weekOffset: weekOffset)
             : [:]
+        // 单日悬停的「该周几日均」段：与周内节律同一窗口口径（日/周档
+        // 逐格共用的分母），预计算一次供全部格子取用
+        let weekdayAverages: [Int: Int] = hasUsage && !isMonth
+            ? Dictionary(uniqueKeysWithValues: rhythmStats.map { ($0.weekday, $0.average) })
+            : [:]
         let maxOffset = isMonth
             ? UsageHeatmap.maxMonthOffset(history, participants: participants)
             : UsageHeatmap.maxWeekOffset(history, participants: participants)
@@ -1951,7 +1956,7 @@ struct OverviewHeatmapCard: View {
                     } else if granularity == .week {
                         weekStrip(UsageHeatmap.weeklyCells(from: columns, apiValues: apiValues))
                     } else {
-                        grid(columns, apiValues: apiValues)
+                        grid(columns, apiValues: apiValues, weekdayAverages: weekdayAverages)
                     }
                     rhythmChart
                     HStack(spacing: 4) {
@@ -2213,7 +2218,11 @@ struct OverviewHeatmapCard: View {
         }
     }
 
-    private func grid(_ columns: [UsageHeatmap.WeekColumn], apiValues: [String: Double]) -> some View {
+    private func grid(
+        _ columns: [UsageHeatmap.WeekColumn],
+        apiValues: [String: Double],
+        weekdayAverages: [Int: Int] = [:]
+    ) -> some View {
         HStack(alignment: .top, spacing: 6) {
             weekdayLabels
             VStack(alignment: .leading, spacing: 2) {
@@ -2231,7 +2240,9 @@ struct OverviewHeatmapCard: View {
                     ForEach(columns, id: \.weekOf) { column in
                         VStack(spacing: 2) {
                             ForEach(0..<7, id: \.self) { row in
-                                cell(column, row, apiValues: apiValues)
+                                cell(
+                                    column, row, apiValues: apiValues,
+                                    weekdayAverages: weekdayAverages)
                             }
                         }
                     }
@@ -2314,12 +2325,21 @@ struct OverviewHeatmapCard: View {
 
     // 行号 0...6 对应周一...周日;首尾周不满格时留空占位
     private func cell(
-        _ column: UsageHeatmap.WeekColumn, _ row: Int, apiValues: [String: Double]
+        _ column: UsageHeatmap.WeekColumn,
+        _ row: Int,
+        apiValues: [String: Double],
+        weekdayAverages: [Int: Int] = [:]
     ) -> some View {
         let weekday = row == 6 ? 1 : row + 2
         let match = column.cells.first { $0.weekday == weekday }
         return Group {
             if let match {
+                // 悬停/无障碍文案一次算好两处复用;附该周几窗口日均
+                let help = UsageHeatmap.cellHelpText(
+                    date: match.date, total: match.total,
+                    apiValue: apiValues[match.date],
+                    weekdayAverage: weekdayAverages[match.weekday]
+                        .map { (weekday: match.weekday, average: $0) })
                 RoundedRectangle(cornerRadius: 2)
                     .fill(Self.levelFills[match.level])
                     .overlay {
@@ -2328,12 +2348,8 @@ struct OverviewHeatmapCard: View {
                                 .stroke(Color.primary.opacity(0.55), lineWidth: 1)
                         }
                     }
-                    .help(UsageHeatmap.cellHelpText(
-                        date: match.date, total: match.total,
-                        apiValue: apiValues[match.date]))
-                    .accessibilityLabel(UsageHeatmap.cellHelpText(
-                        date: match.date, total: match.total,
-                        apiValue: apiValues[match.date]))
+                    .help(help)
+                    .accessibilityLabel(help)
             } else {
                 Color.clear
             }

@@ -19,6 +19,24 @@ enum Notifier {
         "\(weeklyDigestID).\(weekKey)"
     }
 
+    /// 通知分组（threadIdentifier）：macOS 通知中心把同组通知折叠成一条
+    /// 堆叠。周报一组（按周留痕后逐周堆积也能收拢）、配额/用量/余额
+    /// 告警一组、节奏预警一组；未知键自成一组（用 id 本身，绝不与已知
+    /// 组混叠）。send 自动按 id 挂组，调用方无需关心。
+    static func threadIdentifier(for id: String) -> String {
+        if id == weeklyDigestID || id.hasPrefix(weeklyDigestID + ".") {
+            return "weekly.digest"
+        }
+        if id.hasPrefix("quota.pace.") { return "quota.pace" }
+        switch id {
+        case "codex.quota.low", "claude.daily.over", "kimi.quota.low",
+             "deepseek.balance.low", "zhipu.quota.low", "ark.quota.low":
+            return "quota.alert"
+        default:
+            return id
+        }
+    }
+
     // 仅在有有效 bundle 时使用通知中心，避免裸进程调 current() 崩溃
     private static var available: Bool { Bundle.main.bundleIdentifier != nil }
 
@@ -54,6 +72,8 @@ enum Notifier {
                 content.title = title
                 content.body = body
                 content.sound = .default
+                // 同类通知在通知中心按组折叠（周报/告警/节奏各一组）
+                content.threadIdentifier = threadIdentifier(for: id)
                 let req = UNNotificationRequest(identifier: id, content: content, trigger: nil)
                 center.add(req)
             }
