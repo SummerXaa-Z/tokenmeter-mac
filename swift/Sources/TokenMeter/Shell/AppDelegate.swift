@@ -260,6 +260,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // 图表零数据统一空态:总览趋势卡(空快照)、来源页 7|30 天卡(整窗零)、
+    // 24 小时分时图(全天零)三种形态各一卡,共用 ChartHover.emptyState
+    private static func trendEmptyFixture() -> some View {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let emptySnapshot = OverviewSnapshot(
+            selection: OverviewSourceSelection(sources: [.claude]),
+            range: .month, history: [], streakHistory: [],
+            deepSeek: nil, claude: nil, codex: nil,
+            openCode: nil, gemini: nil, copilot: nil, cursor: nil)
+        let zeroWeek = (0..<7).compactMap { offset -> SourceTrendCard.Day? in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: today)
+            else { return nil }
+            return SourceTrendCard.Day(date: DateUtil.key(date), parts: [
+                ("缓存读取", 0, Theme.hit),
+                ("缓存写入", 0, Theme.miss),
+                ("新输入", 0, Theme.input),
+                ("输出", 0, Theme.response),
+            ])
+        }
+        return ScrollView {
+            VStack(spacing: 12) {
+                OverviewTrendCard(snapshot: emptySnapshot, range: .month)
+                SourceTrendCard(source: .claude, weekDays: zeroWeek, liveDayModels: nil)
+                SourceHourChart(
+                    bars: (0..<24).map { SourceHourChart.Bar(hour: $0, tokens: 0) },
+                    color: Theme.claude)
+            }
+            .padding(14)
+        }
+    }
+
     // DeepSeek 模型详情页:真实 App 里由 Dashboard 下钻进入、渲染套件原本
     // 覆盖不到。用独立 AppState 注入合成 7 天数据(不动共享 appState,其余
     // 页面不受污染),验证汇总/构成/趋势卡与导出入口
@@ -894,6 +926,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // (指针无法离屏模拟,previewHoverSeries 预置)
             ("trend-legend-hover-fixture", hosting(
                 Self.trendLegendHoverFixture(), height: 560)),
+            // 图表零数据统一空态:总览趋势/来源 7|30 天/24 小时三种形态
+            ("trend-empty-fixture", hosting(Self.trendEmptyFixture(), height: 900)),
             // DeepSeek 模型详情页:合成 7 天数据,验证趋势卡与导出入口
             ("deepseek-model-detail-fixture", hosting(
                 Self.deepSeekModelDetailFixture(), height: 900)),

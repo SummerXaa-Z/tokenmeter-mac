@@ -128,32 +128,45 @@ struct SourceHourChart: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let active = bars.first(where: { $0.hour == hoverHour })
-                ?? bars.last(where: { $0.tokens > 0 }) ?? bars.last {
-                ChartHoverCaption(label: "\(active.hour)时", total: active.tokens, parts: [])
-            }
-            Chart {
-                ForEach(bars) { bar in
-                    BarMark(
-                        x: .value("小时", bar.hour),
-                        y: .value("Token", bar.tokens)
-                    )
-                    .foregroundStyle(color.opacity(bar.tokens > 0 ? 0.9 : 0.2))
+            if Self.isEmpty(bars) {
+                // 零数据不画一排暗柱:统一空态占住图高,与总览小时图同文案
+                ChartHover.emptyState(
+                    message: "今日暂无小时用量",
+                    hint: "产生用量后这里按小时累积",
+                    minHeight: 114)
+            } else {
+                if let active = bars.first(where: { $0.hour == hoverHour })
+                    ?? bars.last(where: { $0.tokens > 0 }) ?? bars.last {
+                    ChartHoverCaption(label: "\(active.hour)时", total: active.tokens, parts: [])
                 }
-                HoverHourRule(hour: hoverHour)
-            }
-            .chartXSelection(value: $hoverHour)
-            .chartXScale(domain: 0...23)
-            .chartXAxis {
-                AxisMarks(values: [0, 6, 12, 18, 23]) { value in
-                    AxisValueLabel {
-                        if let hour = value.as(Int.self) { Text("\(hour)时") }
+                Chart {
+                    ForEach(bars) { bar in
+                        BarMark(
+                            x: .value("小时", bar.hour),
+                            y: .value("Token", bar.tokens)
+                        )
+                        .foregroundStyle(color.opacity(bar.tokens > 0 ? 0.9 : 0.2))
+                    }
+                    HoverHourRule(hour: hoverHour)
+                }
+                .chartXSelection(value: $hoverHour)
+                .chartXScale(domain: 0...23)
+                .chartXAxis {
+                    AxisMarks(values: [0, 6, 12, 18, 23]) { value in
+                        AxisValueLabel {
+                            if let hour = value.as(Int.self) { Text("\(hour)时") }
+                        }
                     }
                 }
+                .tokenYAxis()
+                .frame(height: 100)
             }
-            .tokenYAxis()
-            .frame(height: 100)
         }
+    }
+
+    /// 全天零用量(24 根柱全 0)
+    static func isEmpty(_ bars: [Bar]) -> Bool {
+        bars.allSatisfy { $0.tokens == 0 }
     }
 }
 

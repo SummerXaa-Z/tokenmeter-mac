@@ -53,6 +53,33 @@ enum ChartHover {
         return (visible, nonzero.count - visible.count)
     }
 
+    /// 图表零数据时的统一占位：小图标 + 消息 + 可选引导行，占住图表高度、
+    /// 居中呈现，切换有无数据版面不跳。message 保留各图的口径语义（如
+    /// 「今日暂无小时用量」），hint 给一句引导（如「每次刷新后逐日累积」）。
+    static func isEmpty(_ totals: [Int]) -> Bool {
+        totals.allSatisfy { $0 == 0 }
+    }
+
+    @ViewBuilder
+    static func emptyState(
+        message: String, hint: String? = nil, minHeight: CGFloat = 120
+    ) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: "chart.bar")
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(.tertiary)
+            Text(message)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            if let hint {
+                Text(hint)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: minHeight)
+    }
+
     /// 通用说明行装配：hover 指向的桶，缺省回落到最后一桶（buckets 按时间升序）。
     /// amountFor 把桶 label 映射为该桶的 API 等价金额文本，不传则不显示金额。
     @ViewBuilder

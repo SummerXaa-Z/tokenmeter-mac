@@ -51,34 +51,47 @@ struct SourceTrendCard: View {
                     .controlSize(.mini)
                     .frame(width: 104)
                 }
-                ChartHover.caption(
-                    hover: hover,
-                    amountFor: SourceHoverAmount.make(
-                        source: source, liveDayModels: liveDayModels,
-                        days: days.map(\.date), windowDays: span.rawValue),
-                    buckets: days.map { day in
-                        (
-                            label: Fmt.mmdd(day.date),
-                            total: day.parts.reduce(0) { $0 + $1.value },
-                            parts: day.parts
-                        )
-                    })
-                Chart {
-                    ForEach(Array(marks.enumerated()), id: \.offset) { _, mark in
-                        BarMark(
-                            x: .value("日期", mark.label),
-                            y: .value("Token", mark.value))
-                            .foregroundStyle(by: .value("类型", mark.name))
+                if Self.isEmpty(days) {
+                    // 零数据不画全零柱:统一空态占住图高,切 7|30 天档可恢复
+                    ChartHover.emptyState(
+                        message: "近 \(span.rawValue) 天暂无 Token 记录",
+                        hint: "该工具产生用量后自动累积",
+                        minHeight: 150)
+                } else {
+                    ChartHover.caption(
+                        hover: hover,
+                        amountFor: SourceHoverAmount.make(
+                            source: source, liveDayModels: liveDayModels,
+                            days: days.map(\.date), windowDays: span.rawValue),
+                        buckets: days.map { day in
+                            (
+                                label: Fmt.mmdd(day.date),
+                                total: day.parts.reduce(0) { $0 + $1.value },
+                                parts: day.parts
+                            )
+                        })
+                    Chart {
+                        ForEach(Array(marks.enumerated()), id: \.offset) { _, mark in
+                            BarMark(
+                                x: .value("日期", mark.label),
+                                y: .value("Token", mark.value))
+                                .foregroundStyle(by: .value("类型", mark.name))
+                        }
+                        HoverDateRule(date: hover)
                     }
-                    HoverDateRule(date: hover)
+                    .chartXSelection(value: $hover)
+                    .chartForegroundStyleScale(Self.scale(for: source))
+                    .chartLegend(position: .bottom, spacing: 4)
+                    .tokenYAxis()
+                    .frame(height: 150)
                 }
-                .chartXSelection(value: $hover)
-                .chartForegroundStyleScale(Self.scale(for: source))
-                .chartLegend(position: .bottom, spacing: 4)
-                .tokenYAxis()
-                .frame(height: 150)
             }
         }
+    }
+
+    /// 当前档是否整窗零用量(补零的时间轴全为 0)
+    static func isEmpty(_ days: [Day]) -> Bool {
+        days.allSatisfy { day in day.parts.reduce(0) { $0 + $1.value } == 0 }
     }
 
     /// 各来源的图例配色（7|30 天档同款）：与各页原 7 天图一致。

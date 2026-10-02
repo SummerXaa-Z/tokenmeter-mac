@@ -73,4 +73,29 @@ final class SourceTrendCardTests: XCTestCase {
         // 平台账户/订阅聚合无按天明细页
         XCTAssertTrue(SourceTrendCard.parts(.cursor, of: tally).isEmpty)
     }
+
+    func testEmptyDetectionForTrendAndHourCharts() {
+        // 7|30 天趋势:整窗全零(或无桶)才空,任一天有量即非空
+        func zeroDay(_ date: String, tokens: Int) -> SourceTrendCard.Day {
+            .init(date: date, parts: [("缓存读取", tokens, Theme.hit)])
+        }
+        XCTAssertTrue(SourceTrendCard.isEmpty([]))
+        XCTAssertTrue(SourceTrendCard.isEmpty([zeroDay("2026-10-01", tokens: 0)]))
+        XCTAssertFalse(SourceTrendCard.isEmpty([zeroDay("2026-10-02", tokens: 5)]))
+        // 24 小时分时:全天零(或无柱)即空,任一钟点有量即非空
+        func bar(_ tokens: Int) -> SourceHourChart.Bar {
+            .init(hour: 9, tokens: tokens)
+        }
+        XCTAssertTrue(SourceHourChart.isEmpty([]))
+        XCTAssertTrue(SourceHourChart.isEmpty([bar(0), bar(0)]))
+        XCTAssertFalse(SourceHourChart.isEmpty([bar(0), bar(3)]))
+        // 总览趋势:无桶或整窗全零为空(时间轴补零后 isEmpty 不够);
+        // 有量桶存在即非空,图例隐藏由调用方在全量口径上判,不在此函数
+        func point(_ tokens: Int) -> OverviewSnapshot.TrendPoint {
+            .init(date: "2026-10-03", label: "10/3", hour: nil, source: .claude, tokens: tokens)
+        }
+        XCTAssertTrue(TrendSeriesFilter.isAllZero([]))
+        XCTAssertTrue(TrendSeriesFilter.isAllZero([point(0), point(0)]))
+        XCTAssertFalse(TrendSeriesFilter.isAllZero([point(0), point(7)]))
+    }
 }

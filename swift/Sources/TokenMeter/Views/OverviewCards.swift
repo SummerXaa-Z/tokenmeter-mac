@@ -1573,10 +1573,8 @@ struct OverviewTrendCard: View {
                     Text(trendSummary)
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
-                if snapshot.trend.isEmpty {
-                    Text(emptyText)
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 120)
+                if isTrendEmpty {
+                    ChartHover.emptyState(message: emptyMessage, hint: emptyHint)
                 } else if snapshot.trendGranularity == .hour {
                     hourlyCaption
                     Chart {
@@ -1594,6 +1592,7 @@ struct OverviewTrendCard: View {
                     }
                     .chartXSelection(value: $hoverHour)
                     .chartForegroundStyleScale(Self.sourceScale)
+                    .chartLegend(.hidden)
                     .chartXScale(domain: 0...23)
                     .chartXAxis {
                         AxisMarks(values: [0, 6, 12, 18, 23]) { value in
@@ -1620,6 +1619,9 @@ struct OverviewTrendCard: View {
                     }
                     .chartXSelection(value: $hoverLabel)
                     .chartForegroundStyleScale(Self.sourceScale)
+                    // 自定义 seriesChips 已承担图例职责(可点选+悬停读数),
+                    // 内置图例与 chips 全量重复,隐藏防叠两套
+                    .chartLegend(.hidden)
                     .chartXAxis {
                         AxisMarks(values: .automatic(desiredCount: 6)) { _ in
                             AxisGridLine(); AxisTick(); AxisValueLabel()
@@ -1645,12 +1647,26 @@ struct OverviewTrendCard: View {
         return "合计 \(Fmt.tokensShort(snapshot.trendTotal))"
     }
 
-    private var emptyText: String {
+    // 空态判定:无桶或整窗全零(全量口径,图例点暗不算空),纯函数可测
+    private var isTrendEmpty: Bool {
+        TrendSeriesFilter.isAllZero(snapshot.trend)
+    }
+
+    // 空态文案拆两行:消息保留口径语义,引导行说明数据怎么来
+    private var emptyMessage: String {
         if snapshot.trendGranularity == .hour, snapshot.periodTotal > 0 {
-            return "今日已有日汇总，但当前来源没有可验证的小时明细。"
+            return "今日已有日汇总，但当前来源没有可验证的小时明细"
         }
         if snapshot.trendGranularity == .hour { return "今日暂无小时用量" }
-        return "暂无历史数据（每次刷新后逐日累积）"
+        return "暂无历史数据"
+    }
+
+    private var emptyHint: String? {
+        if snapshot.trendGranularity == .hour, snapshot.periodTotal > 0 {
+            return nil
+        }
+        return snapshot.trendGranularity == .hour
+            ? "产生用量后这里按小时累积" : "每次刷新后逐日累积"
     }
 
     // 小时粒度：全部点共享今日一个桶键，直接按钟点分桶；
@@ -1721,6 +1737,7 @@ struct OverviewTrendCard: View {
               let summary = OverviewSeriesHover.summary(
                 name: name,
                 seriesTotals: TrendSeriesFilter.seriesTotals(snapshot.trend),
+                rangeTotal: snapshot.trendTotal,
                 amount: seriesAmount(name)) else { return nil }
         return ChartHoverCaption(
             label: summary.label, total: summary.total, parts: [],
