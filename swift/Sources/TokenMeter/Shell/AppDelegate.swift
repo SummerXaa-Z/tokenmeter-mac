@@ -286,6 +286,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // 图表导出补全的反馈行夹具:总览趋势卡 + 环比卡 + 来源页趋势卡三种
+    // 不同类型卡各一张(previewExportStatus 预置「已导出」态,保存面板无法
+    // 离屏模拟),顺带验证三卡导出按钮落位。合成数据只在内存构造。
+    private static func chartExportFixture() -> some View {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        var days: [HistoryStore.DayPoint] = []
+        for offset in stride(from: 29, through: 0, by: -1) {
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: today)
+            else { continue }
+            let base = 20 + (offset % 7) * 6
+            days.append(HistoryStore.DayPoint(date: DateUtil.key(date), bySource: [
+                .claude: (base + 30) * 1_000_000,
+                .codex: (base + 12) * 1_000_000,
+            ], cost: 0))
+        }
+        let snapshot = OverviewSnapshot(
+            selection: OverviewSourceSelection(sources: [.claude, .codex]),
+            range: .month, history: days, streakHistory: days,
+            deepSeek: nil, claude: nil, codex: nil,
+            openCode: nil, gemini: nil, copilot: nil, cursor: nil)
+        // 来源页趋势卡的 7 天档分量(四段折叠,与 Claude 页同口径)
+        let weekDays = (0..<7).reversed().compactMap { offset -> SourceTrendCard.Day? in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: today)
+            else { return nil }
+            let value = (offset % 3 + 1) * 1_000_000
+            return SourceTrendCard.Day(date: DateUtil.key(date), parts: [
+                ("缓存读取", value * 2, Theme.hit),
+                ("缓存写入", value / 2, Theme.miss),
+                ("新输入", value, Theme.input),
+                ("输出", value, Theme.response),
+            ])
+        }
+        return ScrollView {
+            VStack(spacing: 12) {
+                OverviewTrendCard(
+                    snapshot: snapshot, range: .month,
+                    previewExportStatus: "已导出 TokenMeter-trend-30d-2026-10-04.csv · 09:41")
+                OverviewCompareCard(
+                    history: days, participants: [.claude, .codex],
+                    previewExportStatus: "已导出 TokenMeter-compare-week-2026-10-04.csv · 09:41")
+                SourceTrendCard(
+                    source: .claude, weekDays: weekDays, liveDayModels: nil,
+                    previewExportStatus: "已导出 TokenMeter-trend-Claude-7d-2026-10-04.csv · 09:41")
+            }
+            .padding(14)
+        }
+    }
+
     // 图表零数据统一空态:总览趋势卡(空快照)、来源页 7|30 天卡(整窗零)、
     // 24 小时分时图(全天零)三种形态各一卡,共用 ChartHover.emptyState
     private static func trendEmptyFixture() -> some View {
@@ -968,6 +1017,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // previewExportStatus 预置「已导出」态(保存面板无法离屏模拟)
             ("export-feedback-fixture", hosting(
                 Self.exportFeedbackFixture(), height: 1100)),
+            // 图表导出补全:总览趋势卡 + 环比卡 + 来源页趋势卡三处新导出
+            // 按钮与反馈行(同一张页三种不同类型卡)
+            ("chart-export-fixture", hosting(
+                Self.chartExportFixture(), height: 1250)),
         ]
 
         var windows: [NSWindow] = []

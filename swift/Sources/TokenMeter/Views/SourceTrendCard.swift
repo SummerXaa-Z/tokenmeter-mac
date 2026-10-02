@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import AppKit
 
 // 来源页共用的 7|30 天 Token 堆叠柱图。7 天档由各页从自己的采集结果
 // 拼装分量（与各自原有口径一致，实时重扫）；30 天档取本机按天留存，
@@ -24,8 +25,12 @@ struct SourceTrendCard: View {
     let source: HistorySource
     let weekDays: [Day]
     let liveDayModels: [String: [String: ModelTokenTally]]?
+    // 渲染夹具:注入固定的导出反馈文案(保存面板无法离屏模拟)
+    var previewExportStatus: String? = nil
     @State private var span: Span = .week
     @State private var hover: String?
+    // 导出完成后的行内反馈(「已导出 <文件名> · 时刻」)
+    @State private var exportStatus: String?
 
     var body: some View {
         let days = span == .week ? weekDays : Self.monthDays(
@@ -50,6 +55,19 @@ struct SourceTrendCard: View {
                     .pickerStyle(.segmented)
                     .controlSize(.mini)
                     .frame(width: 104)
+                    // 导出当前档逐日分量 CSV(与图例同列,附口径行);
+                    // 七页共用此卡,一处加上全部来源页受益
+                    Button {
+                        exportCSV(days)
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(Self.isEmpty(days))
+                    .help("导出当前档 CSV（逐日一行、分量各成一列，附口径行）")
+                    .accessibilityLabel("导出趋势 CSV")
                 }
                 if Self.isEmpty(days) {
                     // 零数据不画全零柱:统一空态占住图高,切 7|30 天档可恢复
@@ -85,7 +103,34 @@ struct SourceTrendCard: View {
                     .tokenYAxis()
                     .frame(height: 150)
                 }
+                // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
+                ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
             }
+        }
+    }
+
+    /// 导出当前档（7|30 天）逐日分量 CSV：分量列与图例同名同序、补零日
+    /// 照列 0，附来源与折叠口径行。保存面板流程与全库其他导出同款，
+    /// 写盘失败弹系统错误框。
+    private func exportCSV(_ days: [Day]) {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSSavePanel()
+        panel.title = "导出趋势 CSV"
+        panel.nameFieldStringValue = SourceTrendCSVExport.suggestedFilename(
+            source: source, spanDays: span.rawValue)
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowedContentTypes = [.commaSeparatedText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try SourceTrendCSVExport.makeCSV(
+                source: source, spanDays: span.rawValue, days: days
+            ).write(to: url, atomically: true, encoding: .utf8)
+            exportStatus = ExportFeedback.text(fileURL: url)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.messageText = "导出趋势 CSV 失败"
+            alert.runModal()
         }
     }
 

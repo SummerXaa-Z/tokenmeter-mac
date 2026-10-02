@@ -1544,15 +1544,21 @@ struct OverviewTrendCard: View {
     // 悬停中的图例 chip:说明行临时切到该来源的范围内合计(离屏渲染夹具
     // 用 previewHoverSeries 预置同款状态,指针行为无法离屏模拟)
     @State private var hoverSeries: String?
+    // 导出完成后的行内反馈;渲染夹具注入固定文案(保存面板无法离屏模拟)
+    @State private var exportStatus: String?
+    private let previewExportStatus: String?
 
     init(
         snapshot: OverviewSnapshot,
         range: UsageHistoryRange,
-        previewHoverSeries: String? = nil
+        previewHoverSeries: String? = nil,
+        previewExportStatus: String? = nil
     ) {
         self.snapshot = snapshot
         self.range = range
         _hoverSeries = State(initialValue: previewHoverSeries)
+        _exportStatus = State(initialValue: previewExportStatus)
+        self.previewExportStatus = previewExportStatus
     }
 
     private var visibleTrend: [OverviewSnapshot.TrendPoint] {
@@ -1580,6 +1586,19 @@ struct OverviewTrendCard: View {
                     Spacer()
                     Text(trendSummary)
                         .font(.system(size: 11)).foregroundStyle(.secondary)
+                    // 导出当前范围趋势为 CSV(逐桶一行,来源分列;图例点暗
+                    // 隐藏的来源不导,与所见一致)
+                    Button {
+                        exportCSV()
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isTrendEmpty)
+                    .help("导出当前范围趋势 CSV（逐桶一行、来源分列、附口径行）")
+                    .accessibilityLabel("导出趋势 CSV")
                 }
                 if isTrendEmpty {
                     ChartHover.emptyState(message: emptyMessage, hint: emptyHint)
@@ -1644,7 +1663,36 @@ struct OverviewTrendCard: View {
                     Text("\(snapshot.hourlyUnattributedSources.map(\.overviewName).joined(separator: "、")) 仅有今日汇总或小时明细未完整加载，未在小时图中平均摊分。")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
                 }
+                // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
+                ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
             }
+        }
+    }
+
+    /// 导出当前范围趋势 CSV：逐桶一行（小时/日/周/月随所选范围自动降采样），
+    /// 来源分列、列序与图例一致；图例点暗的来源不导（与所见一致）。
+    /// 保存面板流程与热力图/榜单导出同款，写盘失败弹系统错误框。
+    private func exportCSV() {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSSavePanel()
+        panel.title = "导出趋势 CSV"
+        panel.nameFieldStringValue = OverviewTrendCSVExport.suggestedFilename(range: range)
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowedContentTypes = [.commaSeparatedText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try OverviewTrendCSVExport.makeCSV(
+                trend: visibleTrend,
+                granularity: snapshot.trendGranularity,
+                rangeTitle: range.scopeTitle,
+                apiValueByTrendBucket: snapshot.apiValueByTrendBucket
+            ).write(to: url, atomically: true, encoding: .utf8)
+            exportStatus = ExportFeedback.text(fileURL: url)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.messageText = "导出趋势 CSV 失败"
+            alert.runModal()
         }
     }
 
@@ -1854,6 +1902,10 @@ struct OverviewCompareCard: View {
     let history: [HistoryStore.DayPoint]
     let participants: Set<HistorySource>
     @State private var period: PeriodCompare.Period = .week
+    // 渲染夹具:注入固定的导出反馈文案(保存面板无法离屏模拟)
+    var previewExportStatus: String? = nil
+    // 导出完成后的行内反馈(「已导出 <文件名> · 时刻」)
+    @State private var exportStatus: String?
 
     var body: some View {
         let compare = PeriodCompare.bySource(
@@ -1875,6 +1927,18 @@ struct OverviewCompareCard: View {
                     .pickerStyle(.segmented)
                     .controlSize(.mini)
                     .frame(width: 104)
+                    // 导出当前周期的环比表(合计 + 各来源,附口径行)
+                    Button {
+                        exportCSV(compare: compare)
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(rows.isEmpty)
+                    .help("导出当前周期环比 CSV（合计与各来源本期/上期/环比）")
+                    .accessibilityLabel("导出环比 CSV")
                 }
                 if rows.isEmpty {
                     Text("本周期与上一周期暂无 Coding 用量记录")
@@ -1891,8 +1955,35 @@ struct OverviewCompareCard: View {
                     }
                     Text("\(period.footnote)；DeepSeek 平台账户不计入。")
                         .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                    // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
+                    ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
                 }
             }
+        }
+    }
+
+    /// 导出当前周期环比 CSV：合计 + 各来源（本期/上期/环比），行序与卡片
+    /// 一致。保存面板流程与热力图/趋势导出同款，写盘失败弹系统错误框。
+    private func exportCSV(
+        compare: (this: [HistorySource: Int], last: [HistorySource: Int])
+    ) {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSSavePanel()
+        panel.title = "导出环比 CSV"
+        panel.nameFieldStringValue = PeriodCompareCSVExport.suggestedFilename(period: period)
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowedContentTypes = [.commaSeparatedText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try PeriodCompareCSVExport.makeCSV(
+                period: period, this: compare.this, last: compare.last
+            ).write(to: url, atomically: true, encoding: .utf8)
+            exportStatus = ExportFeedback.text(fileURL: url)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.messageText = "导出环比 CSV 失败"
+            alert.runModal()
         }
     }
 
