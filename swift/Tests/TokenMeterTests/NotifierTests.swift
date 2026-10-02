@@ -101,4 +101,36 @@ final class NotifierTests: XCTestCase {
         // 周报通知键由发送方与路由共用，锁定不改名
         XCTAssertEqual(Notifier.weeklyDigestID, "weekly.digest")
     }
+
+    func testAlertSamplesAllRouteSomewhere() {
+        // 每个样例的 id 都在跳转路由里(点横幅必有落点),派生动作不跳
+        let samples = Notifier.alertSamples()
+        XCTAssertEqual(samples.count, 7)
+        for sample in samples {
+            XCTAssertNotNil(Notifier.openTarget(
+                identifier: sample.id,
+                actionIdentifier: UNNotificationDefaultActionIdentifier),
+                "样例 \(sample.id) 应有跳转落点")
+            XCTAssertNil(Notifier.openTarget(
+                identifier: sample.id,
+                actionIdentifier: UNNotificationDismissActionIdentifier))
+        }
+    }
+
+    func testAlertSamplesCoverAllJumpTargets() {
+        // 样例覆盖四个来源页落点与总览落点(节奏样例走前缀路由回总览)
+        let targets = Notifier.alertSamples().map {
+            Notifier.openTarget(
+                identifier: $0.id,
+                actionIdentifier: UNNotificationDefaultActionIdentifier)
+        }
+        for expected in [AppView.source(.codex), .source(.claude),
+                         .source(.kimi), .source(.deepseek), .dashboard] {
+            XCTAssertTrue(targets.contains(expected), "样例应覆盖落点 \(expected)")
+        }
+        // 样例文案明示是预览,不与真实告警混淆
+        for sample in Notifier.alertSamples() {
+            XCTAssertTrue(sample.body.hasPrefix("【样例】"))
+        }
+    }
 }

@@ -577,6 +577,13 @@ struct SettingsView: View {
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }
+                HStack {
+                    Text("推样例立即发送各告警（id 与真实告警同键），点横幅验证各自跳转。")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("推样例") { pushAlertSamples() }
+                        .controlSize(.small)
+                }
 
                 Divider()
                 Toggle(isOn: Binding(
@@ -613,13 +620,13 @@ struct SettingsView: View {
                     }
                 }
                 HStack {
-                    Text("受上方「系统通知」总开关控制；预览立即推一条当前内容。")
+                    Text("受上方「系统通知」总开关控制；预览立即推一条当前内容，点击横幅回总览。")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                     Spacer()
                     Button("预览") {
                         guard let digestPreview else { return }
                         Notifier.send(
-                            id: "weekly.digest.preview",
+                            id: Notifier.weeklyDigestID,
                             title: digestPreview.title, body: digestPreview.body)
                     }
                     .controlSize(.small)
@@ -959,6 +966,14 @@ struct SettingsView: View {
     }
 
     /// 周报同口径导出：上周周一到周日（含汇总与订阅回本行，按整周折算）
+    // 推送全部告警样例：不越线也能验证「点横幅 → 跳对应页」。样例与真实
+    // 告警同键（除节奏样例外），发送仍受总开关与系统授权门禁。
+    private func pushAlertSamples() {
+        for sample in Notifier.alertSamples() {
+            Notifier.send(id: sample.id, title: sample.title, body: sample.body)
+        }
+    }
+
     private func exportLastWeekCSV() {
         guard let range = UsageCSVExport.lastWeekWindow() else {
             digestExportStatus = "无法确定上周的日期范围"
