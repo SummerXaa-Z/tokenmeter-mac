@@ -37,15 +37,25 @@ enum UsageHeatmap {
     }
 
     // 周内节律:窗口内该星期几的日均。分母是出现次数而非有量天数——
-    // 休整天计入分母,反映"这一天通常用多少"而不是"用的时候有多猛"。
+    // 休整天计入分母,反映"这一天通常用多少"而不是"用的时候有多猛";
+    // activeDays 给出其中有量的天数,区分"常在但轻"与"偶尔爆发"。
     struct WeekdayStat: Equatable {
         let weekday: Int    // Calendar weekday,1=周日 ... 7=周六
         let average: Int
         let days: Int       // 窗口内该星期几出现的天数(含今天,不含未来)
+        let activeDays: Int // 其中 Token > 0 的天数(0 ≤ activeDays ≤ days)
 
         var label: String {
             ["日", "一", "二", "三", "四", "五", "六"][weekday - 1]
         }
+    }
+
+    /// 周内节律悬停说明行的标签段:周几 + 活跃天数占出现次数的比例
+    /// (如「周六 · 活跃 8/13 天」= 窗口内 13 个周六里 8 个有用量)。
+    /// 出现次数为 0 时(理论上不发生)省略活跃段,只给周几。
+    static func weekdayRhythmLabel(_ stat: WeekdayStat) -> String {
+        guard stat.days > 0 else { return "周\(stat.label)" }
+        return "周\(stat.label) · 活跃 \(stat.activeDays)/\(stat.days) 天"
     }
 
     static let windowWeeks = 13
@@ -456,12 +466,16 @@ enum UsageHeatmap {
 
         var sums = [Int: Int]()
         var counts = [Int: Int]()
+        var activeCounts = [Int: Int]()
         var cursor = calendar.startOfDay(for: dateRange.start)
         let anchor = calendar.startOfDay(for: dateRange.end)
         while cursor <= anchor {
             let weekday = calendar.component(.weekday, from: cursor)
-            sums[weekday, default: 0] += totals[DateUtil.key(cursor)] ?? 0
+            let key = DateUtil.key(cursor)
+            sums[weekday, default: 0] += totals[key] ?? 0
             counts[weekday, default: 0] += 1
+            // totals 只收 Token > 0 的日子,在字典里即为有量
+            if totals[key] != nil { activeCounts[weekday, default: 0] += 1 }
             guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
             cursor = next
         }
@@ -469,7 +483,11 @@ enum UsageHeatmap {
             let weekday = slot == 8 ? 1 : slot
             let days = counts[weekday] ?? 0
             let sum = sums[weekday] ?? 0
-            return WeekdayStat(weekday: weekday, average: days > 0 ? sum / days : 0, days: days)
+            return WeekdayStat(
+                weekday: weekday,
+                average: days > 0 ? sum / days : 0,
+                days: days,
+                activeDays: min(activeCounts[weekday] ?? 0, days))
         }
     }
 

@@ -201,6 +201,8 @@ final class UsageHeatmapTests: XCTestCase {
         // 休整日计入分母:周五 (0+40)/2=20、周日 (30+0)/2=15
         XCTAssertEqual(stats.map(\.average), [0, 0, 0, 0, 20, 20, 15])
         XCTAssertEqual(stats.map(\.days), [2, 2, 2, 2, 2, 2, 2])
+        // 活跃天数 = 其中有量的出现次数:周五 1(09-25)、周六 2、周日 1(09-13)
+        XCTAssertEqual(stats.map(\.activeDays), [0, 0, 0, 0, 1, 2, 1])
     }
 
     func testWeekdayAveragesExcludesDaysOutsideWindow() {
@@ -212,6 +214,7 @@ final class UsageHeatmapTests: XCTestCase {
         let saturday = stats.first { $0.label == "六" }
         XCTAssertEqual(saturday?.average, 15)   // 30 / 2(09-12 为零天)
         XCTAssertEqual(saturday?.days, 2)
+        XCTAssertEqual(saturday?.activeDays, 1)   // 09-19 有量,09-12 休整
     }
 
     func testWeekdayAveragesHalfYearCountsEveryWeekday26Times() {
@@ -220,6 +223,21 @@ final class UsageHeatmapTests: XCTestCase {
         let stats = averages([], windowWeeks: 26)
         XCTAssertEqual(stats.map(\.days), [26, 26, 26, 26, 26, 26, 26])
         XCTAssertEqual(stats.map(\.average), [0, 0, 0, 0, 0, 0, 0])
+        XCTAssertEqual(stats.map(\.activeDays), [0, 0, 0, 0, 0, 0, 0])
+    }
+
+    func testWeekdayRhythmLabelCarriesActiveShare() {
+        func stat(_ weekday: Int, _ active: Int, _ days: Int) -> UsageHeatmap.WeekdayStat {
+            UsageHeatmap.WeekdayStat(
+                weekday: weekday, average: 3, days: days, activeDays: active)
+        }
+        // 常规:周几 + 活跃占出现次数
+        XCTAssertEqual(UsageHeatmap.weekdayRhythmLabel(stat(7, 8, 13)), "周六 · 活跃 8/13 天")
+        // 全勤与全休都照说(0/N 同样有信息:该星期几整窗休整)
+        XCTAssertEqual(UsageHeatmap.weekdayRhythmLabel(stat(7, 13, 13)), "周六 · 活跃 13/13 天")
+        XCTAssertEqual(UsageHeatmap.weekdayRhythmLabel(stat(7, 0, 13)), "周六 · 活跃 0/13 天")
+        // 出现次数为 0 时省略活跃段,不给"0/0 天"
+        XCTAssertEqual(UsageHeatmap.weekdayRhythmLabel(stat(1, 0, 0)), "周日")
     }
 
     // MARK: - 逐日 API 等价金额（悬停 tooltip）

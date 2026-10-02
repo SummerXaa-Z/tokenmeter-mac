@@ -2248,10 +2248,12 @@ struct OverviewHeatmapCard: View {
         let peak = stats.map(\.average).max() ?? 0
         let active = stats.first { $0.label == hoverWeekday }
             ?? stats.max { $0.average < $1.average }
-            ?? UsageHeatmap.WeekdayStat(weekday: 2, average: 0, days: 0)
+            ?? UsageHeatmap.WeekdayStat(weekday: 2, average: 0, days: 0, activeDays: 0)
         return VStack(alignment: .leading, spacing: 2) {
             ChartHoverCaption(
-                label: "周内节律 · 周\(active.label)", total: active.average, parts: [])
+                label: "周内节律 · \(UsageHeatmap.weekdayRhythmLabel(active))",
+                total: active.average,
+                parts: [])
             Chart {
                 ForEach(stats, id: \.weekday) { stat in
                     BarMark(
