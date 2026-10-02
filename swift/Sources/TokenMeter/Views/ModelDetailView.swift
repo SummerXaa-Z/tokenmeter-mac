@@ -7,7 +7,11 @@ struct ModelDetailView: View {
     @EnvironmentObject var state: AppState
     let modelKey: String
     var onBack: () -> Void
+    // 渲染夹具：注入固定的导出反馈文案（离屏渲染无法模拟保存面板）
+    var previewExportStatus: String? = nil
     @State private var hoverDate: String?
+    // 导出完成后的行内反馈（「已导出 <文件名> · 时刻」）
+    @State private var exportStatus: String?
 
     private var isFlash: Bool { modelKey == "flash" }
     private var accent: Color { isFlash ? Theme.flash : Theme.pro }
@@ -78,6 +82,8 @@ struct ModelDetailView: View {
                         .chartXSelection(value: $hoverDate)
                         .tokenYAxis()
                         .frame(height: 160)
+                        // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
+                        ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
                     }
                 }
             } else {
@@ -133,6 +139,7 @@ struct ModelDetailView: View {
         let text = DeepSeekModelCSVExport.makeCSV(model: m, rows: rows)
         do {
             try text.write(to: url, atomically: true, encoding: .utf8)
+            exportStatus = ExportFeedback.text(fileURL: url)
         } catch {
             let alert = NSAlert()
             alert.messageText = "导出失败"

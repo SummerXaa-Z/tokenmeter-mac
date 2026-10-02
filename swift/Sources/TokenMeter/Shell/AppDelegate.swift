@@ -70,6 +70,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 仅在用户开启通知时申请权限；关闭状态重启不能再次打扰用户。
         Notifier.requestAuthorizationIfEnabled(ConfigStore.shared.notificationsEnabled)
 
+        // 注册周报通知的快捷动作分类（幂等）：横幅展开即可直接
+        // 「导出上周 CSV」，不必打开面板走保存面板
+        Notifier.registerCategories()
+
         // 周报/告警通知点击 → 打开对应页面并弹面板。delegate 是弱引用，
         // router 必须由 self 持有；回调统一回主线程后再碰 AppKit。
         notificationRouter.onOpen = { [weak self] target in
@@ -162,7 +166,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         heatmapWeekCard(initialSpan: .half)
     }
 
-    private static func heatmapWeekCard(initialSpan: OverviewHeatmapCard.Span) -> some View {
+    private static func heatmapWeekCard(
+        initialSpan: OverviewHeatmapCard.Span,
+        previewExportStatus: String? = nil
+    ) -> some View {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         var days: [HistoryStore.DayPoint] = []
@@ -181,9 +188,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return VStack(spacing: 12) {
             OverviewHeatmapCard(
                 history: days, participants: [.claude, .codex],
-                initialSpan: initialSpan, initialGranularity: .week)
+                initialSpan: initialSpan, initialGranularity: .week,
+                previewExportStatus: previewExportStatus)
         }
         .padding(14)
+    }
+
+    // 导出反馈行夹具:热力图周档卡(顺带回归周条布局)与模型/Skills 榜卡,
+    // previewExportStatus 预置「已导出」态——保存面板无法离屏模拟。
+    // 同页只放一张热力图卡(同型卡多张会串读状态,见 heatmapWeekFixture)。
+    private static func exportFeedbackFixture() -> some View {
+        let data = rankingsFixtureData()
+        return ScrollView {
+            VStack(spacing: 12) {
+                heatmapWeekCard(
+                    initialSpan: .quarter,
+                    previewExportStatus: "已导出 TokenMeter-heatmap-2026-10-03.csv · 09:41")
+                OverviewRankingsCard(
+                    rankings: data.rankings, skillRankings: data.skills, range: .month,
+                    previewExportStatus: "已导出 TokenMeter-skills-2026-10-03.csv · 09:41")
+            }
+            .padding(14)
+        }
     }
 
     // 月视图单卡成页:合成约 25 个月数据(本机留存远没有这么久),覆盖
@@ -938,6 +964,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     initialSampleStatus: Notifier.samplePushSummary(
                         for: Notifier.alertSamples()) + " · 09:41"),
                 height: 1600)),
+            // 导出反馈行:热力图(周档,顺带回归周条)与模型/Skills 榜两卡,
+            // previewExportStatus 预置「已导出」态(保存面板无法离屏模拟)
+            ("export-feedback-fixture", hosting(
+                Self.exportFeedbackFixture(), height: 1100)),
         ]
 
         var windows: [NSWindow] = []
@@ -1400,8 +1430,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 // 通知点击路由：把「横幅本身的点击」映射为目标页面（Notifier.openTarget），
-// 派生动作与其他通知交还系统默认行为。UNUserNotificationCenter 的 delegate
-// 是弱引用，实例由 AppDelegate 持有；回调回主线程后再碰 AppKit。
+// 派生动作与其他通知交还系统默认行为。周报的快捷动作（导出上周 CSV）
+// 在这里就地执行：不开面板、不弹保存面板，直接把 CSV 写到「下载」文件
+// 夹并回执一条结果通知。UNUserNotificationCenter 的 delegate 是弱引用，
+// 实例由 AppDelegate 持有；回调回主线程后再碰 AppKit。
 private final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
     var onOpen: ((AppView) -> Void)?
 
@@ -1410,6 +1442,11 @@ private final class NotificationRouter: NSObject, UNUserNotificationCenterDelega
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
+        if response.actionIdentifier == Notifier.weeklyDigestExportActionID {
+            handleWeeklyDigestExport()
+            completionHandler()
+            return
+        }
         if let target = Notifier.openTarget(
             identifier: response.notification.request.identifier,
             actionIdentifier: response.actionIdentifier)
@@ -1419,5 +1456,30 @@ private final class NotificationRouter: NSObject, UNUserNotificationCenterDelega
             }
         }
         completionHandler()
+    }
+
+    /// 周报快捷动作的直落导出：与设置页「导出上周 CSV」同一条数据管线
+    ///（上周周一到周日、含汇总与订阅回本行），只是不经保存面板，直接
+    /// 写「下载」文件夹；结果回执一条系统通知（文件名或失败原因）。
+    private func handleWeeklyDigestExport() {
+        let filename: String?
+        if let directory = FileManager.default.urls(
+            for: .downloadsDirectory, in: .userDomainMask).first
+        {
+            let modelHistory = ModelUsageHistoryStore.shared.all()
+            filename = UsageCSVExport.writeLastWeekCSV(
+                directory: directory,
+                days: HistoryStore.all(),
+                apiValueByDate: UsageCSVExport.apiValueByDate(modelHistory),
+                modelHistory: modelHistory,
+                plans: ConfigStore.shared.subscriptionPlans)
+        } else {
+            filename = nil
+        }
+        Notifier.send(
+            id: "weekly.digest.export.result",
+            title: filename == nil ? "上周 CSV 导出失败" : "已导出上周 CSV",
+            body: filename.map { "已写入「下载」文件夹：\($0)" }
+                ?? "无法确定上周范围或写入失败；可到 设置 → 用量导出 手动导出")
     }
 }

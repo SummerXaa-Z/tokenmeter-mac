@@ -687,6 +687,8 @@ struct OverviewRankingsCard: View {
     // 等价/近7天档的排序值也可注入,渲染机真实留存不可预测
     var previewSort: ModelSort? = nil
     var sortValueFor: ((HistorySource, String, ModelSort) -> Double)? = nil
+    // 渲染夹具:注入固定的导出反馈文案(离屏渲染无法模拟保存面板)
+    var previewExportStatus: String? = nil
     @EnvironmentObject private var state: AppState
     @State private var hoverEntry: PersonalUsageRankings.ModelEntry?
     @State private var hoverSkill: PersonalSkillRankings.Entry?
@@ -697,6 +699,8 @@ struct OverviewRankingsCard: View {
     // Skill 迷你条悬停对准的周序号
     @State private var skillSparkWeek: (name: String, weekIndex: Int)?
     @State private var sort: ModelSort = .usage
+    // 导出完成后的行内反馈(模型榜与 Skills 榜共用一行,后导出的覆盖)
+    @State private var exportStatus: String?
 
     /// 模型榜排序档:用量=所选范围 Token(默认);等价/近7天来自
     /// 近 30 天明细留存(与悬停数字同管线,缺价模型的等价按 0 沉底)
@@ -866,6 +870,7 @@ struct OverviewRankingsCard: View {
                 scopeTitle: range.scopeTitle,
                 sortTitle: activeSort.rawValue
             ).write(to: url, atomically: true, encoding: .utf8)
+            exportStatus = ExportFeedback.text(fileURL: url)
         } catch {
             let alert = NSAlert(error: error)
             alert.messageText = "导出模型榜 CSV 失败"
@@ -1058,6 +1063,8 @@ struct OverviewRankingsCard: View {
 
                 Text("Claude 统计原生 Skill 工具；Codex 统计工具实际读取标准 SKILL.md；Copilot 统计 skill.invoked。普通消息提及不计入。行尾小条为近 13 周逐周调用次数（悬停查单周）；点来源徽标只看该来源的 Skill 调用（再点或点头部胶囊还原）；点击行进入详情页（近 13 周全宽走势与来源拆解）；右上按钮导出完整 Skills 榜 CSV（跟随当前来源筛选，周列为近 13 周次数，无调用留空）。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
+                // 导出反馈行:模型榜与 Skills 榜共用,保存面板点完「存储」后可见
+                ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
             }
         }
     }
@@ -1078,6 +1085,7 @@ struct OverviewRankingsCard: View {
                 rows: exportSkillRows,
                 scopeTitle: exportScopeTitle
             ).write(to: url, atomically: true, encoding: .utf8)
+            exportStatus = ExportFeedback.text(fileURL: url)
         } catch {
             let alert = NSAlert(error: error)
             alert.messageText = "导出 Skills 榜 CSV 失败"
@@ -1951,6 +1959,9 @@ struct OverviewHeatmapCard: View {
     // 按周/按月翻页:0 = 最近(终点今天),k = 整体前移 k 周/月;上限由最早数据决定
     @State private var weekOffset: Int
     @State private var monthOffset: Int
+    // 导出完成后的行内反馈(「已导出 <文件名> · 时刻」);渲染夹具注入固定文案
+    @State private var exportStatus: String?
+    private let previewExportStatus: String?
 
     init(
         history: [HistoryStore.DayPoint],
@@ -1959,7 +1970,8 @@ struct OverviewHeatmapCard: View {
         initialGranularity: Granularity = .day,
         initialWeekOffset: Int = 0,
         initialMonthSpan: MonthSpan = .year,
-        initialMonthOffset: Int = 0
+        initialMonthOffset: Int = 0,
+        previewExportStatus: String? = nil
     ) {
         self.history = history
         self.participants = participants
@@ -1968,6 +1980,8 @@ struct OverviewHeatmapCard: View {
         _granularity = State(initialValue: initialGranularity)
         _weekOffset = State(initialValue: initialWeekOffset)
         _monthOffset = State(initialValue: initialMonthOffset)
+        _exportStatus = State(initialValue: previewExportStatus)
+        self.previewExportStatus = previewExportStatus
     }
 
     // 索引 = UsageHeatmap.DayCell.level(0...4)
@@ -2113,6 +2127,8 @@ struct OverviewHeatmapCard: View {
                         Text(footnoteText)
                             .font(Theme.footnoteFont).foregroundStyle(.tertiary)
                     }
+                    // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
+                    ExportFeedbackLine(status: exportStatus)
                 }
             }
         }
@@ -2182,6 +2198,7 @@ struct OverviewHeatmapCard: View {
             try HeatmapCSVExport.makeCSV(
                 rows: rows, granularity: granularity, windowText: windowText
             ).write(to: url, atomically: true, encoding: .utf8)
+            exportStatus = ExportFeedback.text(fileURL: url)
         } catch {
             let alert = NSAlert(error: error)
             alert.messageText = "导出热力图 CSV 失败"
@@ -2336,6 +2353,28 @@ struct OverviewHeatmapCard: View {
                 }
                 HStack(spacing: 2) {
                     ForEach(cells, id: \.weekOf) { cell in
+                        let isCurrent = weekOffset == 0 && cell.weekOf == thisWeek
+                        // 本周已过的天数（周一为界，含今天）；进行中的周
+                        // 折日均与上周比，避免「周还没过完」误读成骤降
+                        let elapsedDays: Int? = {
+                            guard isCurrent,
+                                  let monday = DateUtil.date(from: cell.weekOf)
+                            else { return nil }
+                            let diff = Calendar.current.dateComponents(
+                                [.day],
+                                from: Calendar.current.startOfDay(for: monday),
+                                to: Calendar.current.startOfDay(for: Date())).day ?? 0
+                            return max(1, diff + 1)
+                        }()
+                        // 悬停/无障碍文案一次算好两处复用;上周对照按参与
+                        // 来源从同一份按天历史取(早于留存起点时无对照段)
+                        let help = UsageHeatmap.weekHelpText(
+                            weekOf: cell.weekOf, total: cell.total,
+                            apiValue: cell.usd, inProgress: isCurrent,
+                            elapsedDays: elapsedDays,
+                            previousWeek: UsageHeatmap.previousWeekSummary(
+                                weekOf: cell.weekOf, days: history,
+                                participants: participants))
                         RoundedRectangle(cornerRadius: 2)
                             .fill(Self.levelFills[cell.level])
                             .overlay {
@@ -2344,12 +2383,8 @@ struct OverviewHeatmapCard: View {
                                         .stroke(Color.primary.opacity(0.55), lineWidth: 1)
                                 }
                             }
-                            .help(UsageHeatmap.weekHelpText(
-                                weekOf: cell.weekOf, total: cell.total,
-                                apiValue: cell.usd))
-                            .accessibilityLabel(UsageHeatmap.weekHelpText(
-                                weekOf: cell.weekOf, total: cell.total,
-                                apiValue: cell.usd))
+                            .help(help)
+                            .accessibilityLabel(help)
                             .frame(width: cellWidth, height: 89)
                     }
                 }

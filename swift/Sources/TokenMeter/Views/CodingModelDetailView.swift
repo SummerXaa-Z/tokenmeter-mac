@@ -23,19 +23,26 @@ struct CodingModelDetailView: View {
     @EnvironmentObject var state: AppState
     @State private var span: Span
     @State private var hoverDate: String?
+    // 导出完成后的行内反馈;渲染夹具注入固定文案(离屏渲染无法模拟
+    // 保存面板)
+    @State private var exportStatus: String?
+    private let previewExportStatus: String?
 
     init(
         source: HistorySource,
         model: String,
         onBack: @escaping () -> Void,
         injectedFor: ((Int) -> CodingModelDetail.Summary?)? = nil,
-        initialSpan: Span = .month
+        initialSpan: Span = .month,
+        previewExportStatus: String? = nil
     ) {
         self.source = source
         self.model = model
         self.onBack = onBack
         self.injectedFor = injectedFor
         _span = State(initialValue: initialSpan)
+        _exportStatus = State(initialValue: previewExportStatus)
+        self.previewExportStatus = previewExportStatus
     }
 
     private func summary(for span: Span) -> CodingModelDetail.Summary? {
@@ -216,6 +223,8 @@ struct CodingModelDetailView: View {
                 Text("按用量当日生效的价格快照重算（最近核对 \(APIReferencePricingCatalog.observedAt)）。仅表示该模型的 API 等价成本，不是订阅费或平台账单；运行时不联网。")
                     .font(Theme.footnoteFont).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
+                // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
+                ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
             }
         }
     }
@@ -256,6 +265,7 @@ struct CodingModelDetailView: View {
                 source: source, model: model, spanDays: span.rawValue,
                 rows: rows, coverage: s.coverage
             ).write(to: url, atomically: true, encoding: .utf8)
+            exportStatus = ExportFeedback.text(fileURL: url)
         } catch {
             let alert = NSAlert(error: error)
             alert.messageText = "导出模型明细 CSV 失败"

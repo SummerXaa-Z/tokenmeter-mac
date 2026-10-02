@@ -46,6 +46,7 @@
 		4B67CEFB5A42F8C8D086DC30 /* ChartHoverPartsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7546D54798D07DFF4CEB314F /* ChartHoverPartsTests.swift */; };
 		4B6B9318EEE0DAAC502C5496 /* SourceHistoryCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0D90EC446183887EFACB93 /* SourceHistoryCards.swift */; };
 		4C3AA3A1071617E1A4CC41CB /* NotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22064562B364186A960DC06C /* NotifierTests.swift */; };
+		4CFF15A99476123CF1D2D311 /* ExportFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83EA0AEBD4B14CB6BE63461 /* ExportFeedback.swift */; };
 		4EF7C7222089ECBB8E69009B /* SourceHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 872A00E85A23AE79C3E5A07B /* SourceHealth.swift */; };
 		516E50273A26D4CBA68435B6 /* CopilotUsageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0D30F5E2C9FCBF8F7230764 /* CopilotUsageTests.swift */; };
 		53EC51D7DF39A698FE903177 /* FormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61AF1344992FFFE169DB4857 /* FormatTests.swift */; };
@@ -65,6 +66,7 @@
 		67D5735C581522C8F25A472A /* GeminiUsageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DFC07D8517606EDB9E692DC /* GeminiUsageTests.swift */; };
 		68DC204BA8F8A4EB2A4D53DE /* ArkPlanQuotaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96B332F068C8D6A1265701DD /* ArkPlanQuotaService.swift */; };
 		6F61B832C0A969BE3C20F6DC /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D564596B6873D239FB7F78 /* SettingsView.swift */; };
+		714D1FF10B38AE2BB2621E28 /* ExportFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1DD12D5662FA06D0783D298 /* ExportFeedbackTests.swift */; };
 		7193ABE0E27AFAD75C13A5D8 /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE2676BB49AC73AF2BA8531 /* Format.swift */; };
 		724F811D27BE42FCC499A6E3 /* SkillUsageTrend.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8F00C8AE1EB5973EE978D88 /* SkillUsageTrend.swift */; };
 		727D1AB8872C9EFC6DA1022C /* UnpricedModelsNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CA840794CFA53614F8872DD /* UnpricedModelsNote.swift */; };
@@ -279,6 +281,7 @@
 		C5D564596B6873D239FB7F78 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		C81AF5E2F02C971202E2FC15 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C82107C1666FA3E1EBD6FADB /* OverviewSourceSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewSourceSelection.swift; sourceTree = "<group>"; };
+		C83EA0AEBD4B14CB6BE63461 /* ExportFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportFeedback.swift; sourceTree = "<group>"; };
 		CC942E758B5C67CFA1D9F55A /* KimiUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimiUsageTests.swift; sourceTree = "<group>"; };
 		D1ACFF688BA4F5257F82E5A5 /* WeeklyDigestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyDigestTests.swift; sourceTree = "<group>"; };
 		D1CE424B83212151670BD6C9 /* TokenMeter.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TokenMeter.entitlements; sourceTree = "<group>"; };
@@ -300,6 +303,7 @@
 		EDD6318A133F765FB00F63D7 /* UsageCSVExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageCSVExportTests.swift; sourceTree = "<group>"; };
 		F0C668ED35AE76F512457202 /* CollectAttemptLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectAttemptLog.swift; sourceTree = "<group>"; };
 		F1B86D6C533AB2687E46CD0D /* DashboardComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardComponents.swift; sourceTree = "<group>"; };
+		F1DD12D5662FA06D0783D298 /* ExportFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportFeedbackTests.swift; sourceTree = "<group>"; };
 		F38419432160E7DE0198F0A8 /* SubscriptionQuotaAlertTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionQuotaAlertTests.swift; sourceTree = "<group>"; };
 		F66A254AEF8B3AA97E410E2F /* ClaudeUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeUsage.swift; sourceTree = "<group>"; };
 		F7B29B6ED6B08B1BE7855470 /* MenubarTodayTotal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenubarTodayTotal.swift; sourceTree = "<group>"; };
@@ -401,6 +405,7 @@
 				BF2379EE54CEBD6FB3B0FBE4 /* DeepSeekModelCSVExportTests.swift */,
 				12ABD16531AB8CFE83C688B0 /* DetailBackfillTests.swift */,
 				847F5B5A0A9B9ECF7B3C10D1 /* DiagnosticReportTests.swift */,
+				F1DD12D5662FA06D0783D298 /* ExportFeedbackTests.swift */,
 				69102B74FE1F50DD2D8C39FA /* ForcedRefreshCoalescerTests.swift */,
 				61AF1344992FFFE169DB4857 /* FormatTests.swift */,
 				5DFC07D8517606EDB9E692DC /* GeminiUsageTests.swift */,
@@ -518,6 +523,7 @@
 				0AB5C8B4A29701DC68C925D9 /* CursorView.swift */,
 				F1B86D6C533AB2687E46CD0D /* DashboardComponents.swift */,
 				4C7FF91B5D91E2641E200E35 /* DashboardView.swift */,
+				C83EA0AEBD4B14CB6BE63461 /* ExportFeedback.swift */,
 				AD8D457FECE03878E165D226 /* GeminiView.swift */,
 				E3A6CC9B0D4EEEB3CFAD389D /* KimiView.swift */,
 				AE4C8E58EADDC75850B46AE4 /* ModelDetailView.swift */,
@@ -648,6 +654,7 @@
 				E7646310A8DE1078AFDBEC0D /* DeepSeekModelCSVExportTests.swift in Sources */,
 				40A41B6ABD0B723340A91566 /* DetailBackfillTests.swift in Sources */,
 				2CF639B933D9E249A7AC60D5 /* DiagnosticReportTests.swift in Sources */,
+				714D1FF10B38AE2BB2621E28 /* ExportFeedbackTests.swift in Sources */,
 				96DDA924E25136694B16F9AD /* ForcedRefreshCoalescerTests.swift in Sources */,
 				53EC51D7DF39A698FE903177 /* FormatTests.swift in Sources */,
 				67D5735C581522C8F25A472A /* GeminiUsageTests.swift in Sources */,
@@ -718,6 +725,7 @@
 				FCCCED910A3139C89E73401D /* DeepSeekModelCSVExport.swift in Sources */,
 				F45E490C57EBADDADE4CEE44 /* DetailBackfill.swift in Sources */,
 				2F6BD79BC52395DECA6008AE /* DiagnosticReport.swift in Sources */,
+				4CFF15A99476123CF1D2D311 /* ExportFeedback.swift in Sources */,
 				E3EF0BE1ABE9261F5D24B25A /* ForcedRefreshCoalescer.swift in Sources */,
 				7193ABE0E27AFAD75C13A5D8 /* Format.swift in Sources */,
 				346128E68388D5AC4CAFD3EF /* GeminiUsage.swift in Sources */,

@@ -251,8 +251,33 @@ enum UsageHeatmap {
     }
 
     /// 周格悬停说明：周（周一日期）· 周合计 Token，有金额时追加美元金额。
-    static func weekHelpText(weekOf: String, total: Int, apiValue: Double?) -> String {
+    /// 与月档对称：进行中的本周（仅最近一页）由调用方传 inProgress，
+    /// 给出 elapsedDays（本周已过的天数，含今天）时附日均与已过天数——
+    /// 周条按周合计着色，进行中的周直接比合计必然偏低，比日均才公平。
+    /// previousWeek 给出上周对照：完整周比周合计；进行中的本周比日均。
+    static func weekHelpText(
+        weekOf: String,
+        total: Int,
+        apiValue: Double?,
+        inProgress: Bool = false,
+        elapsedDays: Int? = nil,
+        previousWeek: (total: Int, dailyAverage: Int)? = nil
+    ) -> String {
         var text = "\(Fmt.mmdd(weekOf))周 · \(Fmt.tokensShort(total))"
+        if inProgress, let elapsedDays, elapsedDays > 0 {
+            text += " · 日均 \(Fmt.tokensShort(total / elapsedDays))（已 \(elapsedDays) 天）"
+        }
+        if let previousWeek {
+            if inProgress, let elapsedDays, elapsedDays > 0 {
+                text += " · 上周日均 \(Fmt.tokensShort(previousWeek.dailyAverage))" +
+                    compareSegment(
+                        current: total / elapsedDays,
+                        previous: previousWeek.dailyAverage)
+            } else {
+                text += " · 上周 \(Fmt.tokensShort(previousWeek.total))" +
+                    compareSegment(current: total, previous: previousWeek.total)
+            }
+        }
         if let apiValue, apiValue > 0 {
             text += " · \(Fmt.usd(apiValue))"
         }
@@ -306,6 +331,33 @@ enum UsageHeatmap {
             of: .day, in: .month, for: prevMonthDate)?.count ?? 0
         guard daysInMonth > 0 else { return nil }
         return (total: total, dailyAverage: total / daysInMonth)
+    }
+
+    /// 周格悬停的上周对照：给定周（周一日期键），返回前一个自然周
+    ///（往前 7 天的周一到周日）的合计与日均（参与来源口径、与周条同
+    /// 一条数据）。上周合计为 0（早于本机留存起点或确实无用量）返回
+    /// nil——没有可信对照就不给段，与月档上月对照同一纪律。
+    static func previousWeekSummary(
+        weekOf: String,
+        days: [HistoryStore.DayPoint],
+        participants: some Sequence<HistorySource>,
+        calendar: Calendar = .current
+    ) -> (total: Int, dailyAverage: Int)? {
+        guard let monday = DateUtil.date(from: weekOf),
+              let prevMonday = calendar.date(byAdding: .day, value: -7, to: monday)
+        else { return nil }
+        let keys = Set((0..<7).compactMap {
+            calendar.date(byAdding: .day, value: $0, to: prevMonday).map(DateUtil.key)
+        })
+        let allowed = Set(participants)
+        var total = 0
+        for day in days where keys.contains(day.date) {
+            total += day.bySource.reduce(0) { sum, entry in
+                allowed.contains(entry.key) ? sum + max(entry.value, 0) : sum
+            }
+        }
+        guard total > 0 else { return nil }
+        return (total: total, dailyAverage: total / 7)
     }
 
     /// 月格悬停说明：年月 · 月合计 Token，有金额时追加美元金额。

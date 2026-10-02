@@ -194,4 +194,49 @@ final class NotifierTests: XCTestCase {
         })
         XCTAssertEqual(threads, ["quota.alert", "quota.pace", "weekly.digest"])
     }
+
+    func testCategoryIdentifierOnlyAttachesToWeeklyDigest() {
+        // 周报挂快捷动作分类(横幅展开带「导出上周 CSV」):裸键与按周
+        // 派生键都算;告警/节奏/未知键不挂,保持系统默认展开形态
+        XCTAssertEqual(
+            Notifier.categoryIdentifier(for: Notifier.weeklyDigestID),
+            Notifier.weeklyDigestCategoryID)
+        XCTAssertEqual(
+            Notifier.categoryIdentifier(for: Notifier.weeklyDigestID(forWeek: "2026-W39")),
+            Notifier.weeklyDigestCategoryID)
+        XCTAssertNil(Notifier.categoryIdentifier(for: "codex.quota.low"))
+        XCTAssertNil(Notifier.categoryIdentifier(for: "quota.pace.codex-weekly@1723"))
+        XCTAssertNil(Notifier.categoryIdentifier(for: "weekly.digestx.2026-W39"))
+    }
+
+    func testIsWeeklyDigestIDSharedByRoutingGroupingAndCategory() {
+        // 分组、分类与跳转路由共用同一判定:裸键与按周派生键算周报,
+        // 相近前缀键不算
+        XCTAssertTrue(Notifier.isWeeklyDigestID(Notifier.weeklyDigestID))
+        XCTAssertTrue(Notifier.isWeeklyDigestID(
+            Notifier.weeklyDigestID(forWeek: "2026-W40")))
+        XCTAssertFalse(Notifier.isWeeklyDigestID("weekly.digestx.2026-W40"))
+        XCTAssertFalse(Notifier.isWeeklyDigestID("weekly.diges"))
+        XCTAssertFalse(Notifier.isWeeklyDigestID("codex.quota.low"))
+        // 判定与三处消费方一致:是周报 ⇒ 周报组 + 周报分类 + 回总览
+        for id in [Notifier.weeklyDigestID,
+                   Notifier.weeklyDigestID(forWeek: "2026-W39")]
+        {
+            XCTAssertEqual(Notifier.threadIdentifier(for: id), "weekly.digest")
+            XCTAssertEqual(Notifier.categoryIdentifier(for: id), Notifier.weeklyDigestCategoryID)
+            XCTAssertEqual(
+                Notifier.openTarget(
+                    identifier: id,
+                    actionIdentifier: UNNotificationDefaultActionIdentifier),
+                .dashboard)
+        }
+    }
+
+    func testWeeklyDigestExportActionDoesNotRoute() {
+        // 快捷动作是就地执行(导出到「下载」),不抢焦点弹面板:
+        // openTarget 对它返回 nil(派生动作统一不跳转)
+        XCTAssertNil(Notifier.openTarget(
+            identifier: Notifier.weeklyDigestID(forWeek: "2026-W39"),
+            actionIdentifier: Notifier.weeklyDigestExportActionID))
+    }
 }

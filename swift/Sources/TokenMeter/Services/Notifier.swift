@@ -19,12 +19,47 @@ enum Notifier {
         "\(weeklyDigestID).\(weekKey)"
     }
 
+    /// 周报通知判定：裸基键（旧版兼容）与按周派生键都算。分组、快捷
+    /// 动作分类与点击路由三处共用，口径必须一致。
+    static func isWeeklyDigestID(_ id: String) -> Bool {
+        id == weeklyDigestID || id.hasPrefix(weeklyDigestID + ".")
+    }
+
+    /// 周报通知的快捷动作分类：横幅展开即可「导出上周 CSV」，不用打开
+    /// 面板走保存面板。只有周报挂该分类，告警通知保持系统默认展开形态。
+    static let weeklyDigestCategoryID = "weekly.digest.category"
+
+    /// 周报快捷动作键：导出上周 CSV（与设置页周报导出同口径，直接落
+    /// 「下载」文件夹，由 AppDelegate 的通知路由执行）
+    static let weeklyDigestExportActionID = "weekly.digest.export"
+
+    /// 周报通知挂快捷动作分类，其余通知返回 nil（不挂分类）
+    static func categoryIdentifier(for id: String) -> String? {
+        isWeeklyDigestID(id) ? weeklyDigestCategoryID : nil
+    }
+
+    /// 注册通知分类（含快捷动作按钮）。setNotificationCategories 幂等，
+    /// 启动时调一次即可；无有效 bundle 时静默跳过（与 send 同一纪律）。
+    static func registerCategories() {
+        guard available else { return }
+        let export = UNNotificationAction(
+            identifier: weeklyDigestExportActionID,
+            title: "导出上周 CSV",
+            options: [])
+        let category = UNNotificationCategory(
+            identifier: weeklyDigestCategoryID,
+            actions: [export],
+            intentIdentifiers: [],
+            options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([category])
+    }
+
     /// 通知分组（threadIdentifier）：macOS 通知中心把同组通知折叠成一条
     /// 堆叠。周报一组（按周留痕后逐周堆积也能收拢）、配额/用量/余额
     /// 告警一组、节奏预警一组；未知键自成一组（用 id 本身，绝不与已知
     /// 组混叠）。send 自动按 id 挂组，调用方无需关心。
     static func threadIdentifier(for id: String) -> String {
-        if id == weeklyDigestID || id.hasPrefix(weeklyDigestID + ".") {
+        if isWeeklyDigestID(id) {
             return "weekly.digest"
         }
         if id.hasPrefix("quota.pace.") { return "quota.pace" }
@@ -74,6 +109,10 @@ enum Notifier {
                 content.sound = .default
                 // 同类通知在通知中心按组折叠（周报/告警/节奏各一组）
                 content.threadIdentifier = threadIdentifier(for: id)
+                // 周报挂快捷动作分类（横幅展开带「导出上周 CSV」按钮）
+                if let category = categoryIdentifier(for: id) {
+                    content.categoryIdentifier = category
+                }
                 let req = UNNotificationRequest(identifier: id, content: content, trigger: nil)
                 center.add(req)
             }
@@ -128,9 +167,7 @@ enum Notifier {
     static func samplePushSummary(
         for samples: [(id: String, title: String, body: String)]
     ) -> String {
-        let digestCount = samples.filter {
-            $0.id == weeklyDigestID || $0.id.hasPrefix(weeklyDigestID + ".")
-        }.count
+        let digestCount = samples.filter { isWeeklyDigestID($0.id) }.count
         return "已推 \(samples.count) 条样例（周报 \(digestCount) + 告警 \(samples.count - digestCount)）"
     }
 
@@ -147,9 +184,7 @@ enum Notifier {
         }
         // 周报按周留痕：带周键的派生 id 与旧版裸键都回总览（升级前已
         // 发出的通知点击仍可跳转）；前缀必须是完整基键，避免误伤相近键。
-        if identifier == weeklyDigestID
-            || identifier.hasPrefix(weeklyDigestID + ".")
-        { return .dashboard }
+        if isWeeklyDigestID(identifier) { return .dashboard }
         switch identifier {
         case "codex.quota.low": return .source(.codex)
         case "claude.daily.over": return .source(.claude)

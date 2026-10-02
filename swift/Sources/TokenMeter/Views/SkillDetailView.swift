@@ -14,8 +14,12 @@ struct SkillDetailView: View {
     // 渲染夹具：注入确定性的近 13 周序列（真实取数来自本机留存与实时
     // 采集，离屏渲染不可预测）；nil 时按实时 + 留存自算
     var injectedWeekly: [(weekOf: String, count: Int)]? = nil
+    // 渲染夹具：注入固定的导出反馈文案（离屏渲染无法模拟保存面板）
+    var previewExportStatus: String? = nil
     @EnvironmentObject var state: AppState
     @State private var hoverWeek: String?
+    // 导出完成后的行内反馈（「已导出 <文件名> · 时刻」）
+    @State private var exportStatus: String?
 
     private var weekly: [(weekOf: String, count: Int)]? {
         if let injectedWeekly { return injectedWeekly }
@@ -144,6 +148,8 @@ struct SkillDetailView: View {
                 Text("按自然周聚合（周一为界，旧 → 新），本周为进行中；与榜内迷你条同一条取数管线，无调用的周计 0。")
                     .font(Theme.footnoteFont).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
+                // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
+                ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
             }
         }
     }
@@ -175,6 +181,7 @@ struct SkillDetailView: View {
                 sourceNote: OverviewRankingsCard.hoverSkillText(for: entry),
                 scopeTitle: rangeTitle
             ).write(to: url, atomically: true, encoding: .utf8)
+            exportStatus = ExportFeedback.text(fileURL: url)
         } catch {
             let alert = NSAlert(error: error)
             alert.messageText = "导出 Skill 走势 CSV 失败"

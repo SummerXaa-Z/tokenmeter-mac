@@ -307,4 +307,35 @@ enum UsageCSVExport {
     private static func compact(_ dateKey: String) -> String {
         String(dateKey.suffix(5).replacingOccurrences(of: "-", with: ""))
     }
+
+    /// 通知快捷动作的直落导出：不开保存面板，把周报同口径的上周 CSV
+    /// 直接写入指定目录（App 侧传入「下载」文件夹）。数据装配与设置页
+    /// 导出同一条管线；返回写成的文件名，窗口无法确定或写盘失败返回
+    /// nil（调用方据此回执失败通知）。
+    static func writeLastWeekCSV(
+        directory: URL,
+        days: [HistoryStore.DayPoint],
+        apiValueByDate: [String: Double],
+        modelHistory: [ModelUsageDay],
+        plans: [SubscriptionPlan],
+        today: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String? {
+        guard let range = lastWeekWindow(today: today, calendar: calendar) else {
+            return nil
+        }
+        let csv = makeCSV(
+            days,
+            apiValueByDate: apiValueByDate,
+            modelHistory: modelHistory,
+            plans: plans,
+            range: range)
+        let url = directory.appendingPathComponent(suggestedFilename(range: range))
+        do {
+            try csv.write(to: url, atomically: true, encoding: .utf8)
+            return url.lastPathComponent
+        } catch {
+            return nil
+        }
+    }
 }

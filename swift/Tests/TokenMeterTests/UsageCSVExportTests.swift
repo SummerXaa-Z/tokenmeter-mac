@@ -327,6 +327,49 @@ final class UsageCSVExportTests: XCTestCase {
         XCTAssertTrue(UsageCSVExport.makeCSV([]).hasSuffix("\n"))
     }
 
+    // MARK: - 通知快捷动作的直落导出（不经保存面板）
+
+    func testWriteLastWeekCSVWritesWindowFileToDirectory() throws {
+        // today = 2026-10-03(周六):上周窗口 = 09-21(周一)...09-27(周日),
+        // 与周报同口径;窗外日期不进文件,文件名与 suggestedFilename 同源
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let today = DateUtil.date(from: "2026-10-03")!
+        let filename = UsageCSVExport.writeLastWeekCSV(
+            directory: directory,
+            days: [
+                day("2026-09-20", bySource: [.claude: 50]),   // 上上周日,窗外
+                day("2026-09-21", bySource: [.claude: 100]),
+                day("2026-09-27", bySource: [.claude: 200]),
+                day("2026-10-02", bySource: [.claude: 999]),  // 本周,窗外
+            ],
+            apiValueByDate: [:], modelHistory: [], plans: [],
+            today: today)
+        let expectedRange = UsageCSVExport.lastWeekWindow(today: today)
+        XCTAssertEqual(filename, UsageCSVExport.suggestedFilename(range: expectedRange!))
+        let url = directory.appendingPathComponent(filename!)
+        let rows = parseRows(try String(contentsOf: url, encoding: .utf8))
+        // 表头 + 窗口 2 天 + 汇总行;modelHistory 与订阅为空,无覆盖率/回本行
+        XCTAssertEqual(rows.count, 4)
+        XCTAssertEqual(rows[1][0], "2026-09-21")
+        XCTAssertEqual(rows[2][0], "2026-09-27")
+        XCTAssertFalse(rows.contains { $0.contains("2026-09-20") })
+        XCTAssertFalse(rows.contains { $0.contains("2026-10-02") })
+    }
+
+    func testWriteLastWeekCSVReturnsNilWhenDirectoryMissing() {
+        // 目录不存在 → 写盘失败返回 nil,调用方据此回执失败通知
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent("missing-\(UUID().uuidString)")
+        XCTAssertNil(UsageCSVExport.writeLastWeekCSV(
+            directory: missing,
+            days: [day("2026-09-22", bySource: [.claude: 10])],
+            apiValueByDate: [:], modelHistory: [], plans: []))
+    }
+
     // MARK: - 价格覆盖率行
 
     func testPriceCoverageRowReportsRatioAndUnpricedModels() throws {

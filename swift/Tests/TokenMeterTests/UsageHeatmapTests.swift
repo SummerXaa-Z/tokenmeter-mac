@@ -614,6 +614,83 @@ final class UsageHeatmapTests: XCTestCase {
             "2026年10月 · 500 · 上月 0")
     }
 
+    func testPreviousWeekSummaryResolvesCalendarWeek() {
+        // 2026-09-28(周一)那周的上周 = 09-21(周一)...09-27(周日):
+        // 只汇该周的参与来源,日均按整周 7 天折
+        let summary = UsageHeatmap.previousWeekSummary(
+            weekOf: "2026-09-28",
+            days: [
+                day("2026-09-20", claude: 100),   // 上上周日,不计
+                day("2026-09-21", claude: 100),
+                day("2026-09-27", claude: 200),
+                day("2026-09-28", claude: 999),   // 本周,不计
+                day("2026-09-24", deepseek: 500), // 非参与来源不计
+            ],
+            participants: [.claude, .codex])
+        XCTAssertEqual(summary?.total, 300)
+        XCTAssertEqual(summary?.dailyAverage, 300 / 7)
+        // 跨月周:2026-10-05 的上周 = 09-28...10-04,窗口不受月份边界影响
+        let crossMonth = UsageHeatmap.previousWeekSummary(
+            weekOf: "2026-10-05",
+            days: [day("2026-10-04", claude: 70), day("2026-09-27", claude: 999)],
+            participants: [.claude])
+        XCTAssertEqual(crossMonth?.total, 70)
+        // 上周无参与用量(留存起点之前/确实没用)→ nil,悬停不给对照段
+        XCTAssertNil(UsageHeatmap.previousWeekSummary(
+            weekOf: "2026-09-28",
+            days: [day("2026-09-28", claude: 50)],
+            participants: [.claude]))
+        XCTAssertNil(UsageHeatmap.previousWeekSummary(
+            weekOf: "2026-09-28",
+            days: [day("2026-09-22", deepseek: 50)],
+            participants: [.claude, .codex]))
+    }
+
+    func testWeekHelpTextAppendsPreviousWeekCompare() {
+        // 完整周:对照周合计,涨跌带符号;不带进行中标记(周档无此读法歧义,
+        // 描边已示意本周;对照段与月档同构)
+        XCTAssertEqual(
+            UsageHeatmap.weekHelpText(
+                weekOf: "2026-09-21", total: 42_000_000, apiValue: nil,
+                previousWeek: (total: 36_000_000, dailyAverage: 5_142_857)),
+            "9/21周 · 42M · 上周 36M（+17%）")
+        XCTAssertEqual(
+            UsageHeatmap.weekHelpText(
+                weekOf: "2026-09-21", total: 30_000_000, apiValue: nil,
+                previousWeek: (total: 36_000_000, dailyAverage: 5_142_857)),
+            "9/21周 · 30M · 上周 36M（-17%）")
+        // 涨跌不足半个百分点 → 持平
+        XCTAssertEqual(
+            UsageHeatmap.weekHelpText(
+                weekOf: "2026-09-21", total: 7_000_000, apiValue: nil,
+                previousWeek: (total: 7_000_000, dailyAverage: 1_000_000)),
+            "9/21周 · 7M · 上周 7M（持平）")
+        // 进行中的本周:先折日均(已过天数),对照比上周日均而不是比合计,
+        // 对照段排在日均之后、金额之前——与月档同构
+        XCTAssertEqual(
+            UsageHeatmap.weekHelpText(
+                weekOf: "2026-09-28", total: 20_000_000, apiValue: 4.5,
+                inProgress: true, elapsedDays: 4,
+                previousWeek: (total: 36_000_000, dailyAverage: 5_000_000)),
+            "9/28周 · 20M · 日均 5M（已 4 天） · 上周日均 5M（持平） · $4.50")
+        XCTAssertEqual(
+            UsageHeatmap.weekHelpText(
+                weekOf: "2026-09-28", total: 24_000_000, apiValue: nil,
+                inProgress: true, elapsedDays: 4,
+                previousWeek: (total: 35_000_000, dailyAverage: 5_000_000)),
+            "9/28周 · 24M · 日均 6M（已 4 天） · 上周日均 5M（+20%）")
+        // 完整周不附日均:elapsedDays 即使误传也不生效
+        XCTAssertEqual(
+            UsageHeatmap.weekHelpText(
+                weekOf: "2026-09-21", total: 1_234_567, apiValue: nil,
+                inProgress: false, elapsedDays: 7),
+            "9/21周 · 1.2M")
+        // 无对照(早于留存起点)不给段;金额照旧
+        XCTAssertEqual(
+            UsageHeatmap.weekHelpText(weekOf: "2026-09-21", total: 500, apiValue: 1.5),
+            "9/21周 · 500 · $1.50")
+    }
+
     func testWeekdayAveragesFollowDateRange() {
         // 2026-09-20(周日)...09-26(周六):每个星期几恰好一天
         let stats = UsageHeatmap.weekdayAverages(
