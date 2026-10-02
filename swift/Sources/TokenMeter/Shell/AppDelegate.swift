@@ -229,6 +229,80 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         heatmapMonthCard(monthSpan: .year, monthOffset: 3)
     }
 
+    // 趋势图图例悬停预览:离屏渲染无法模拟指针,previewHoverSeries 把
+    // Claude chip 预置成悬停态,说明行应临时显示该来源的范围内合计;
+    // 三来源确定性数据,取数与拼串由单元测试覆盖
+    private static func trendLegendHoverFixture() -> some View {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        var days: [HistoryStore.DayPoint] = []
+        for offset in stride(from: 29, through: 0, by: -1) {
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: today)
+            else { continue }
+            let base = 20 + (offset % 7) * 6
+            days.append(HistoryStore.DayPoint(date: DateUtil.key(date), bySource: [
+                .claude: (base + 30) * 1_000_000,
+                .codex: (base + 12) * 1_000_000,
+                .gemini: max(0, base - 18) * 1_000_000,
+            ], cost: 0))
+        }
+        let snapshot = OverviewSnapshot(
+            selection: OverviewSourceSelection(sources: [.claude, .codex, .gemini]),
+            range: .month, history: days, streakHistory: days,
+            deepSeek: nil, claude: nil, codex: nil,
+            openCode: nil, gemini: nil, copilot: nil, cursor: nil)
+        return ScrollView {
+            VStack(spacing: 12) {
+                OverviewTrendCard(
+                    snapshot: snapshot, range: .month, previewHoverSeries: "Claude")
+            }
+            .padding(14)
+        }
+    }
+
+    // DeepSeek 模型详情页:真实 App 里由 Dashboard 下钻进入、渲染套件原本
+    // 覆盖不到。用独立 AppState 注入合成 7 天数据(不动共享 appState,其余
+    // 页面不受污染),验证汇总/构成/趋势卡与导出入口
+    private static func deepSeekModelDetailFixture() -> some View {
+        let state = AppState()
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let days: [UsageDay] = (0..<7).compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: today)
+            else { return nil }
+            let base = 40 + (offset % 3) * 25
+            return UsageDay(
+                date: DateUtil.key(date),
+                flashTokens: base * 1_000_000,
+                flashCacheHit: base * 600_000,
+                flashCacheMiss: base * 100_000,
+                flashResponse: base * 300_000,
+                proTokens: (base + 20) * 1_000_000,
+                proCacheHit: (base + 20) * 500_000,
+                proCacheMiss: (base + 20) * 120_000,
+                proResponse: (base + 20) * 380_000,
+                totalTokens: (base * 2 + 20) * 1_000_000,
+                totalCost: 1.2)
+        }
+        state.usage = UsageResult(
+            models: [
+                UsageModelSummary(
+                    key: "flash", name: "V4 Flash",
+                    totalTokens: 6_400_000, requestCount: 320,
+                    cacheHitTokens: 3_800_000, cacheMissTokens: 700_000,
+                    responseTokens: 1_900_000, cost: 12.5),
+                UsageModelSummary(
+                    key: "pro", name: "V4 Pro",
+                    totalTokens: 7_200_000, requestCount: 180,
+                    cacheHitTokens: 3_400_000, cacheMissTokens: 900_000,
+                    responseTokens: 2_900_000, cost: 18.7),
+            ],
+            days: days,
+            monthCost: 31.2)
+        return ModelDetailView(modelKey: "flash", onBack: {})
+            .environmentObject(state)
+    }
+
     private static func paceFixture() -> some View {
         let now = Date()
         let hour: TimeInterval = 3600
@@ -816,6 +890,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("heatmap-month-fixture", hosting(Self.heatmapMonthFixture(), height: 380)),
             ("heatmap-month-two-fixture", hosting(Self.heatmapMonthTwoFixture(), height: 380)),
             ("heatmap-month-paged-fixture", hosting(Self.heatmapMonthPagedFixture(), height: 380)),
+            // 图例 chip 悬停态:说明行临时切到该来源范围内合计
+            // (指针无法离屏模拟,previewHoverSeries 预置)
+            ("trend-legend-hover-fixture", hosting(
+                Self.trendLegendHoverFixture(), height: 560)),
+            // DeepSeek 模型详情页:合成 7 天数据,验证趋势卡与导出入口
+            ("deepseek-model-detail-fixture", hosting(
+                Self.deepSeekModelDetailFixture(), height: 900)),
+            // 推样例/周报预览点击后的行内反馈行(initialSampleStatus 预置已推态)
+            ("settings-sample-status-fixture", hosting(
+                SettingsView(
+                    onBack: {}, initialSection: .alerts,
+                    initialSampleStatus: Notifier.samplePushSummary(
+                        for: Notifier.alertSamples()) + " · 09:41"),
+                height: 1600)),
         ]
 
         var windows: [NSWindow] = []

@@ -85,6 +85,7 @@
 		87C9A2CFDC42A7DD9139EB1B /* OverviewSourceSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82107C1666FA3E1EBD6FADB /* OverviewSourceSelection.swift */; };
 		8D62E77AF164BA5E3D913428 /* SkillDetailCSVExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08877AC10BF772B7E2C5EFC7 /* SkillDetailCSVExport.swift */; };
 		8F0C6B1D77FB3247BF010F05 /* ZhipuQuotaServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 080188017FF759CF86F06172 /* ZhipuQuotaServiceTests.swift */; };
+		9021C9E9347288BFEDD2B217 /* OverviewSeriesHoverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2354D4DF85CD5E89EBF98B3D /* OverviewSeriesHoverTests.swift */; };
 		9130F93DD0C058FA7B74774F /* CursorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB5C8B4A29701DC68C925D9 /* CursorView.swift */; };
 		9131EAE8DCDB12D0F6D6261D /* CollectAttemptLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA044209B655A0E78CEA3150 /* CollectAttemptLogTests.swift */; };
 		913B395D4F4569C45D7FDD70 /* StatusRefreshCoalescerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 402EF2FB25FC3A7F1B1FA9F2 /* StatusRefreshCoalescerTests.swift */; };
@@ -133,6 +134,7 @@
 		E11D3FA4C68C809E0CF7292D /* GeminiView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD8D457FECE03878E165D226 /* GeminiView.swift */; };
 		E3EF0BE1ABE9261F5D24B25A /* ForcedRefreshCoalescer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B70D5ABA4FC903971AB118 /* ForcedRefreshCoalescer.swift */; };
 		E52D9816D2595E775C811A13 /* LocalUsageCollectorRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68782D91DB1A9776445C9CB3 /* LocalUsageCollectorRegistry.swift */; };
+		E7646310A8DE1078AFDBEC0D /* DeepSeekModelCSVExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF2379EE54CEBD6FB3B0FBE4 /* DeepSeekModelCSVExportTests.swift */; };
 		E9E982DD90551044A1623ABB /* SkillRankingCSVExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45C6BF73F119A341F9B01E8E /* SkillRankingCSVExport.swift */; };
 		EF30DC7B9F1DE35DADEDF146 /* CodingModelDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CBDEBD7A8663EF892B78924 /* CodingModelDetail.swift */; };
 		F03A6DFB698DDB9EB432364A /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A670A6857DFC3EF8E8F2B737 /* AppDelegate.swift */; };
@@ -143,6 +145,7 @@
 		FA481456C6EA4B00B754850A /* ConfigStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EFB577C0D476CA6A97A5BCB /* ConfigStoreTests.swift */; };
 		FA53D44363DFE6554598222B /* CodexUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD6D37D83D01D150228735F5 /* CodexUsage.swift */; };
 		FAB67DDF8928E96D9E366186 /* SubscriptionROICurveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71AB916AFC499EE98A15A586 /* SubscriptionROICurveTests.swift */; };
+		FCCCED910A3139C89E73401D /* DeepSeekModelCSVExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A3268D7CD36F62FBEA33DF3 /* DeepSeekModelCSVExport.swift */; };
 		FD600FE6DB8894640EFC2F3F /* OverviewSourceSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C075D0390F0D1124F63A4D3 /* OverviewSourceSelectionTests.swift */; };
 		FDB2F7A0E3271979E1128210 /* UsageCSVExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB36F0702D0D3C9556B6FD8 /* UsageCSVExport.swift */; };
 /* End PBXBuildFile section */
@@ -178,6 +181,7 @@
 		1E0277D82C8B231C115599EB /* PersonalSkillRankingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalSkillRankingsTests.swift; sourceTree = "<group>"; };
 		21D9FAD2975109A06D1A9B98 /* HistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryStore.swift; sourceTree = "<group>"; };
 		22064562B364186A960DC06C /* NotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotifierTests.swift; sourceTree = "<group>"; };
+		2354D4DF85CD5E89EBF98B3D /* OverviewSeriesHoverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewSeriesHoverTests.swift; sourceTree = "<group>"; };
 		26205B31CF6BA42553338CAA /* SkillDetailCSVExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillDetailCSVExportTests.swift; sourceTree = "<group>"; };
 		2629AD65E076D2C7A7CBB0FC /* SubscriptionPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionPlan.swift; sourceTree = "<group>"; };
 		27C0AE619FF776948DDE5842 /* OverviewSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewSnapshotTests.swift; sourceTree = "<group>"; };
@@ -225,6 +229,7 @@
 		872A00E85A23AE79C3E5A07B /* SourceHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceHealth.swift; sourceTree = "<group>"; };
 		8834DFDCCF5EAD81A03BD730 /* QwenCodeUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QwenCodeUsageTests.swift; sourceTree = "<group>"; };
 		89096F146AC2E7E7E5F0ADFE /* TokenMeter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TokenMeter.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8A3268D7CD36F62FBEA33DF3 /* DeepSeekModelCSVExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekModelCSVExport.swift; sourceTree = "<group>"; };
 		8CFB858EB03D6FCC2B3563D3 /* ClaudeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeView.swift; sourceTree = "<group>"; };
 		8D0146EBDA94E3114EFA8883 /* CodingModelDetailCSVExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodingModelDetailCSVExportTests.swift; sourceTree = "<group>"; };
 		8E998735A139325388C73D70 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
@@ -266,6 +271,7 @@
 		B6D6ED3684CAFECA658C89E7 /* AlertLatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertLatchTests.swift; sourceTree = "<group>"; };
 		BBAA57F5DE3E12AB2E6EC2F4 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		BE348B8A6F5BBC274C411539 /* SourceDashboardComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceDashboardComponents.swift; sourceTree = "<group>"; };
+		BF2379EE54CEBD6FB3B0FBE4 /* DeepSeekModelCSVExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekModelCSVExportTests.swift; sourceTree = "<group>"; };
 		BF85AA1A761C40D0E1F07633 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		C156B7F5253FF210069368A6 /* DetailBackfill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailBackfill.swift; sourceTree = "<group>"; };
 		C224B79FE51DA6B0498097C7 /* HeatmapCSVExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeatmapCSVExport.swift; sourceTree = "<group>"; };
@@ -392,6 +398,7 @@
 				AA044209B655A0E78CEA3150 /* CollectAttemptLogTests.swift */,
 				2EFB577C0D476CA6A97A5BCB /* ConfigStoreTests.swift */,
 				A0D30F5E2C9FCBF8F7230764 /* CopilotUsageTests.swift */,
+				BF2379EE54CEBD6FB3B0FBE4 /* DeepSeekModelCSVExportTests.swift */,
 				12ABD16531AB8CFE83C688B0 /* DetailBackfillTests.swift */,
 				847F5B5A0A9B9ECF7B3C10D1 /* DiagnosticReportTests.swift */,
 				69102B74FE1F50DD2D8C39FA /* ForcedRefreshCoalescerTests.swift */,
@@ -405,6 +412,7 @@
 				0260716BFC52AA0CE7823EA6 /* ModelUsageHistoryTests.swift */,
 				22064562B364186A960DC06C /* NotifierTests.swift */,
 				10C5D68C952CC99005CB4E46 /* OpenCodeUsageTests.swift */,
+				2354D4DF85CD5E89EBF98B3D /* OverviewSeriesHoverTests.swift */,
 				27C0AE619FF776948DDE5842 /* OverviewSnapshotTests.swift */,
 				6C075D0390F0D1124F63A4D3 /* OverviewSourceSelectionTests.swift */,
 				64C554B84B418EAF132A0EC7 /* PeriodCompareTests.swift */,
@@ -470,6 +478,7 @@
 				8E998735A139325388C73D70 /* AppState.swift */,
 				0CBDEBD7A8663EF892B78924 /* CodingModelDetail.swift */,
 				90F09A6C0E3E3F9C3500CF3F /* CodingModelDetailCSVExport.swift */,
+				8A3268D7CD36F62FBEA33DF3 /* DeepSeekModelCSVExport.swift */,
 				6BE2676BB49AC73AF2BA8531 /* Format.swift */,
 				C224B79FE51DA6B0498097C7 /* HeatmapCSVExport.swift */,
 				F7B29B6ED6B08B1BE7855470 /* MenubarTodayTotal.swift */,
@@ -636,6 +645,7 @@
 				9131EAE8DCDB12D0F6D6261D /* CollectAttemptLogTests.swift in Sources */,
 				FA481456C6EA4B00B754850A /* ConfigStoreTests.swift in Sources */,
 				516E50273A26D4CBA68435B6 /* CopilotUsageTests.swift in Sources */,
+				E7646310A8DE1078AFDBEC0D /* DeepSeekModelCSVExportTests.swift in Sources */,
 				40A41B6ABD0B723340A91566 /* DetailBackfillTests.swift in Sources */,
 				2CF639B933D9E249A7AC60D5 /* DiagnosticReportTests.swift in Sources */,
 				96DDA924E25136694B16F9AD /* ForcedRefreshCoalescerTests.swift in Sources */,
@@ -649,6 +659,7 @@
 				9FE335AE9AF7F517C707217C /* ModelUsageHistoryTests.swift in Sources */,
 				4C3AA3A1071617E1A4CC41CB /* NotifierTests.swift in Sources */,
 				9C4B3B44EC1921CAE309E26E /* OpenCodeUsageTests.swift in Sources */,
+				9021C9E9347288BFEDD2B217 /* OverviewSeriesHoverTests.swift in Sources */,
 				855D9BB3F251125EA61B18CE /* OverviewSnapshotTests.swift in Sources */,
 				FD600FE6DB8894640EFC2F3F /* OverviewSourceSelectionTests.swift in Sources */,
 				3BF6C9D2ABC729B6BD2EB04B /* PeriodCompareTests.swift in Sources */,
@@ -704,6 +715,7 @@
 				1CE23BCAD7B5D4370FDC44A9 /* DashboardComponents.swift in Sources */,
 				5A0EF33BE92E5C281E19D918 /* DashboardView.swift in Sources */,
 				92F95A043BD876CB2F16A817 /* DeepSeekAPI.swift in Sources */,
+				FCCCED910A3139C89E73401D /* DeepSeekModelCSVExport.swift in Sources */,
 				F45E490C57EBADDADE4CEE44 /* DetailBackfill.swift in Sources */,
 				2F6BD79BC52395DECA6008AE /* DiagnosticReport.swift in Sources */,
 				E3EF0BE1ABE9261F5D24B25A /* ForcedRefreshCoalescer.swift in Sources */,
@@ -836,7 +848,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 3.75.0;
+				MARKETING_VERSION = 3.76.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.deepseek.monitor.mac;
@@ -939,7 +951,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 3.75.0;
+				MARKETING_VERSION = 3.76.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

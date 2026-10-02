@@ -123,6 +123,17 @@ enum Notifier {
         ]
     }
 
+    /// 「推样例」按钮点击后的行内反馈文案：总条数 + 周/告警两组拆分，
+    /// 与 threadIdentifier 的分组口径一致（周报键前缀归周报组，其余告警）。
+    static func samplePushSummary(
+        for samples: [(id: String, title: String, body: String)]
+    ) -> String {
+        let digestCount = samples.filter {
+            $0.id == weeklyDigestID || $0.id.hasPrefix(weeklyDigestID + ".")
+        }.count
+        return "已推 \(samples.count) 条样例（周报 \(digestCount) + 告警 \(samples.count - digestCount)）"
+    }
+
     /// 通知横幅本身的点击（默认动作）应打开的页面：周报回总览；配额/用量
     /// 告警跳对应来源页；跨来源的节奏预警与只在总览露面的订阅额度
     /// （智谱/方舟）也回总览。派生动作（展开/关闭等）与未知通知返回

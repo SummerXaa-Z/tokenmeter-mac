@@ -549,6 +549,71 @@ final class UsageHeatmapTests: XCTestCase {
             "2026年10月（进行中，统计至今天） · 500")
     }
 
+    func testPreviousMonthSummaryResolvesCalendarMonth() {
+        // 2026-10 的上月 = 2026-09:只汇 9 月的参与来源,日均按整月天数折
+        let summary = UsageHeatmap.previousMonthSummary(
+            monthKey: "2026-10",
+            days: [
+                day("2026-09-01", claude: 100),
+                day("2026-09-30", claude: 200),
+                day("2026-10-01", claude: 999),   // 本月不计
+                day("2026-09-15", deepseek: 500), // 非参与来源不计
+            ],
+            participants: [.claude, .codex])
+        XCTAssertEqual(summary?.total, 300)
+        XCTAssertEqual(summary?.dailyAverage, 300 / 30)
+        // 跨年:2026-01 的上月 = 2025-12(31 天)
+        let crossYear = UsageHeatmap.previousMonthSummary(
+            monthKey: "2026-01",
+            days: [day("2025-12-31", claude: 310)],
+            participants: [.claude])
+        XCTAssertEqual(crossYear?.total, 310)
+        XCTAssertEqual(crossYear?.dailyAverage, 10)
+        // 上月无参与用量(数据起点之前/确实没用)→ nil,悬停不给对照段
+        XCTAssertNil(UsageHeatmap.previousMonthSummary(
+            monthKey: "2026-10",
+            days: [day("2026-10-02", claude: 50)],
+            participants: [.claude]))
+        XCTAssertNil(UsageHeatmap.previousMonthSummary(
+            monthKey: "2026-10",
+            days: [day("2026-09-02", deepseek: 50)],
+            participants: [.claude, .codex]))
+    }
+
+    func testMonthHelpTextAppendsPreviousMonthCompare() {
+        // 完整月:对照月合计,涨跌带符号
+        XCTAssertEqual(
+            UsageHeatmap.monthHelpText(
+                monthKey: "2026-10", total: 42_000_000, apiValue: nil,
+                previousMonth: (total: 36_000_000, dailyAverage: 1_200_000)),
+            "2026年10月 · 42M · 上月 36M（+17%）")
+        XCTAssertEqual(
+            UsageHeatmap.monthHelpText(
+                monthKey: "2026-10", total: 30_000_000, apiValue: nil,
+                previousMonth: (total: 36_000_000, dailyAverage: 1_200_000)),
+            "2026年10月 · 30M · 上月 36M（-17%）")
+        // 涨跌不足半个百分点 → 持平,不出现 +0%
+        XCTAssertEqual(
+            UsageHeatmap.monthHelpText(
+                monthKey: "2026-10", total: 1_000_000, apiValue: nil,
+                previousMonth: (total: 1_000_000, dailyAverage: 33_000)),
+            "2026年10月 · 1M · 上月 1M（持平）")
+        // 进行中的当月:比日均而不是比合计(完整上月 vs 进行中本月),
+        // 对照段排在日均之后、金额之前
+        XCTAssertEqual(
+            UsageHeatmap.monthHelpText(
+                monthKey: "2026-10", total: 20_000_000, apiValue: 4.5,
+                inProgress: true, elapsedDays: 10,
+                previousMonth: (total: 36_000_000, dailyAverage: 1_200_000)),
+            "2026年10月（进行中，统计至今天） · 20M · 日均 2M（已 10 天） · 上月日均 1.2M（+67%） · $4.50")
+        // 对照的基准为 0(理论不发生,防呆)不给百分比段
+        XCTAssertEqual(
+            UsageHeatmap.monthHelpText(
+                monthKey: "2026-10", total: 500, apiValue: nil,
+                previousMonth: (total: 0, dailyAverage: 0)),
+            "2026年10月 · 500 · 上月 0")
+    }
+
     func testWeekdayAveragesFollowDateRange() {
         // 2026-09-20(周日)...09-26(周六):每个星期几恰好一天
         let stats = UsageHeatmap.weekdayAverages(

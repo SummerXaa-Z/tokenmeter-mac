@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import AppKit
 
 // 模型详情页：单模型的 token 明细 + 7 天趋势
 struct ModelDetailView: View {
@@ -46,8 +47,22 @@ struct ModelDetailView: View {
                 }
                 Card {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("近 7 天 Token").font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary)
+                        HStack {
+                            Text("近 7 天 Token").font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            // 与模型榜/Skill 详情/来源模型详情导出同款入口
+                            Button {
+                                exportCSV(m)
+                            } label: {
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("导出近 7 天逐日 Token CSV（附汇总与构成口径行）")
+                            .accessibilityLabel("导出模型近 7 天 CSV")
+                        }
                         ChartHover.caption(
                             hover: hoverDate,
                             buckets: points.map { ($0.date, $0.tokens, []) }
@@ -97,6 +112,32 @@ struct ModelDetailView: View {
             Spacer()
             Text(Fmt.int(value)).font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    /// 导出近 7 天逐日 CSV；保存面板流程与其他导出同款，写盘失败弹系统错误框
+    private func exportCSV(_ m: UsageModelSummary) {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSSavePanel()
+        panel.title = "导出模型近 7 天 CSV"
+        panel.nameFieldStringValue = DeepSeekModelCSVExport.suggestedFilename(modelKey: modelKey)
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowedContentTypes = [.commaSeparatedText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let rows = DateUtil.recentDays(state.usage?.days ?? []).map {
+            DeepSeekModelCSVExport.Row(
+                date: $0.date,
+                tokens: isFlash ? $0.flashTokens : $0.proTokens)
+        }
+        let text = DeepSeekModelCSVExport.makeCSV(model: m, rows: rows)
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "导出失败"
+            alert.informativeText = "\(error.localizedDescription)"
+            alert.runModal()
         }
     }
 }

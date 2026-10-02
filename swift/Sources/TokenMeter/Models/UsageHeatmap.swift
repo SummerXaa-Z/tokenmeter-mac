@@ -281,18 +281,48 @@ enum UsageHeatmap {
         }
     }
 
+    /// 月格悬停的上月对照：给定月份键，返回前一个自然月的合计与日均
+    /// （参与来源口径、与月条同一条数据）。上月合计为 0（早于本机留存
+    /// 起点或确实无用量）返回 nil——没有可信对照就不给段，不冒充「上月 0」。
+    static func previousMonthSummary(
+        monthKey: String,
+        days: [HistoryStore.DayPoint],
+        participants: some Sequence<HistorySource>,
+        calendar: Calendar = .current
+    ) -> (total: Int, dailyAverage: Int)? {
+        guard let date = DateUtil.date(from: "\(monthKey)-01"),
+              let prevMonthDate = calendar.date(byAdding: .month, value: -1, to: date)
+        else { return nil }
+        let prevKey = String(DateUtil.key(prevMonthDate).prefix(7))
+        let allowed = Set(participants)
+        var total = 0
+        for day in days where day.date.hasPrefix(prevKey) {
+            total += day.bySource.reduce(0) { sum, entry in
+                allowed.contains(entry.key) ? sum + max(entry.value, 0) : sum
+            }
+        }
+        guard total > 0 else { return nil }
+        let daysInMonth = calendar.range(
+            of: .day, in: .month, for: prevMonthDate)?.count ?? 0
+        guard daysInMonth > 0 else { return nil }
+        return (total: total, dailyAverage: total / daysInMonth)
+    }
+
     /// 月格悬停说明：年月 · 月合计 Token，有金额时追加美元金额。
     /// 月视图动辄跨两年，悬停文案带年份消歧；进行中的当月（仅最近一页）
     /// 由调用方传 inProgress，明示"统计至今天"——月条按月合计分档着色，
     /// 没这半句容易把进行中的当月误读成用量骤降。进行中且给出 elapsedDays
     /// （本月已过的天数，含今天）时再附日均与已过天数，把"骤降"读法彻底
     /// 堵死：日均才是与完整月可比的口径。
+    /// previousMonth 给出上月对照：完整月比月合计；进行中的当月比日均
+    /// （完整上月 vs 进行中的本月，直接比合计必然偏低，比日均才公平）。
     static func monthHelpText(
         monthKey: String,
         total: Int,
         apiValue: Double?,
         inProgress: Bool = false,
-        elapsedDays: Int? = nil
+        elapsedDays: Int? = nil,
+        previousMonth: (total: Int, dailyAverage: Int)? = nil
     ) -> String {
         let parts = monthKey.split(separator: "-")
         let title: String
@@ -307,10 +337,30 @@ enum UsageHeatmap {
         if inProgress, let elapsedDays, elapsedDays > 0 {
             text += " · 日均 \(Fmt.tokensShort(total / elapsedDays))（已 \(elapsedDays) 天）"
         }
+        if let previousMonth {
+            if inProgress, let elapsedDays, elapsedDays > 0 {
+                text += " · 上月日均 \(Fmt.tokensShort(previousMonth.dailyAverage))" +
+                    compareSegment(
+                        current: total / elapsedDays,
+                        previous: previousMonth.dailyAverage)
+            } else {
+                text += " · 上月 \(Fmt.tokensShort(previousMonth.total))" +
+                    compareSegment(current: total, previous: previousMonth.total)
+            }
+        }
         if let apiValue, apiValue > 0 {
             text += " · \(Fmt.usd(apiValue))"
         }
         return text
+    }
+
+    /// 对照段的百分比（含正负号）；涨跌不足半个百分点视为持平。
+    private static func compareSegment(current: Int, previous: Int) -> String {
+        guard previous > 0 else { return "" }
+        let percent = Int(
+            (Double(current - previous) / Double(previous) * 100).rounded())
+        if percent == 0 { return "（持平）" }
+        return String(format: "（%+d%%）", percent)
     }
 
     /// 月视图：把窗口内逐日合计按自然月归桶折成逐月一块，月合计参与

@@ -1533,6 +1533,19 @@ struct OverviewTrendCard: View {
     @State private var hoverLabel: String?
     // 图例 chips 点选隐藏的来源(图表名口径);chips 恒从全量趋势计算,可随时恢复
     @State private var hiddenSources: Set<String> = []
+    // 悬停中的图例 chip:说明行临时切到该来源的范围内合计(离屏渲染夹具
+    // 用 previewHoverSeries 预置同款状态,指针行为无法离屏模拟)
+    @State private var hoverSeries: String?
+
+    init(
+        snapshot: OverviewSnapshot,
+        range: UsageHistoryRange,
+        previewHoverSeries: String? = nil
+    ) {
+        self.snapshot = snapshot
+        self.range = range
+        _hoverSeries = State(initialValue: previewHoverSeries)
+    }
 
     private var visibleTrend: [OverviewSnapshot.TrendPoint] {
         TrendSeriesFilter.visible(snapshot.trend, hidden: hiddenSources)
@@ -1644,7 +1657,9 @@ struct OverviewTrendCard: View {
     // 默认落到最后一个有量的钟点（趋势点覆盖全天 24 个钟点）
     @ViewBuilder private var hourlyCaption: some View {
         let hourly = visibleTrend.filter { $0.hour != nil }
-        if let activeHour = hoverHour
+        if hoverHour == nil, let series = hoverSeriesCaption {
+            series
+        } else if let activeHour = hoverHour
             ?? hourly.last(where: { $0.tokens > 0 })?.hour
             ?? hourly.last?.hour {
             let bucket = hourly.filter { $0.hour == activeHour }
@@ -1659,7 +1674,9 @@ struct OverviewTrendCard: View {
 
     // 日/周/月粒度：按 date 桶键聚合（label 跨年可能重名，不能当桶键）
     @ViewBuilder private var bucketCaption: some View {
-        if let active = visibleTrend.first(where: { $0.label == hoverLabel })
+        if hoverLabel == nil, let series = hoverSeriesCaption {
+            series
+        } else if let active = visibleTrend.first(where: { $0.label == hoverLabel })
             ?? visibleTrend.last {
             let bucket = visibleTrend.filter { $0.date == active.date }
             ChartHoverCaption(
@@ -1696,6 +1713,29 @@ struct OverviewTrendCard: View {
         return Fmt.usd(visible)
     }
 
+    // 图例 chip 悬停:说明行临时切到该来源的范围内合计,多来源横比不用
+    // 来回点开图例;金额为该来源范围内 API 等价(悬停金额同口径,不随
+    // 图例隐藏——被隐藏的来源也照样读数)
+    private var hoverSeriesCaption: ChartHoverCaption? {
+        guard let name = hoverSeries,
+              let summary = OverviewSeriesHover.summary(
+                name: name,
+                seriesTotals: TrendSeriesFilter.seriesTotals(snapshot.trend),
+                amount: seriesAmount(name)) else { return nil }
+        return ChartHoverCaption(
+            label: summary.label, total: summary.total, parts: [],
+            amountText: summary.amountText)
+    }
+
+    private func seriesAmount(_ chartName: String) -> Double? {
+        let total = snapshot.apiValueByTrendBucket.values.reduce(0.0) { sum, bySource in
+            sum + bySource
+                .filter { $0.key.overviewChartName == chartName }
+                .reduce(0.0) { $0 + $1.value }
+        }
+        return total > 0 ? total : nil
+    }
+
     private func sourceColor(_ source: HistorySource) -> Color {
         color(forChartName: source.overviewChartName)
     }
@@ -1704,20 +1744,22 @@ struct OverviewTrendCard: View {
         Self.sourceScale.first { $0.key == name }?.value ?? Theme.brand
     }
 
-    // 来源点选 chips：替代内置图例,点暗即从图中隐藏该系列
+    // 来源点选 chips：替代内置图例,点暗即从图中隐藏该系列;悬停时说明行
+    // 临时显示该来源的范围内合计(含被隐藏的来源),help 同步给出口径
     @ViewBuilder private var seriesChips: some View {
         let series = TrendSeriesFilter.seriesTotals(snapshot.trend)
         if !series.isEmpty {
             HStack(spacing: 4) {
                 ForEach(series, id: \.name) { entry in
-                    seriesChip(entry.name)
+                    seriesChip(entry)
                 }
                 Spacer(minLength: 0)
             }
         }
     }
 
-    private func seriesChip(_ name: String) -> some View {
+    private func seriesChip(_ entry: (name: String, total: Int)) -> some View {
+        let name = entry.name
         let isOn = !hiddenSources.contains(name)
         return Button {
             if isOn {
@@ -1741,7 +1783,15 @@ struct OverviewTrendCard: View {
         }
         .buttonStyle(.plain)
         .hoverHighlight()
-        .help(isOn ? "点按在图表中隐藏 \(name)" : "点按在图表中显示 \(name)")
+        .onHover { hovering in
+            if hovering {
+                hoverSeries = name
+            } else if hoverSeries == name {
+                hoverSeries = nil
+            }
+        }
+        .help("范围内合计 \(Fmt.tokensShort(entry.total)) · " +
+              (isOn ? "点按隐藏" : "点按显示"))
         .accessibilityLabel(isOn ? "隐藏 \(name) 系列" : "显示 \(name) 系列")
     }
 }
@@ -2219,6 +2269,15 @@ struct OverviewHeatmapCard: View {
                 HStack(spacing: monthGap) {
                     ForEach(cells, id: \.monthKey) { cell in
                         let isCurrent = monthOffset == 0 && cell.monthKey == currentMonth
+                        // 悬停/无障碍文案一次算好两处复用;上月对照按参与来源
+                        // 从同一份按天历史取(上月早于留存起点时自然无对照段)
+                        let help = UsageHeatmap.monthHelpText(
+                            monthKey: cell.monthKey, total: cell.total,
+                            apiValue: cell.usd, inProgress: isCurrent,
+                            elapsedDays: isCurrent ? currentDay : nil,
+                            previousMonth: UsageHeatmap.previousMonthSummary(
+                                monthKey: cell.monthKey, days: history,
+                                participants: participants))
                         RoundedRectangle(cornerRadius: 2)
                             .fill(Self.levelFills[cell.level])
                             .overlay {
@@ -2231,14 +2290,8 @@ struct OverviewHeatmapCard: View {
                                             style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
                                 }
                             }
-                            .help(UsageHeatmap.monthHelpText(
-                                monthKey: cell.monthKey, total: cell.total,
-                                apiValue: cell.usd, inProgress: isCurrent,
-                                elapsedDays: isCurrent ? currentDay : nil))
-                            .accessibilityLabel(UsageHeatmap.monthHelpText(
-                                monthKey: cell.monthKey, total: cell.total,
-                                apiValue: cell.usd, inProgress: isCurrent,
-                                elapsedDays: isCurrent ? currentDay : nil))
+                            .help(help)
+                            .accessibilityLabel(help)
                             .frame(width: monthBarWidth, height: 89)
                     }
                 }

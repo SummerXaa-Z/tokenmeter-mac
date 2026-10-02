@@ -49,6 +49,8 @@ struct SettingsView: View {
     @State private var exportCustomStart: Date
     @State private var exportCustomEnd: Date
     @State private var digestExportStatus = ""
+    // 推样例/周报预览点击后的行内反馈(带时间,与导出状态行同款式样)
+    @State private var samplePushStatus = ""
     @State private var activeSection: SettingsSection?
     // 连接行的展开态：未配置的默认展开引导输入，已配置的收起成一行；
     // 验证保存成功后自动收起，清除后保持展开方便重输。
@@ -64,11 +66,13 @@ struct SettingsView: View {
     init(
         onBack: @escaping () -> Void,
         initialExportPreset: ExportPreset = .all,
-        initialSection: SettingsSection? = nil
+        initialSection: SettingsSection? = nil,
+        initialSampleStatus: String = ""
     ) {
         self.onBack = onBack
         _usageExportPreset = State(initialValue: initialExportPreset)
         _activeSection = State(initialValue: initialSection)
+        _samplePushStatus = State(initialValue: initialSampleStatus)
         let today = Calendar.current.startOfDay(for: Date())
         _exportCustomEnd = State(initialValue: today)
         _exportCustomStart = State(
@@ -584,6 +588,12 @@ struct SettingsView: View {
                     Button("推样例") { pushAlertSamples() }
                         .controlSize(.small)
                 }
+                if !samplePushStatus.isEmpty {
+                    Text(samplePushStatus)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
 
                 Divider()
                 Toggle(isOn: Binding(
@@ -629,6 +639,7 @@ struct SettingsView: View {
                             id: Notifier.weeklyDigestID(
                                 forWeek: WeeklyDigest.summarizedWeekKey()),
                             title: digestPreview.title, body: digestPreview.body)
+                        showSampleStatus("已推周报预览（当前内容）")
                     }
                     .controlSize(.small)
                     .disabled(digestPreview == nil)
@@ -970,9 +981,18 @@ struct SettingsView: View {
     // 推送全部告警样例：不越线也能验证「点横幅 → 跳对应页」。样例与真实
     // 告警同键（除节奏样例外），发送仍受总开关与系统授权门禁。
     private func pushAlertSamples() {
-        for sample in Notifier.alertSamples() {
+        let samples = Notifier.alertSamples()
+        for sample in samples {
             Notifier.send(id: sample.id, title: sample.title, body: sample.body)
         }
+        showSampleStatus(Notifier.samplePushSummary(for: samples))
+    }
+
+    /// 推样例/预览的行内反馈：文案 + 推送时刻，点了有没有生效一眼可查
+    private func showSampleStatus(_ text: String) {
+        let time = DateFormatter()
+        time.dateFormat = "HH:mm"
+        samplePushStatus = "\(text) · \(time.string(from: Date()))"
     }
 
     private func exportLastWeekCSV() {

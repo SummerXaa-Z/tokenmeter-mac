@@ -19,6 +19,32 @@ enum TrendSeriesFilter {
 
     static func visible(_ points: [TrendPoint], hidden: Set<String>) -> [TrendPoint] {
         guard !hidden.isEmpty else { return points }
-        return points.filter { !hidden.contains($0.source.overviewChartName) }
+        return points.filter { !hidden.contains(pointName($0)) }
+    }
+
+    static func pointName(_ point: TrendPoint) -> String {
+        point.source.overviewChartName
+    }
+}
+
+// 图例 chip 悬停说明行的装配：范围内该来源的合计 Token 与 API 等价文本。
+// 多来源对比不必点开图例逐个排——悬停即读数。name 不在 totals 里
+// (悬停态理论不发生，防呆)返回 nil。
+enum OverviewSeriesHover {
+    static func summary(
+        name: String,
+        seriesTotals: [(name: String, total: Int)],
+        amount: Double?
+    ) -> (label: String, total: Int, amountText: String?)? {
+        guard let entry = seriesTotals.first(where: { $0.name == name }) else {
+            return nil
+        }
+        let amountText: String?
+        if let amount, amount > 0 {
+            amountText = Fmt.usd(amount)
+        } else {
+            amountText = nil
+        }
+        return (label: "\(name) · 范围内合计", total: entry.total, amountText: amountText)
     }
 }

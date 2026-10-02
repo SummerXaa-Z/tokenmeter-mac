@@ -155,6 +155,23 @@ final class NotifierTests: XCTestCase {
         }
     }
 
+    func testSamplePushSummarySplitsDigestAndAlertGroups() {
+        // 真实样例集:8 条 = 周报 1 + 告警 7,拆分与 threadIdentifier 分组一致
+        XCTAssertEqual(
+            Notifier.samplePushSummary(for: Notifier.alertSamples()),
+            "已推 8 条样例（周报 1 + 告警 7）")
+        // 分组口径:裸周报键与按周派生键都算周报,其余一律告警
+        XCTAssertEqual(
+            Notifier.samplePushSummary(for: [
+                (id: Notifier.weeklyDigestID, title: "t", body: "b"),
+                (id: Notifier.weeklyDigestID(forWeek: "2026-W39"), title: "t", body: "b"),
+                (id: "codex.quota.low", title: "t", body: "b"),
+                (id: "weekly.digestx.2026-W39", title: "t", body: "b"),
+            ]),
+            "已推 4 条样例（周报 2 + 告警 2）")
+        XCTAssertEqual(Notifier.samplePushSummary(for: []), "已推 0 条样例（周报 0 + 告警 0）")
+    }
+
     func testAlertSamplesCoverAllJumpTargets() {
         // 样例覆盖四个来源页落点与总览落点(节奏样例走前缀路由回总览)
         let targets = Notifier.alertSamples().map {
