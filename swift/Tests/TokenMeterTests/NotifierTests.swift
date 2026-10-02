@@ -102,6 +102,24 @@ final class NotifierTests: XCTestCase {
         XCTAssertEqual(Notifier.weeklyDigestID, "weekly.digest")
     }
 
+    func testWeeklyDigestNotificationIDCarriesSummarizedWeek() {
+        // 按周留痕:所述周进 identifier,不同周不同键,通知中心互不顶替
+        XCTAssertEqual(Notifier.weeklyDigestID(forWeek: "2026-W39"), "weekly.digest.2026-W39")
+        XCTAssertNotEqual(
+            Notifier.weeklyDigestID(forWeek: "2026-W39"),
+            Notifier.weeklyDigestID(forWeek: "2026-W40"))
+        // 点击路由:带周键的派生 id 与旧版裸键(升级前已发出的)都回总览
+        XCTAssertEqual(
+            Notifier.openTarget(
+                identifier: Notifier.weeklyDigestID(forWeek: "2026-W39"),
+                actionIdentifier: UNNotificationDefaultActionIdentifier),
+            .dashboard)
+        // 前缀必须是完整基键,相近键不误路由
+        XCTAssertNil(Notifier.openTarget(
+            identifier: "weekly.digestx.2026-W39",
+            actionIdentifier: UNNotificationDefaultActionIdentifier))
+    }
+
     func testAlertSamplesAllRouteSomewhere() {
         // 每个样例的 id 都在跳转路由里(点横幅必有落点),派生动作不跳
         let samples = Notifier.alertSamples()

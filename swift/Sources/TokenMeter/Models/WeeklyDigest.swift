@@ -34,6 +34,18 @@ enum WeeklyDigest {
         return lastSentWeek != weekKey(today, calendar: calendar)
     }
 
+    /// 周报所述周(上周)的 ISO 周键:发送方用作通知 identifier 的周段,
+    /// 与 message() 内部取"上周"桶的算法一致(今天减 7 天必落在上一个
+    /// ISO 周里,周一到周日皆然)。按所述周(而非发送周)留痕,同一份摘要
+    /// 重发互不堆叠,不同周的摘要互不顶替。
+    static func summarizedWeekKey(
+        today: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String {
+        let lastWeek = calendar.date(byAdding: .day, value: -7, to: today) ?? today
+        return weekKey(lastWeek, calendar: calendar)
+    }
+
     /// 上周摘要文案:按 ISO 周键(与趋势图周桶一致)直接取"上周""上上周"
     /// 两个整周桶,环比复用 PeriodCompare 的口径。上周无任何用量返回 nil。
     /// 不走 DateInterval 边界判断——Darwin 的 contains 把 end 视作闭端,

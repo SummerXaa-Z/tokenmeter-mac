@@ -913,7 +913,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             plans: store.subscriptionPlans)
         else { return }
         Notifier.send(
-            id: Notifier.weeklyDigestID, title: message.title, body: message.body)
+            id: Notifier.weeklyDigestID(forWeek: WeeklyDigest.summarizedWeekKey()),
+            title: message.title, body: message.body)
     }
 
     private func finishQuotaBadgeRefresh() {

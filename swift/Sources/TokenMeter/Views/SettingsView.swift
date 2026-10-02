@@ -626,7 +626,8 @@ struct SettingsView: View {
                     Button("预览") {
                         guard let digestPreview else { return }
                         Notifier.send(
-                            id: Notifier.weeklyDigestID,
+                            id: Notifier.weeklyDigestID(
+                                forWeek: WeeklyDigest.summarizedWeekKey()),
                             title: digestPreview.title, body: digestPreview.body)
                     }
                     .controlSize(.small)

@@ -7,8 +7,17 @@ import UserNotifications
 // 自签名非沙盒 app 上 UNUserNotificationCenter 可用，但权限申请可能被系统
 // 拒（取决于签名信任）。所有调用容错：失败不抛、不崩，静默退回图标着色。
 enum Notifier {
-    // 周报摘要通知的 identifier：发送方与点击路由共用，改这里即可换键。
+    // 周报摘要通知的 identifier 基键：发送方与点击路由共用，改这里即可换键。
+    // 实际发送用 weeklyDigestID(forWeek:) 按所述周派生——每周各一条，
+    // 系统通知中心里互不顶替（identifier 相同才替换）。
     static let weeklyDigestID = "weekly.digest"
+
+    /// 周报通知的按周 identifier（如 weekly.digest.2026-W39），周键与
+    /// 周报文案管线同源（WeeklyDigest.weekKey，ISO 年-周）。裸基键仅作
+    /// 旧版已发出通知的点击路由兼容。
+    static func weeklyDigestID(forWeek weekKey: String) -> String {
+        "\(weeklyDigestID).\(weekKey)"
+    }
 
     // 仅在有有效 bundle 时使用通知中心，避免裸进程调 current() 崩溃
     private static var available: Bool { Bundle.main.bundleIdentifier != nil }
@@ -100,7 +109,11 @@ enum Notifier {
         guard actionIdentifier == UNNotificationDefaultActionIdentifier else {
             return nil
         }
-        if identifier == weeklyDigestID { return .dashboard }
+        // 周报按周留痕：带周键的派生 id 与旧版裸键都回总览（升级前已
+        // 发出的通知点击仍可跳转）；前缀必须是完整基键，避免误伤相近键。
+        if identifier == weeklyDigestID
+            || identifier.hasPrefix(weeklyDigestID + ".")
+        { return .dashboard }
         switch identifier {
         case "codex.quota.low": return .source(.codex)
         case "claude.daily.over": return .source(.claude)

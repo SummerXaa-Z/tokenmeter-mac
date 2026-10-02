@@ -31,6 +31,27 @@ final class WeeklyDigestTests: XCTestCase {
             WeeklyDigest.weekKey(date("2026-09-28"), calendar: calendar))
     }
 
+    func testSummarizedWeekKeyAlwaysLandsInPriorIsoWeek() {
+        // 所述周 = 上周桶:周一到周日取任一天,减 7 天都落进上一个 ISO 周,
+        // 且与 message() 内部取"上周"桶的算法一致(含跨年边界)
+        for today in ["2026-09-21", "2026-09-27", "2026-09-28",
+                      "2026-10-04", "2026-01-01", "2027-01-04"] {
+            let priorWeek = calendar.date(byAdding: .day, value: -7, to: date(today))!
+            XCTAssertEqual(
+                WeeklyDigest.summarizedWeekKey(today: date(today), calendar: calendar),
+                WeeklyDigest.weekKey(priorWeek, calendar: calendar),
+                "\(today) 的所述周应等于 7 天前所在周")
+            XCTAssertNotEqual(
+                WeeklyDigest.summarizedWeekKey(today: date(today), calendar: calendar),
+                WeeklyDigest.weekKey(date(today), calendar: calendar),
+                "\(today) 的所述周不应是本周")
+        }
+        // 周报跨补发(周一发与周三补发)所述周相同 → 同键,互不堆叠
+        XCTAssertEqual(
+            WeeklyDigest.summarizedWeekKey(today: date("2026-09-21"), calendar: calendar),
+            WeeklyDigest.summarizedWeekKey(today: date("2026-09-23"), calendar: calendar))
+    }
+
     func testIsDueOnlyMondayToWednesdayAfterNine() {
         XCTAssertTrue(WeeklyDigest.isDue(
             lastSentWeek: nil, today: date("2026-09-21", "10:00"), calendar: calendar))
