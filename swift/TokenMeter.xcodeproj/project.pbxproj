@@ -49,6 +49,7 @@
 		516E50273A26D4CBA68435B6 /* CopilotUsageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0D30F5E2C9FCBF8F7230764 /* CopilotUsageTests.swift */; };
 		53EC51D7DF39A698FE903177 /* FormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61AF1344992FFFE169DB4857 /* FormatTests.swift */; };
 		5705E0A4C3A0149E9C376765 /* CodexView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967FFAA53C071E7B5A4CC8ED /* CodexView.swift */; };
+		57A587164158832410D7A4CF /* SkillDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B50E344260904A1FD9484AB7 /* SkillDetailView.swift */; };
 		5A0EF33BE92E5C281E19D918 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C7FF91B5D91E2641E200E35 /* DashboardView.swift */; };
 		5A85B048EED103F94F2814EC /* SourceAPICostCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2169DA16BFEB3828CC1D724 /* SourceAPICostCard.swift */; };
 		5A8C73B3E4D7863A682811CE /* CursorUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4BE502EE001B896AC0C9D26 /* CursorUsage.swift */; };
@@ -253,6 +254,7 @@
 		B4749B9CB2C1B13C4BACBAB2 /* SubscriptionROICurve.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionROICurve.swift; sourceTree = "<group>"; };
 		B4B9D1BF0F7C7B056BB012BF /* SubscriptionPlansEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionPlansEditor.swift; sourceTree = "<group>"; };
 		B4BC3BA51DB70892C2FB9608 /* QwenCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QwenCodeView.swift; sourceTree = "<group>"; };
+		B50E344260904A1FD9484AB7 /* SkillDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillDetailView.swift; sourceTree = "<group>"; };
 		B6D6ED3684CAFECA658C89E7 /* AlertLatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertLatchTests.swift; sourceTree = "<group>"; };
 		BBAA57F5DE3E12AB2E6EC2F4 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		BE348B8A6F5BBC274C411539 /* SourceDashboardComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceDashboardComponents.swift; sourceTree = "<group>"; };
@@ -504,6 +506,7 @@
 				B4BC3BA51DB70892C2FB9608 /* QwenCodeView.swift */,
 				BF85AA1A761C40D0E1F07633 /* RootView.swift */,
 				C5D564596B6873D239FB7F78 /* SettingsView.swift */,
+				B50E344260904A1FD9484AB7 /* SkillDetailView.swift */,
 				B2169DA16BFEB3828CC1D724 /* SourceAPICostCard.swift */,
 				BE348B8A6F5BBC274C411539 /* SourceDashboardComponents.swift */,
 				7B0D90EC446183887EFACB93 /* SourceHistoryCards.swift */,
@@ -723,6 +726,7 @@
 				652CB7783E44E227E2183D40 /* QwenCodeView.swift in Sources */,
 				099AF48C316A4AEAA44557B0 /* RootView.swift in Sources */,
 				6F61B832C0A969BE3C20F6DC /* SettingsView.swift in Sources */,
+				57A587164158832410D7A4CF /* SkillDetailView.swift in Sources */,
 				E9E982DD90551044A1623ABB /* SkillRankingCSVExport.swift in Sources */,
 				724F811D27BE42FCC499A6E3 /* SkillUsageTrend.swift in Sources */,
 				5A85B048EED103F94F2814EC /* SourceAPICostCard.swift in Sources */,

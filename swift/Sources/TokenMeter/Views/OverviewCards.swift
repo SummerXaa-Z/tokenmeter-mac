@@ -661,6 +661,8 @@ struct OverviewRankingsCard: View {
     var coverageNote: String? = nil
     // 模型行点击下钻到详情页；默认空实现（渲染/预览可省）
     var onOpenModel: (HistorySource, String) -> Void = { _, _ in }
+    // Skill 行点击下钻到详情页（近 13 周走势与来源拆解）
+    var onOpenSkill: (PersonalSkillRankings.Entry) -> Void = { _ in }
     // 渲染夹具:强制某行进入悬停态(行高亮 + 说明行用固定文案),
     // 离屏渲染无法模拟指针悬停
     var previewRowId: String? = nil
@@ -812,7 +814,8 @@ struct OverviewRankingsCard: View {
     }
 
     /// 各来源实时采集的逐日 Skill 调用(与 dayModels 同窗口同语义)。
-    private static func liveDaySkills(
+    /// Skill 下钻页与榜内迷你条共用(榜行点击进入详情)。
+    static func liveDaySkills(
         _ state: AppState
     ) -> [HistorySource: [String: [String: Int]]] {
         [
@@ -986,31 +989,37 @@ struct OverviewRankingsCard: View {
                 } else {
                     ForEach(Array(skillRankings.entries.prefix(5).enumerated()), id: \.element.id) {
                         index, entry in
-                        skillRow(
-                            rank: index + 1, entry: entry,
-                            highlighted: (hoverSkill ?? previewSkillEntry)?.id == entry.id,
-                            weekly: skillWeeklyCounts(name: entry.name),
-                            onWeekHover: { weekIndex in
-                                if let weekIndex {
-                                    skillSparkWeek = (name: entry.name, weekIndex: weekIndex)
-                                } else if skillSparkWeek?.name == entry.name {
-                                    skillSparkWeek = nil
-                                }
-                            },
-                            highlightOverride: previewSkillSparkWeek?.name == entry.name
-                                ? previewSkillSparkWeek?.weekIndex : nil)
-                            .onHover { hovering in
-                                if hovering {
-                                    hoverSkill = entry
-                                } else if hoverSkill == entry {
-                                    hoverSkill = nil
-                                }
+                        Button {
+                            onOpenSkill(entry)
+                        } label: {
+                            skillRow(
+                                rank: index + 1, entry: entry,
+                                highlighted: (hoverSkill ?? previewSkillEntry)?.id == entry.id,
+                                weekly: skillWeeklyCounts(name: entry.name),
+                                onWeekHover: { weekIndex in
+                                    if let weekIndex {
+                                        skillSparkWeek = (name: entry.name, weekIndex: weekIndex)
+                                    } else if skillSparkWeek?.name == entry.name {
+                                        skillSparkWeek = nil
+                                    }
+                                },
+                                highlightOverride: previewSkillSparkWeek?.name == entry.name
+                                    ? previewSkillSparkWeek?.weekIndex : nil)
+                        }
+                        .buttonStyle(.plain)
+                        .help("查看该 Skill 近 13 周调用走势与来源拆解")
+                        .onHover { hovering in
+                            if hovering {
+                                hoverSkill = entry
+                            } else if hoverSkill == entry {
+                                hoverSkill = nil
                             }
+                        }
                     }
                     skillHoverCaption
                 }
 
-                Text("Claude 统计原生 Skill 工具；Codex 统计工具实际读取标准 SKILL.md；Copilot 统计 skill.invoked。普通消息提及不计入。行尾小条为近 13 周逐周调用次数（悬停查单周）；右上按钮导出完整 Skills 榜 CSV（周列为近 13 周次数，无调用留空）。")
+                Text("Claude 统计原生 Skill 工具；Codex 统计工具实际读取标准 SKILL.md；Copilot 统计 skill.invoked。普通消息提及不计入。行尾小条为近 13 周逐周调用次数（悬停查单周）；点击行进入详情页（近 13 周全宽走势与来源拆解）；右上按钮导出完整 Skills 榜 CSV（周列为近 13 周次数，无调用留空）。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
         }

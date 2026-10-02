@@ -7,6 +7,8 @@ enum AppView: Equatable {
     case detail(String)   // model key: "flash" | "pro"
     // 模型榜下钻：来源 + 模型名，7|30|90 天可切的明细页
     case codingModel(HistorySource, String)
+    // Skills 榜下钻：携带所点行的 Entry（范围数字与点击时所见一致）
+    case skill(PersonalSkillRankings.Entry)
 }
 
 // 可从首页内容区进入的工具详情；它不再承担导航栏职责。
@@ -79,6 +81,7 @@ struct RootView: View {
                         onOpenModel: { source, model in
                             push(.codingModel(source, model))
                         },
+                        onOpenSkill: { entry in push(.skill(entry)) },
                         onSettings: { push(.settings) }
                     )
                     .transition(.opacity)
@@ -127,6 +130,12 @@ struct RootView: View {
                 case .codingModel(let source, let model):
                     CodingModelDetailView(
                         source: source, model: model,
+                        onBack: { push(.dashboard) })
+                        .transition(.opacity)
+                case .skill(let entry):
+                    SkillDetailView(
+                        entry: entry,
+                        rangeTitle: historyRange.scopeTitle,
                         onBack: { push(.dashboard) })
                         .transition(.opacity)
                 }

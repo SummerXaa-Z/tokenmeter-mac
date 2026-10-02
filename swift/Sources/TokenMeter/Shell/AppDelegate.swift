@@ -479,6 +479,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // Skill 下钻页夹具:近 13 周序列注入确定性合成数据(真实取数来自
+    // 本机留存与实时采集,离屏渲染不可预测)。合成数据只在内存构造,
+    // 不读也不写真实按天留存。
+    private static func skillDetailFixture() -> some View {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        // 近 13 周(旧→新)的合成次数:交错大小周,中段两周空档,
+        // 末周为进行中的本周;周一锚定与真实管线同口径
+        let series: [Int] = [2, 5, 3, 0, 6, 4, 1, 0, 0, 7, 5, 3, 2]
+        var weekly: [(weekOf: String, count: Int)] = []
+        if let monday = DateUtil.date(from: UsageHeatmap.mondayKey(of: today, calendar: calendar)) {
+            for offset in stride(from: 12, through: 0, by: -1) {
+                guard let week = calendar.date(byAdding: .weekOfYear, value: -offset, to: monday)
+                else { continue }
+                weekly.append((weekOf: DateUtil.key(week), count: series[12 - offset]))
+            }
+        }
+        let skills = PersonalSkillRankings(
+            samples: [
+                .init(source: .claude, name: "pdf", invocationCount: 30),
+                .init(source: .codex, name: "pdf", invocationCount: 12),
+                .init(source: .copilot, name: "frontend-design", invocationCount: 26),
+            ],
+            enabledSources: HistorySource.codingAgents)
+        return ScrollView {
+            VStack(spacing: 12) {
+                if let entry = skills.entries.first(where: { $0.name == "pdf" }) {
+                    SkillDetailView(
+                        entry: entry, rangeTitle: "近 30 天", onBack: {},
+                        injectedWeekly: weekly.isEmpty ? nil : weekly)
+                }
+            }
+            .padding(14)
+        }
+    }
+
     // 模型榜悬停预览的合成数据:悬停态说明行的数字来自真实按天留存,
     // 离屏渲染无法预测,故用固定文案 override;取数路径由单元测试覆盖。
     // 合成数据只在内存构造,不读也不写真实按天留存。
@@ -741,6 +777,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("pace-fixture", hosting(Self.paceFixture(), height: 1100)),
             ("cost-fixture", hosting(Self.costFixture(), height: 2940)),
             ("model-detail-fixture", hosting(Self.modelDetailFixture(), height: 2400)),
+            ("skill-detail-fixture", hosting(Self.skillDetailFixture(), height: 640)),
             // 模型榜悬停预览的合成数据页:离屏渲染无法模拟指针悬停,
             // 用 previewRowId/previewTextOverride 强制某行进入悬停态(行高亮 +
             // 说明行固定文案);取数与拼串由单元测试覆盖,每页单卡防状态串扰

@@ -9,6 +9,8 @@ struct OverviewView: View {
     let onOpenSource: (Provider) -> Void
     // 模型榜下钻：(来源, 模型名) → 7|30|90 天可切的明细页
     var onOpenModel: (HistorySource, String) -> Void = { _, _ in }
+    // Skills 榜下钻：所点行 → 近 13 周走势与来源拆解页
+    var onOpenSkill: (PersonalSkillRankings.Entry) -> Void = { _ in }
     var onSettings: () -> Void
     @State private var history: [HistoryStore.DayPoint] = []
     @State private var modelHistory: [ModelUsageDay] = []
@@ -65,7 +67,8 @@ struct OverviewView: View {
                         skillRankings: data.skillRankings,
                         range: range,
                         coverageNote: data.modelCoverageNote,
-                        onOpenModel: onOpenModel
+                        onOpenModel: onOpenModel,
+                        onOpenSkill: onOpenSkill
                     )
                     if data.apiReferenceCost.totalTokens > 0 {
                         OverviewAPICostCard(
