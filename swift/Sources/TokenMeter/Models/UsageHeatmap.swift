@@ -255,12 +255,15 @@ enum UsageHeatmap {
     /// 月格悬停说明：年月 · 月合计 Token，有金额时追加美元金额。
     /// 月视图动辄跨两年，悬停文案带年份消歧；进行中的当月（仅最近一页）
     /// 由调用方传 inProgress，明示"统计至今天"——月条按月合计分档着色，
-    /// 没这半句容易把进行中的当月误读成用量骤降。
+    /// 没这半句容易把进行中的当月误读成用量骤降。进行中且给出 elapsedDays
+    /// （本月已过的天数，含今天）时再附日均与已过天数，把"骤降"读法彻底
+    /// 堵死：日均才是与完整月可比的口径。
     static func monthHelpText(
         monthKey: String,
         total: Int,
         apiValue: Double?,
-        inProgress: Bool = false
+        inProgress: Bool = false,
+        elapsedDays: Int? = nil
     ) -> String {
         let parts = monthKey.split(separator: "-")
         let title: String
@@ -272,6 +275,9 @@ enum UsageHeatmap {
         var text = title
         if inProgress { text += "（进行中，统计至今天）" }
         text += " · \(Fmt.tokensShort(total))"
+        if inProgress, let elapsedDays, elapsedDays > 0 {
+            text += " · 日均 \(Fmt.tokensShort(total / elapsedDays))（已 \(elapsedDays) 天）"
+        }
         if let apiValue, apiValue > 0 {
             text += " · \(Fmt.usd(apiValue))"
         }

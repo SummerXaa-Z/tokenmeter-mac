@@ -480,6 +480,29 @@ final class UsageHeatmapTests: XCTestCase {
             UsageHeatmap.monthHelpText(
                 monthKey: "2026-10", total: 500, apiValue: nil, inProgress: true),
             "2026年10月（进行中，统计至今天） · 500")
+        // 给了已过天数:追加日均与天数,日均才是与完整月可比的口径
+        XCTAssertEqual(
+            UsageHeatmap.monthHelpText(
+                monthKey: "2026-10", total: 36_000_000, apiValue: 4.5,
+                inProgress: true, elapsedDays: 2),
+            "2026年10月（进行中，统计至今天） · 36M · 日均 18M（已 2 天） · $4.50")
+        XCTAssertEqual(
+            UsageHeatmap.monthHelpText(
+                monthKey: "2026-10", total: 500, apiValue: nil,
+                inProgress: true, elapsedDays: 1),
+            "2026年10月（进行中，统计至今天） · 500 · 日均 500（已 1 天）")
+        // 完整月不附日均:elapsedDays 即使误传也不生效;进行中但天数
+        // 无效(0)同样省略,不出现除零或「已 0 天」
+        XCTAssertEqual(
+            UsageHeatmap.monthHelpText(
+                monthKey: "2025-12", total: 1_234_567, apiValue: nil,
+                inProgress: false, elapsedDays: 31),
+            "2025年12月 · 1.2M")
+        XCTAssertEqual(
+            UsageHeatmap.monthHelpText(
+                monthKey: "2026-10", total: 500, apiValue: nil,
+                inProgress: true, elapsedDays: 0),
+            "2026年10月（进行中，统计至今天） · 500")
     }
 
     func testWeekdayAveragesFollowDateRange() {

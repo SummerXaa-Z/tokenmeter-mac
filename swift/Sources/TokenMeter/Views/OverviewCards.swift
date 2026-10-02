@@ -2119,6 +2119,8 @@ struct OverviewHeatmapCard: View {
     // 7 月防挤,年份靠悬停文案消歧
     private func monthStrip(_ cells: [UsageHeatmap.MonthCell]) -> some View {
         let currentMonth = String(DateUtil.today().prefix(7))
+        // 当月已过的天数（含今天），悬停文案里折日均用
+        let currentDay = Calendar.current.component(.day, from: Date())
         return HStack(alignment: .top, spacing: 6) {
             Color.clear.frame(width: 12, height: 1)
             VStack(alignment: .leading, spacing: 2) {
@@ -2148,10 +2150,12 @@ struct OverviewHeatmapCard: View {
                             }
                             .help(UsageHeatmap.monthHelpText(
                                 monthKey: cell.monthKey, total: cell.total,
-                                apiValue: cell.usd, inProgress: isCurrent))
+                                apiValue: cell.usd, inProgress: isCurrent,
+                                elapsedDays: isCurrent ? currentDay : nil))
                             .accessibilityLabel(UsageHeatmap.monthHelpText(
                                 monthKey: cell.monthKey, total: cell.total,
-                                apiValue: cell.usd, inProgress: isCurrent))
+                                apiValue: cell.usd, inProgress: isCurrent,
+                                elapsedDays: isCurrent ? currentDay : nil))
                             .frame(width: monthBarWidth, height: 89)
                     }
                 }
