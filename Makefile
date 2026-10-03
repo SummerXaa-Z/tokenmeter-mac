@@ -27,7 +27,7 @@ help:
 		'project             Regenerate the checked-in Xcode project' \
 		'price-check         Compare the price catalog with a public remote API' \
 		'package             Build/sign a DMG; see docs/release.md' \
-		'clean               Remove the selected derived-data directory'
+		'clean               Use defaults to remove swift/build; absolute/spaced DERIVED_DATA unsupported'
 
 project:
 	cd $(SWIFT_DIR) && xcodegen generate
