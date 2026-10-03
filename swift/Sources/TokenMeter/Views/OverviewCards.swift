@@ -2294,42 +2294,17 @@ struct OverviewHeatmapCard: View {
         }
         return Card {
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
+                HStack(spacing: 8) {
                     Label("用量热力图", systemImage: "square.grid.3x3")
                         .font(.system(size: 12, weight: .semibold))
-                    Spacer()
+                        .fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 8)
                     pageNavigator(
                         range: rangeText,
                         offset: isMonth ? $monthOffset : $weekOffset,
                         maxOffset: maxOffset,
                         unit: isMonth ? "1 个月" : "\(span.rawValue) 周")
-                    Picker("粒度", selection: $granularity) {
-                        ForEach(Granularity.allCases, id: \.self) { item in
-                            Text(item.rawValue).tag(item)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .controlSize(.mini)
-                    .frame(width: 54)
-                    if isMonth {
-                        Picker("热力图窗口", selection: $monthSpan) {
-                            ForEach(OverviewHeatmapCard.MonthSpan.allCases, id: \.self) { item in
-                                Text(item.title).tag(item)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .controlSize(.mini)
-                        .frame(width: 64)
-                    } else {
-                        Picker("热力图窗口", selection: $span) {
-                            ForEach(OverviewHeatmapCard.Span.allCases, id: \.self) { item in
-                                Text(item.title).tag(item)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .controlSize(.mini)
-                        .frame(width: 104)
-                    }
+                        .fixedSize(horizontal: true, vertical: false)
                     // 导出当前窗口热力图数据（粒度/窗口/翻页与界面一致）为 CSV
                     Button {
                         exportHeatmapCSV()
@@ -2342,6 +2317,42 @@ struct OverviewHeatmapCard: View {
                     .disabled(!hasUsage)
                     .help("导出当前窗口 CSV（日/周/月粒度跟随当前选择）")
                     .accessibilityLabel("导出热力图 CSV")
+                }
+                HStack(spacing: 8) {
+                    Picker("粒度", selection: $granularity) {
+                        ForEach(Granularity.allCases, id: \.self) { item in
+                            Text(item.rawValue).tag(item)
+                        }
+                    }
+                    .labelsHidden()
+                    .accessibilityLabel("粒度")
+                    .pickerStyle(.segmented)
+                    .controlSize(.mini)
+                    .frame(width: 90)
+                    Spacer(minLength: 8)
+                    if isMonth {
+                        Picker("热力图窗口", selection: $monthSpan) {
+                            ForEach(OverviewHeatmapCard.MonthSpan.allCases, id: \.self) { item in
+                                Text(item.title).tag(item)
+                            }
+                        }
+                        .labelsHidden()
+                        .accessibilityLabel("热力图窗口")
+                        .pickerStyle(.segmented)
+                        .controlSize(.mini)
+                        .frame(width: 64)
+                    } else {
+                        Picker("热力图窗口", selection: $span) {
+                            ForEach(OverviewHeatmapCard.Span.allCases, id: \.self) { item in
+                                Text(item.title).tag(item)
+                            }
+                        }
+                        .labelsHidden()
+                        .accessibilityLabel("热力图窗口")
+                        .pickerStyle(.segmented)
+                        .controlSize(.mini)
+                        .frame(width: 104)
+                    }
                 }
                 if !hasUsage {
                     Text(isMonth
@@ -2372,9 +2383,11 @@ struct OverviewHeatmapCard: View {
                                 .font(Theme.footnoteFont).foregroundStyle(.tertiary)
                         }
                         Spacer(minLength: 0)
-                        Text(footnoteText)
-                            .font(Theme.footnoteFont).foregroundStyle(.tertiary)
                     }
+                    Text(footnoteText)
+                        .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
                     ExportFeedbackLine(status: exportStatus)
                 }
