@@ -15,6 +15,8 @@ final class LoginSyncController: NSObject, ObservableObject, WKScriptMessageHand
     private var window: NSWindow?
     private var webView: WKWebView?
     private var done = false
+    private var captureTask: Task<Void, Never>?
+    private var loginGeneration = UUID()
 
     private static let loginURL = URL(string: "https://platform.deepseek.com")!
 
@@ -22,10 +24,8 @@ final class LoginSyncController: NSObject, ObservableObject, WKScriptMessageHand
     private static let hookJS = """
     (function() {
       if (window.__dsm_hook__) return;
-      // 域名收口：只在 deepseek.com（含子域）注入 token 抓取，避免用户在
-      // WebView 内跳到第三方页时把那些页面的 Bearer 也回传。forMainFrameOnly:false
-      // 会对 iframe 注入，这里同样按 host 拦掉非 deepseek 的 frame。
-      if (!/(^|\\.)deepseek\\.com$/.test(location.host)) return;
+      // Native code independently verifies this origin and main-frame provenance.
+      if (window.top !== window || location.origin !== 'https://platform.deepseek.com') return;
       window.__dsm_hook__ = true;
       function deliver(token) {
         if (!token || typeof token !== 'string') return;
@@ -70,6 +70,10 @@ final class LoginSyncController: NSObject, ObservableObject, WKScriptMessageHand
 
     // 返回 true 表示已直接命中（本实现总是打开窗口异步捕获，返回 false）
     func start() -> Bool {
+        guard !RuntimeEnvironment.isIsolated else { ended = true; return false }
+        captureTask?.cancel()
+        captureTask = nil
+        loginGeneration = UUID()
         done = false
         ended = false
         captured = nil
@@ -83,7 +87,7 @@ final class LoginSyncController: NSObject, ObservableObject, WKScriptMessageHand
         let controller = WKUserContentController()
         controller.add(self, name: "dsmToken")
         let script = WKUserScript(source: Self.hookJS, injectionTime: .atDocumentStart,
-                                  forMainFrameOnly: false)
+                                  forMainFrameOnly: true)
         controller.addUserScript(script)
         cfg.userContentController = controller
 
@@ -110,16 +114,28 @@ final class LoginSyncController: NSObject, ObservableObject, WKScriptMessageHand
 
     // 收到注入脚本回传的 token
     func userContentController(_ uc: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard !done, let token = message.body as? String else { return }
+        guard !RuntimeEnvironment.isIsolated else { return }
+        let origin = message.frameInfo.securityOrigin
+        guard !done, captureTask == nil, message.name == "dsmToken",
+              message.webView === webView,
+              Self.acceptsTokenMessage(protocol: origin.protocol, host: origin.host, port: origin.port,
+                                       isMainFrame: message.frameInfo.isMainFrame),
+              let rawToken = message.body as? String else { return }
+        let token = rawToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (20...8192).contains(token.utf8.count) else { return }
+        let generation = loginGeneration
         let cal = Calendar.current
         let now = Date()
         let month = cal.component(.month, from: now)
         let year = cal.component(.year, from: now)
-        Task {
+        captureTask = Task {
+            defer { if self.loginGeneration == generation { self.captureTask = nil } }
             // 验证 token 真能调用用量接口，过滤登录中途的临时 token
             guard await DeepSeekAPI.verifyUsageToken(token, month: month, year: year) else { return }
             await MainActor.run {
-                guard !self.done else { return }
+                guard !Task.isCancelled, !self.done, self.loginGeneration == generation,
+                      let url = self.webView?.url,
+                      Self.allowsNavigation(to: url, hasTargetFrame: true) else { return }
                 do {
                     try ConfigStore.shared.saveDeepSeekUsageToken(token)
                 } catch {
@@ -138,7 +154,39 @@ final class LoginSyncController: NSObject, ObservableObject, WKScriptMessageHand
         }
     }
 
+    // Source authentication precedes token validation and persistence. A working token
+    // supplied by another origin does not make that origin an approved login page.
+    nonisolated static func acceptsTokenMessage(protocol scheme: String, host: String, port: Int, isMainFrame: Bool) -> Bool {
+        isMainFrame && scheme == "https" && host == "platform.deepseek.com" && (port == 0 || port == 443)
+    }
+
+    nonisolated static func allowsNavigation(to url: URL, hasTargetFrame: Bool) -> Bool {
+        hasTargetFrame && url.scheme == "https" && url.host == "platform.deepseek.com"
+            && (url.port == nil || url.port == 443) && url.user == nil && url.password == nil
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let url = navigationAction.request.url,
+              Self.allowsNavigation(to: url, hasTargetFrame: navigationAction.targetFrame != nil) else {
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        guard let url = navigationResponse.response.url,
+              Self.allowsNavigation(to: url, hasTargetFrame: true) else {
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
     private func closeWindow() {
+        captureTask?.cancel()
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "dsmToken")
         window?.delegate = nil
         window?.close()
@@ -149,6 +197,10 @@ final class LoginSyncController: NSObject, ObservableObject, WKScriptMessageHand
 
 extension LoginSyncController: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
+        captureTask?.cancel()
+        captureTask = nil
+        loginGeneration = UUID()
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "dsmToken")
         window = nil
         webView = nil
         if !done {

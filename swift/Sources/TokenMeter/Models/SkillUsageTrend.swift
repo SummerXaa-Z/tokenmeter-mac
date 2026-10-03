@@ -7,19 +7,33 @@ import Foundation
 enum SkillUsageTrend {
     /// 某 Skill 近 `weeks` 周的逐周调用次数(升序、含本周,空周计 0);
     /// 窗口内一次都没有返回 nil(与模型榜迷你趋势的断流语义一致)。
-    /// Skill 名跨来源合并(榜内同名 Skill 是同一行)。
+    /// Skill 名跨来源合并；指定来源时只统计该来源。
     static func weeklyCounts(
         name: String,
         weeks: Int,
+        sourceFilter: HistorySource? = nil,
+        enabledSources: [HistorySource]? = nil,
         liveSkills: [HistorySource: [String: [String: Int]]],
         persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
         todayKey: String = DateUtil.today(),
         calendar: Calendar = .current
     ) -> [(weekOf: String, count: Int)]? {
+        let skillKey = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard weeks > 0,
-              !name.isEmpty,
+              !skillKey.isEmpty,
               let today = DateUtil.date(from: todayKey)
         else { return nil }
+        let enabled = enabledSources.map(Set.init)
+        func includes(_ source: HistorySource) -> Bool {
+            (enabled?.contains(source) ?? true) && (sourceFilter.map { $0 == source } ?? true)
+        }
+        // 同名 Skill 的规范与榜单一致，实时整天覆盖也沿用同一匹配规则。
+        func count(in skills: [String: Int]) -> Int {
+            skills.reduce(0) { total, entry in
+                let key = entry.key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                return key == skillKey ? total + max(entry.value, 0) : total
+            }
+        }
         // 本周周一往前推 (weeks - 1) 周为窗口起点(含今天的整周)
         let thisMonday = UsageHeatmap.mondayKey(of: today, calendar: calendar)
         guard let mondayDate = DateUtil.date(from: thisMonday),
@@ -33,17 +47,20 @@ enum SkillUsageTrend {
         var perDayBySource: [String: [HistorySource: Int]] = [:]
         for day in persisted
         where day.date >= startKey && day.date <= todayKey {
-            for (source, detail) in day.bySource {
-                if let count = detail.skills[name] {
-                    perDayBySource[day.date, default: [:]][source] = count
+            for (source, detail) in day.bySource
+            where includes(source) {
+                let invocationCount = count(in: detail.skills)
+                if invocationCount > 0 {
+                    perDayBySource[day.date, default: [:]][source] = invocationCount
                 }
             }
         }
-        for (source, byDate) in liveSkills {
+        for (source, byDate) in liveSkills
+        where includes(source) {
             for (date, byName) in byDate
             where date >= startKey && date <= todayKey
                   && ModelUsageHistoryStore.isDateKey(date) {
-                perDayBySource[date, default: [:]][source] = byName[name] ?? 0
+                perDayBySource[date, default: [:]][source] = count(in: byName)
             }
         }
 

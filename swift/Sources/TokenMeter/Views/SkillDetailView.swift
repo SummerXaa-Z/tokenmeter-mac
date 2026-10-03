@@ -11,6 +11,10 @@ struct SkillDetailView: View {
     // 与总览所选范围一致的口径说明（数字本身来自 Entry）
     let rangeTitle: String
     let onBack: () -> Void
+    // 来源筛选与榜单、周走势、导出共同携带，nil 为全部来源。
+    var sourceFilter: HistorySource? = nil
+    // 保留点击时的总览来源开关，近 13 周不能混入已关闭来源。
+    var enabledSources: [HistorySource]? = nil
     // 渲染夹具：注入确定性的近 13 周序列（真实取数来自本机留存与实时
     // 采集，离屏渲染不可预测）；nil 时按实时 + 留存自算
     var injectedWeekly: [(weekOf: String, count: Int)]? = nil
@@ -23,9 +27,15 @@ struct SkillDetailView: View {
 
     private var weekly: [(weekOf: String, count: Int)]? {
         if let injectedWeekly { return injectedWeekly }
-        return SkillUsageTrend.weeklyCounts(
-            name: entry.name, weeks: 13,
+        return OverviewRankingsCard.weeklySkillCounts(
+            name: entry.name, filteredBy: sourceFilter,
+            enabledSources: enabledSources,
             liveSkills: OverviewRankingsCard.liveDaySkills(state))
+    }
+
+    private var scopedRangeTitle: String {
+        guard let sourceFilter else { return rangeTitle }
+        return "\(rangeTitle) · 已筛 \(sourceFilter.overviewName)"
     }
 
     var body: some View {
@@ -76,7 +86,7 @@ struct SkillDetailView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                Text("范围数字与 Skills 榜一致（\(rangeTitle)）；只认明确调用证据，普通消息提及不计入。")
+                Text("范围数字与 Skills 榜一致（\(scopedRangeTitle)）；只认明确调用证据，普通消息提及不计入。")
                     .font(Theme.footnoteFont).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -179,7 +189,7 @@ struct SkillDetailView: View {
                 entry: entry,
                 weekly: weekly,
                 sourceNote: OverviewRankingsCard.hoverSkillText(for: entry),
-                scopeTitle: rangeTitle
+                scopeTitle: scopedRangeTitle
             ).write(to: url, atomically: true, encoding: .utf8)
             exportStatus = ExportFeedback.text(fileURL: url)
         } catch {

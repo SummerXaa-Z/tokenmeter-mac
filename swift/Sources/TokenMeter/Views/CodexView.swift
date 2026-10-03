@@ -2,7 +2,7 @@ import SwiftUI
 import Charts
 
 // Codex 用量面板：配额双窗口（5 小时 / 周）+ 今日用量 + 7 天柱图。
-// 数据全部来自本地 ~/.codex/sessions，刷新即重扫。
+// 用量来自本地 ~/.codex/sessions；官方实时配额由独立开关控制。
 struct CodexView: View {
     @EnvironmentObject var state: AppState
     var onBack: () -> Void
@@ -12,12 +12,15 @@ struct CodexView: View {
         ScrollView {
             VStack(spacing: 10) {
                 header
+                if let error = state.codex.error {
+                    SourceReadFailureCard(message: error, showingLastGood: state.codex.result != nil)
+                }
+                if !state.codexAllRateLimits.isEmpty {
+                    ForEach(state.codexAllRateLimits, id: \.limitId) { rateLimitCard($0) }
+                } else if state.codex.result != nil || state.codexLiveQuotaEnabled {
+                    rateLimitCard(nil)
+                }
                 if let r = state.codex.result {
-                    if r.allRateLimits.isEmpty {
-                        rateLimitCard(nil)
-                    } else {
-                        ForEach(r.allRateLimits, id: \.limitId) { rateLimitCard($0) }
-                    }
                     todayCard(r)
                     hoursCard(r)
                     weekChartCard(r)
@@ -25,7 +28,7 @@ struct CodexView: View {
                     projectCard(r)
                 } else if state.codex.loading {
                     SourceStateView(loading: true, message: "正在读取…")
-                } else {
+                } else if state.codex.error == nil {
                     SourceStateView(message: "未找到 Codex 本地数据（~/.codex/sessions）")
                 }
                 SourceAPICostCard(source: .codex, liveDayModels: state.codex.result?.dayModels)
@@ -80,9 +83,13 @@ struct CodexView: View {
                     }
                     Text("数据截至 \(Self.relative(limits.asOf))")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
-                        .help("配额快照来自最近一次 Codex 请求；长时间未用 Codex 时不会刷新")
+                        .help(state.codexLiveQuotaEnabled
+                            ? "优先显示官方实时配额；查询失败时使用本地快照"
+                            : "实时查询已关闭；快照来自最近一次 Codex 请求")
                 } else {
-                    Text("暂无配额数据（最近 7 天没有 Codex 会话）")
+                    Text(state.codexLiveQuotaEnabled
+                        ? "暂无可验证的配额数据，请检查 Codex 登录状态或稍后刷新"
+                        : "暂无本地配额快照，可在设置中主动开启官方实时查询")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }

@@ -44,6 +44,7 @@ struct OverviewUsageCard: View {
     // 近 7 天日均上下文只用本机历史;总览未加载完时为空数组,行自动隐藏
     var history: [HistoryStore.DayPoint] = []
     var participants: Set<HistorySource> = []
+    var collectionStatuses: [OverviewSourceCollectionStatus] = []
 
     /// 近 7 天日均(滚动窗口整除 7);无历史时为 0,上下文行随之隐藏
     private var weekDailyAverage: Int {
@@ -59,7 +60,9 @@ struct OverviewUsageCard: View {
                     .font(.system(size: 12, weight: .semibold))
                 // 数字当主角、单位退后：整行同字号会让 "tokens" 与数值抢重点
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(Fmt.tokensShort(snapshot.periodTotal))
+                    Text(OverviewSourceCollectionStatus.totalIsUnknown(
+                        snapshot.periodTotal, statuses: collectionStatuses
+                    ) ? "—" : Fmt.tokensShort(snapshot.periodTotal))
                         .font(Theme.heroFont)
                         .foregroundStyle(Theme.brand)
                     Text("tokens")
@@ -88,15 +91,14 @@ struct OverviewUsageCard: View {
                         .foregroundStyle(.tertiary)
                         .padding(.top, 2)
                 }
-                if snapshot.selection.sources.isEmpty {
-                    Text("尚未启用用量来源")
+                if let message = OverviewSourceCollectionStatus.message(
+                    total: snapshot.periodTotal, statuses: collectionStatuses,
+                    hasSelection: !snapshot.selection.sources.isEmpty
+                ) {
+                    Text(message)
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 4)
-                } else if entries.isEmpty {
-                    Text("所选时间范围暂无 Agent 用量")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(collectionStatuses.contains { $0.phase == .failed }
+                            ? Color.orange : Color.secondary)
                         .padding(.top, 4)
                 }
                 if !entries.isEmpty {
@@ -332,7 +334,7 @@ struct OverviewSubscriptionQuotaCard: View {
                         .foregroundStyle(.tertiary)
                 }
                 Divider().opacity(0.35)
-                Text("额度只读：Codex 查询官方配额；Kimi 使用用户主动配置的 Key 查询官方接口，未配置时仅访问本机 127.0.0.1；方舟只调用本机已登录 arkcli；智谱使用用户配置的 Key 查询所选域名的官方监控接口。TokenMeter 不会上报本地会话或统计结果。")
+                Text("额度只读：Codex 默认读取本地快照，主动开启实时配额后才使用本机登录态查询官方接口；Kimi 使用用户配置的 Key 查询官方接口，未配置时仅访问本机 127.0.0.1；方舟只调用本机已登录 arkcli；智谱使用用户配置的 Key 查询所选域名的官方接口。本地会话和统计结果不会上传。")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
@@ -662,7 +664,7 @@ struct OverviewRankingsCard: View {
     // 模型行点击下钻到详情页；默认空实现（渲染/预览可省）
     var onOpenModel: (HistorySource, String) -> Void = { _, _ in }
     // Skill 行点击下钻到详情页（近 13 周走势与来源拆解）
-    var onOpenSkill: (PersonalSkillRankings.Entry) -> Void = { _ in }
+    var onOpenSkill: (PersonalSkillRankings.Entry, HistorySource?, [HistorySource]) -> Void = { _, _, _ in }
     // 渲染夹具:强制某行进入悬停态(行高亮 + 说明行用固定文案),
     // 离屏渲染无法模拟指针悬停
     var previewRowId: String? = nil
@@ -677,10 +679,10 @@ struct OverviewRankingsCard: View {
     // 悬停查日文案才能显示对准日
     var sparklineFor: ((HistorySource, String) -> [(date: String, tokens: Int)])? = nil
     // 渲染夹具:强制某行迷你柱进入某日悬停态(说明行显示单日文案)
-    var previewSparkDay: (model: String, dayIndex: Int)? = nil
+    var previewSparkDay: (source: HistorySource, model: String, dayIndex: Int)? = nil
     // 渲染夹具:注入确定性的 Skill 近 13 周序列(真实取数来自
     // 本机留存与实时采集,离屏渲染不可预测)
-    var skillSparkFor: ((String) -> [(weekOf: String, count: Int)])? = nil
+    var skillSparkFor: ((String, HistorySource?) -> [(weekOf: String, count: Int)])? = nil
     // 渲染夹具:强制某行迷你条进入某周悬停态(说明行显示单周文案)
     var previewSkillSparkWeek: (name: String, weekIndex: Int)? = nil
     // 渲染夹具:强制排序档(离屏渲染无法模拟点选);
@@ -695,7 +697,7 @@ struct OverviewRankingsCard: View {
     // Skills 榜来源筛选:点行内来源徽标只看该来源的 Skill,再点还原
     @State private var skillSourceFilter: HistorySource?
     // 迷你柱悬停对准的日序号(指针在柱图上时优先于行悬停文案)
-    @State private var sparkDay: (model: String, dayIndex: Int)?
+    @State private var sparkDay: (source: HistorySource, model: String, dayIndex: Int)?
     // Skill 迷你条悬停对准的周序号
     @State private var skillSparkWeek: (name: String, weekIndex: Int)?
     @State private var sort: ModelSort = .usage
@@ -713,7 +715,7 @@ struct OverviewRankingsCard: View {
             switch self {
             case .usage: return "按所选范围 Token 合计排序（默认）"
             case .usd: return "按近 30 天 API 等价美元排序（缺价模型沉底）"
-            case .week: return "按近 7 天 Token 排序（近 30 天断流的行沉底）"
+            case .week: return "按近 7 天 Token 排序（近 7 天无用量的行沉底）"
             }
         }
     }
@@ -732,18 +734,32 @@ struct OverviewRankingsCard: View {
         }.map(\.element)
     }
 
+    /// 排序值与真实明细共用取数入口，测试可传入确定性的本地聚合数据。
+    static func modelSortValue(
+        for entry: PersonalUsageRankings.ModelEntry,
+        sort: ModelSort,
+        liveDayModels: [String: [String: ModelTokenTally]]?,
+        persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
+        todayKey: String = DateUtil.today()
+    ) -> Double {
+        if sort == .usage { return Double(entry.totalTokens) }
+        guard let summary = CodingModelDetail.summary(
+            source: entry.source, model: entry.model,
+            liveDayModels: liveDayModels, persisted: persisted,
+            todayKey: todayKey, windowDays: sort == .week ? 7 : 30)
+        else { return -1 }
+        return sort == .usd ? summary.totalUSD : Double(summary.tally.total)
+    }
+
     /// 当前排序档下的完整榜单(排序作用于全量,再由调用方取前 5,
     /// 避免「范围用量第 6 名」在别的维度下进不了榜)
     private var sortedModels: [PersonalUsageRankings.ModelEntry] {
         if activeSort == .usage { return rankings.models }
         return Self.sortedBySortValue(rankings.models) { entry in
             if let sortValueFor { return sortValueFor(entry.source, entry.model, activeSort) }
-            guard let summary = CodingModelDetail.summary(
-                source: entry.source, model: entry.model,
-                liveDayModels: CodingModelDetailView.liveDayModels(entry.source, state: state),
-                windowDays: 30)
-            else { return -1 }
-            return activeSort == .usd ? summary.totalUSD : Double(summary.tally.total)
+            return Self.modelSortValue(
+                for: entry, sort: activeSort,
+                liveDayModels: CodingModelDetailView.liveDayModels(entry.source, state: state))
         }
     }
 
@@ -785,6 +801,18 @@ struct OverviewRankingsCard: View {
         return lead + " · " + (tokens > 0 ? Fmt.tokensShort(tokens) : "无用量")
     }
 
+    static func sparklineHoverText(
+        source: HistorySource, model: String, dayIndex: Int,
+        models: [PersonalUsageRankings.ModelEntry],
+        seriesFor: (HistorySource, String) -> [(date: String, tokens: Int)]?
+    ) -> String? {
+        guard let entry = models.first(where: { $0.source == source && $0.model == model }),
+              let series = seriesFor(entry.source, model),
+              series.indices.contains(dayIndex) else { return nil }
+        let item = series[dayIndex]
+        return sparklineDayText(date: item.date, tokens: item.tokens)
+    }
+
     /// 悬停说明行文案:近 7 / 30 天 Token、30 天 API 等价与活跃天数。
     /// 近 30 天无用量时明示(榜单「全部」范围会列出只剩更早历史的模型)。
     static func hoverPreviewText(
@@ -821,16 +849,13 @@ struct OverviewRankingsCard: View {
         "\(Fmt.mmdd(weekOf))周 · " + (count > 0 ? "\(Fmt.int(count)) 次" : "无调用")
     }
 
-    /// Skills 榜可见行:来源筛选时只留含该来源的行,榜单顺序不变。
+    /// Skills 榜可见行:来源筛选后次数、占比和排序都按该来源重算。
     /// 纯函数供单元测试。
     static func skills(
         _ entries: [PersonalSkillRankings.Entry],
         filteredBy source: HistorySource?
     ) -> [PersonalSkillRankings.Entry] {
-        guard let source else { return entries }
-        return entries.filter { entry in
-            entry.sources.contains { $0.source == source }
-        }
+        PersonalSkillRankings.filteredEntries(entries, source: source)
     }
 
     /// 各来源实时采集的逐日 Skill 调用(与 dayModels 同窗口同语义)。
@@ -847,9 +872,25 @@ struct OverviewRankingsCard: View {
 
     /// Skill 迷你条的近 13 周逐周序列;夹具注入优先,断流返回 nil(不画)
     private func skillWeeklyCounts(name: String) -> [(weekOf: String, count: Int)]? {
-        if let skillSparkFor { return skillSparkFor(name) }
+        if let skillSparkFor { return skillSparkFor(name, activeSkillSourceFilter) }
+        return Self.weeklySkillCounts(
+            name: name, filteredBy: activeSkillSourceFilter,
+            enabledSources: skillRankings.enabledSources,
+            liveSkills: Self.liveDaySkills(state))
+    }
+
+    static func weeklySkillCounts(
+        name: String,
+        filteredBy source: HistorySource?,
+        enabledSources: [HistorySource]? = nil,
+        liveSkills: [HistorySource: [String: [String: Int]]],
+        persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
+        todayKey: String = DateUtil.today()
+    ) -> [(weekOf: String, count: Int)]? {
         return SkillUsageTrend.weeklyCounts(
-            name: name, weeks: 13, liveSkills: Self.liveDaySkills(state))
+            name: name, weeks: 13, sourceFilter: source,
+            enabledSources: enabledSources, liveSkills: liveSkills,
+            persisted: persisted, todayKey: todayKey)
     }
 
     /// 导出当前排序下的完整模型榜（不只界面前 5）为 CSV；列与悬停
@@ -919,6 +960,8 @@ struct OverviewRankingsCard: View {
                             Text(option.rawValue).tag(option)
                         }
                     }
+                    .labelsHidden()
+                    .accessibilityLabel("模型榜排序")
                     .pickerStyle(.segmented)
                     .controlSize(.mini)
                     .frame(width: 132)
@@ -955,12 +998,14 @@ struct OverviewRankingsCard: View {
                                 sparkline: sparklineValues(source: entry.source, model: entry.model),
                                 onDayHover: { dayIndex in
                                     if let dayIndex {
-                                        sparkDay = (model: entry.model, dayIndex: dayIndex)
-                                    } else if sparkDay?.model == entry.model {
+                                        sparkDay = (source: entry.source, model: entry.model, dayIndex: dayIndex)
+                                    } else if sparkDay?.source == entry.source,
+                                              sparkDay?.model == entry.model {
                                         sparkDay = nil
                                     }
                                 },
-                                highlightOverride: previewSparkDay?.model == entry.model
+                                highlightOverride: previewSparkDay?.source == entry.source
+                                    && previewSparkDay?.model == entry.model
                                     ? previewSparkDay?.dayIndex : nil
                             )
                         }
@@ -977,8 +1022,9 @@ struct OverviewRankingsCard: View {
                     modelHoverCaption
                 }
 
-                Text("榜默认按所选范围用量排序，可切近 30 天 API 等价或近 7 天用量（无 30 天明细的行沉底）。模型名右侧为其当前生效的参考单价（输入 / 输出，每百万 tokens，缺价不标）；行尾小柱图为该模型近 30 天逐日 Token 走势（口径同悬停数字，断流行不画）。悬停模型行先看近 7 / 30 天关键数字，点击进入详情页（7|30|90 天可切）；右上按钮导出当前排序的完整榜单 CSV（断流或缺价列留空）。")
-                    .font(.system(size: 10)).foregroundStyle(.tertiary)
+                Text("用量按所选范围排序；等价按近 30 天、近 7 天按各自窗口排序。悬停查用量，点击模型看详情；右上角导出当前榜单。")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                    .help("参考单价为输入 / 输出每百万 tokens；缺价不标。小柱图为近 30 天逐日用量。没有对应窗口明细的行排在末尾，CSV 缺少的数值留空。")
                 Text("模型榜保留采集来源；Cursor 当前只有订阅周期聚合，暂不混入模型榜。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
                 if let coverageNote {
@@ -1028,7 +1074,7 @@ struct OverviewRankingsCard: View {
                     ForEach(Array(visibleSkills.prefix(5).enumerated()), id: \.element.id) {
                         index, entry in
                         Button {
-                            onOpenSkill(entry)
+                            onOpenSkill(entry, activeSkillSourceFilter, skillRankings.enabledSources)
                         } label: {
                             skillRow(
                                 rank: index + 1, entry: entry,
@@ -1061,8 +1107,9 @@ struct OverviewRankingsCard: View {
                     skillHoverCaption
                 }
 
-                Text("Claude 统计原生 Skill 工具；Codex 统计工具实际读取标准 SKILL.md；Copilot 统计 skill.invoked。普通消息提及不计入。行尾小条为近 13 周逐周调用次数（悬停查单周）；点来源徽标只看该来源的 Skill 调用（再点或点头部胶囊还原）；点击行进入详情页（近 13 周全宽走势与来源拆解）；右上按钮导出完整 Skills 榜 CSV（跟随当前来源筛选，周列为近 13 周次数，无调用留空）。")
-                    .font(.system(size: 10)).foregroundStyle(.tertiary)
+                Text("仅计工具确认的调用。点击来源徽标筛选，次数、近 13 周趋势和导出随来源变化；再次点击还原，点击 Skill 查看详情。")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                    .help("Claude 统计原生 Skill 工具，Codex 统计实际读取标准 SKILL.md，Copilot 统计 skill.invoked；普通消息提及不计入。周趋势只含已启用来源，悬停查单周；右上角导出当前筛选的完整榜单 CSV。")
                 // 导出反馈行:模型榜与 Skills 榜共用,保存面板点完「存储」后可见
                 ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
             }
@@ -1095,7 +1142,17 @@ struct OverviewRankingsCard: View {
 
     private var exportSkillRows: [SkillRankingCSVExport.Row] {
         // 导出与所见一致:来源筛选时只导该来源的行,口径行注明已筛
-        visibleSkills.enumerated().map { index, entry in
+        Self.skillExportRows(
+            skillRankings.entries, filteredBy: activeSkillSourceFilter,
+            weeklyFor: skillWeeklyCounts)
+    }
+
+    static func skillExportRows(
+        _ entries: [PersonalSkillRankings.Entry],
+        filteredBy source: HistorySource?,
+        weeklyFor: (String) -> [(weekOf: String, count: Int)]?
+    ) -> [SkillRankingCSVExport.Row] {
+        skills(entries, filteredBy: source).enumerated().map { index, entry in
             SkillRankingCSVExport.Row(
                 rank: index + 1,
                 skill: entry.name,
@@ -1104,7 +1161,7 @@ struct OverviewRankingsCard: View {
                 sourceNote: entry.sources
                     .map { "\($0.source.overviewName) \(Fmt.int($0.invocationCount)) 次" }
                     .joined(separator: "、"),
-                weekly: skillWeeklyCounts(name: entry.name))
+                weekly: weeklyFor(entry.name))
         }
     }
 
@@ -1140,12 +1197,10 @@ struct OverviewRankingsCard: View {
         if let previewTextOverride { return previewTextOverride }
         // 迷你柱单日悬停最具体,优先于整行合计
         if let day = sparkDay ?? previewSparkDay,
-           let entry = rankings.models.first(where: { $0.model == day.model }),
-           let series = sparklineValues(source: entry.source, model: day.model),
-           series.indices.contains(day.dayIndex)
-        {
-            let item = series[day.dayIndex]
-            return Self.sparklineDayText(date: item.date, tokens: item.tokens)
+           let text = Self.sparklineHoverText(
+                source: day.source, model: day.model, dayIndex: day.dayIndex,
+                models: rankings.models, seriesFor: sparklineValues) {
+            return text
         }
         // 夹具强制行优先(渲染无法模拟指针),其次真实悬停行
         if let entry = hoverEntry ?? rankings.models.first(where: { $0.id == previewRowId }) {
@@ -1186,7 +1241,7 @@ struct OverviewRankingsCard: View {
     /// 当前悬停(或夹具强制)的 Skill 行;真实悬停优先
     private var previewSkillEntry: PersonalSkillRankings.Entry? {
         if let previewSkillId {
-            return skillRankings.entries.first { $0.id == previewSkillId }
+            return visibleSkills.first { $0.id == previewSkillId }
         }
         return nil
     }
@@ -1196,7 +1251,7 @@ struct OverviewRankingsCard: View {
         previewSkillSourceFilter ?? skillSourceFilter
     }
 
-    /// 筛选后的 Skills 榜可见行(榜单顺序不变)
+    /// 筛选后的 Skills 榜可见行(按当前来源次数排序)
     private var visibleSkills: [PersonalSkillRankings.Entry] {
         Self.skills(skillRankings.entries, filteredBy: activeSkillSourceFilter)
     }
@@ -1218,7 +1273,8 @@ struct OverviewRankingsCard: View {
             let item = series[week.weekIndex]
             return Self.skillWeekText(weekOf: item.weekOf, count: item.count)
         }
-        return hoverSkill.map(Self.hoverSkillText)
+        let activeHoverSkill = visibleSkills.first { $0.id == hoverSkill?.id }
+        return activeHoverSkill.map(Self.hoverSkillText)
             ?? previewSkillEntry.map(Self.hoverSkillText)
             ?? "悬停 Skill 行看各来源调用次数"
     }

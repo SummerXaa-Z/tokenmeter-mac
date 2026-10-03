@@ -51,7 +51,8 @@ TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：统一查�
 - 可设日用量阈值（100M–1000M tokens）：超阈值菜单栏图标变橙，超 1.5 倍变红。
 
 ### Codex（Codex CLI / Codex Desktop 用户）
-- 数据源纯本地 `~/.codex/sessions/**/rollout-*.jsonl`，零网络、零凭据，CLI 与 Desktop 共用。
+- 用量数据只读本地 `~/.codex/sessions/**/rollout-*.jsonl`，CLI 与 Desktop 共用。默认不读取登录凭据、不请求官方配额接口。
+- 「设置 → 数据源 → Codex 官方实时配额」默认关闭；主动开启后，会读取本机 `~/.codex/auth.json` 的登录态并请求 ChatGPT 官方配额接口。关闭后恢复本地配额快照，不影响用量统计。
 - 从真实读取标准 `skills/<name>/SKILL.md` 的工具调用提取 Skill 名与次数；普通消息、变量名和仅输出路径的命令不计入。
 - 订阅配额双窗口（小时窗 / 周窗自适应）剩余百分比进度条 + 重置倒计时 + plan 标识。
 - 今日用量 + 今日 24 小时分时柱图 + 近 7 天堆叠柱图；跨天 session 按事件时间戳正确归因到天。
@@ -117,7 +118,7 @@ TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：统一查�
 - 每周一（最晚周三上午）推一条「上周用量摘要」系统通知（按周留痕：每周的通知各占一条、互不顶替，通知中心可回看近几周摘要；周一漏发周二/周三补发仍算同一份，不重复堆叠）：上周合计、环比、主力来源、活跃天数与会话数（活跃按有 Token 的天计，会话来自按天明细、断流或为 0 时省略）、上周模型 Top3（跨来源合并、取前三与份额，明细未覆盖时省略）、上周 Skill Top3（跨来源合并同名 Skill、取前三与调用次数，只认确认的调用证据，无证据时省略）与 API 等价金额（含金额环比，与总览同价格口径按当日生效价重算；必附价格最近核对日期，覆盖不足 95% 时点名缺价模型），填写了订阅月费时附订阅回本倍数（全部订阅合计、按上周自然日折算）与最近几个完整周的走势小抄（如「近 4 周 1.8 → 2.4 → 2.1 → 2.0」，末位即当周倍数）；点击通知横幅直接回到对应页面（周报与订阅额度/节奏预警回总览，配额/用量告警跳对应来源页；面板已开时只导航，派生动作不跳转）；周报横幅展开还带「导出上周 CSV」快捷动作——不开面板、不弹保存面板，直接把与设置页周报导出同口径的明细写入「下载」文件夹并回执一条结果通知（仅周报挂该动作，告警通知保持默认形态）；纯本地计算；设置里可关闭，也可点「预览」立即看效果、点「导出上周 CSV」导出与周报同口径（上周周一到周日）的明细。系统通知在通知中心按组折叠：周报、配额/用量/余额告警、节奏预警各一组，同类通知不再逐条堆积。
 - 首页按已启用且在所选范围内有 Token 的产品级来源平铺工具明细；当前数据路径暂时消失不会抹掉已积累历史。
 - 常驻菜单栏（状态栏）图标，点击下拉面板；应用不占用 Dock（`LSUIElement`）。
-- 自动更新：每日自动检查 GitHub Releases（可关），发现新版确认后自动下载、替换、重启；设置页也可手动检查。
+- 自动更新：每日检查 GitHub Releases（可关）。只有能验证与当前应用发布者签名连续的安装包才允许自动替换；安装前校验 Bundle ID、版本、架构和完整签名，失败保留或恢复旧应用。不清除隔离属性。无可验证发布者身份的构建改为打开官方发布页手动下载。
 - API Key 保存、清除和余额验证；凭据存于 **macOS Keychain**，不落明文文件。
 - 用量 Token 自动同步（登录窗口注入 JS 抓 Authorization 头）和手动粘贴兜底。
 - macOS 开机自启（SMAppService，系统设置「登录项」可见可控）。
@@ -125,7 +126,7 @@ TokenMeter 是一个常驻 macOS 菜单栏的 AI 用量监控应用：统一查�
 
 ### 隐私说明
 
-Claude / Codex / Kimi Code / OpenCode / Gemini CLI / GitHub Copilot CLI / Qwen Code 用量统计只读取本机已有的 session 或官方聚合记录，**不上传任何数据**。Skill 识别只保留明确结构化名称，或从 Codex 工具参数中短暂匹配标准 `SKILL.md` 路径；命令、路径、提示词、回复和 Skill 内容均不进入聚合结果。网络请求只用于用户所见功能：DeepSeek 官方余额/用量、ChatGPT 官方 Codex 配额、用户明确配置 Key 后的 Kimi 官方配额（或无 Key 时的本机 loopback）、用户明确配置 Key 后的智谱官方配额（只发往所选域名 open.bigmodel.cn / api.z.ai）、经本机 arkcli 查询火山方舟套餐、cursor.com 用量，以及可关闭的 GitHub Releases 更新检查。价格目录固化在 App 内，运行时不查询 OpenRouter。Copilot 与 Qwen Code 采集器都不会连接各自服务端。
+Claude / Codex / Kimi Code / OpenCode / Gemini CLI / GitHub Copilot CLI / Qwen Code 用量统计只读取本机已有的 session 或官方聚合记录，**不上传会话和统计结果**。Skill 识别只保留明确结构化名称，或从 Codex 工具参数中短暂匹配标准 `SKILL.md` 路径；命令、路径、提示词、回复和 Skill 内容均不进入聚合结果。网络请求只用于用户所见功能：DeepSeek 官方余额/用量、主动开启后的 ChatGPT 官方 Codex 实时配额（使用本机 Codex 登录态）、用户明确配置 Key 后的 Kimi 官方配额（或无 Key 时的本机 loopback）、用户明确配置 Key 后的智谱官方配额（只发往所选域名 open.bigmodel.cn / api.z.ai）、经本机 arkcli 查询火山方舟套餐、cursor.com 用量，以及可关闭的 GitHub Releases 更新检查。价格目录固化在 App 内，运行时不查询 OpenRouter。Copilot 与 Qwen Code 采集器都不会连接各自服务端。
 
 支持范围、暂缓原因与新来源验收标准见 [本地用量来源覆盖](docs/local-source-coverage.md)。
 
@@ -206,7 +207,7 @@ make price-check
 
 只读 OpenRouter 公开目录与仓库代码，比对内置价格快照并给出可直接粘贴的调价行；详见下方[「价格目录保鲜」](#价格目录保鲜)。
 
-需要目视检查菜单栏首页、时间范围和详情返回时，可运行 `make ui-smoke`。它只在 Debug 构建打开 420×600 的普通测试窗口，并跳过通知申请、更新检查与后台计时器；正常启动和 Release 包仍是纯菜单栏应用。
+需要目视检查菜单栏首页、时间范围和详情返回时，可运行 `make ui-smoke`。它只在 Debug 构建打开 420×600 的普通测试窗口，使用独立配置与临时历史，跳过本机凭据、真实会话扫描、账号 API、通知申请、更新检查与后台计时器。`--ui-render=<dir>` 截图和 XCTest 也使用隔离环境；正常启动和 Release 包仍是纯菜单栏应用。
 
 贡献代码前请先看 [CONTRIBUTING.md](CONTRIBUTING.md)。提交安全问题前请先看 [SECURITY.md](SECURITY.md)，不要在公开 issue 里粘贴 API key、token、cookie 或完整个人日志。
 

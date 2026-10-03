@@ -24,10 +24,27 @@ struct PersonalSkillRankings: Equatable {
     }
 
     let entries: [Entry]
+    let enabledSources: [HistorySource]
+
+    /// 来源筛选重新聚合调用数和占比，再按所选来源的次数排序。
+    static func filteredEntries(
+        _ entries: [Entry], source: HistorySource?
+    ) -> [Entry] {
+        guard let source else { return entries }
+        return PersonalSkillRankings(
+            samples: entries.flatMap { entry in
+                entry.sources.filter { $0.source == source }.map {
+                    Sample(source: source, name: entry.name, invocationCount: $0.invocationCount)
+                }
+            },
+            enabledSources: [source]
+        ).entries
+    }
 
     init(samples: [Sample], enabledSources: [HistorySource]) {
         let selected = Set(enabledSources)
         let codingSources = HistorySource.codingAgents.filter(selected.contains)
+        self.enabledSources = codingSources
         let enabled = Set(codingSources)
         let sourceOrder = Dictionary(
             uniqueKeysWithValues: codingSources.enumerated().map { ($0.element, $0.offset) }

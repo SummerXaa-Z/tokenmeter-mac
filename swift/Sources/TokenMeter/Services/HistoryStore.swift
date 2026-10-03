@@ -36,9 +36,7 @@ struct HistoryStore {
     private typealias Table = [String: [String: DayEntry]]
 
     private static let fileURL: URL = {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory,
-                                            in: .userDomainMask).first!
-            .appendingPathComponent("TokenMeter", isDirectory: true)
+        let base = RuntimeEnvironment.applicationSupportDirectory
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base.appendingPathComponent("history.json")
     }()

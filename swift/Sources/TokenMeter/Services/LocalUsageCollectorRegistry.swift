@@ -12,6 +12,10 @@ protocol LocalUsageCollector {
     static func collect(now: Date) throws -> Output
 }
 
+private struct LocalUsageCollectionError: LocalizedError {
+    let errorDescription: String?
+}
+
 struct LocalUsageCollectorDescriptor: Identifiable {
     let source: HistorySource
     let displayName: String
@@ -32,14 +36,26 @@ extension ClaudeUsage: LocalUsageCollector {
     static let source = HistorySource.claude
     static let displayName = "Claude"
     static var dataURL: URL { projectsDir }
-    static func collect(now: Date) throws -> ClaudeUsageResult { load(now: now) }
+    static func collect(now: Date) throws -> ClaudeUsageResult {
+        let result = load(now: now)
+        if let message = result.readError {
+            throw LocalUsageCollectionError(errorDescription: message)
+        }
+        return result
+    }
 }
 
 extension CodexUsage: LocalUsageCollector {
     static let source = HistorySource.codex
     static let displayName = "Codex"
     static var dataURL: URL { sessionsDir }
-    static func collect(now: Date) throws -> CodexUsageResult { load(now: now) }
+    static func collect(now: Date) throws -> CodexUsageResult {
+        let result = load(now: now)
+        if let message = result.readError {
+            throw LocalUsageCollectionError(errorDescription: message)
+        }
+        return result
+    }
 }
 
 extension KimiUsage: LocalUsageCollector {

@@ -258,6 +258,7 @@ enum DiagnosticReport {
         case .available(let version): return "available(\(version))"
         case .downloading: return "downloading"
         case .installing: return "installing"
+        case .manualDownload(let version, let reason): return "manualDownload(\(version)): \(reason)"
         case .failed(let message): return "failed(\(message))"
         }
     }

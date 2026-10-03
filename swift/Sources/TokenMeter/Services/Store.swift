@@ -86,7 +86,15 @@ enum CredentialStoreError: LocalizedError, Equatable {
 
 // 应用配置：凭据走 Keychain，偏好走 UserDefaults。
 final class ConfigStore {
-    static let shared = ConfigStore()
+    static let shared: ConfigStore = {
+        guard RuntimeEnvironment.isIsolated else { return ConfigStore() }
+        return ConfigStore(
+            defaults: UserDefaults(suiteName: "tokenmeter.validation.\(UUID().uuidString)")!,
+            keychainGet: { _ in nil },
+            keychainSet: { _, _ in errSecNotAvailable },
+            keychainDelete: { _ in errSecNotAvailable }
+        )
+    }()
     private let defaults: UserDefaults
     private let keychainGet: (SecretSlot) -> String?
     private let keychainSet: (String, SecretSlot) -> OSStatus
@@ -111,6 +119,7 @@ final class ConfigStore {
         static let deepseekMonitor = "deepseekMonitorEnabled"
         static let claudeMonitor = "claudeMonitorEnabled"
         static let codexMonitor = "codexMonitorEnabled"
+        static let codexLiveQuota = "codexLiveQuotaEnabled"
         static let kimiMonitor = "kimiMonitorEnabled"
         static let opencodeMonitor = "opencodeMonitorEnabled"
         static let geminiMonitor = "geminiMonitorEnabled"
@@ -309,6 +318,12 @@ final class ConfigStore {
     var qwenMonitorEnabled: Bool {
         get { defaults.object(forKey: DKey.qwenMonitor) as? Bool ?? true }
         set { defaults.set(newValue, forKey: DKey.qwenMonitor) }
+    }
+
+    // 本地 Token 统计与登录态联网查询独立；升级后也先保持离线。
+    var codexLiveQuotaEnabled: Bool {
+        get { defaults.object(forKey: DKey.codexLiveQuota) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: DKey.codexLiveQuota) }
     }
 
     var cursorMonitorEnabled: Bool {

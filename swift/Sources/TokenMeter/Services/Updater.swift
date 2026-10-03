@@ -1,11 +1,11 @@
 import AppKit
 import Foundation
 
-// 自动更新：GitHub Releases 检查新版本 → 下载 dmg → 脚本替换自身 → 重启。
-// 非沙盒 app，可直接 hdiutil 挂载与覆盖 Bundle 路径。
+// 自动更新先验证已安装发布者，再验证同一私有 staging 中的候选包。
+// 无稳定发布者签名的构建只提供官方发布页人工下载安装。
 @MainActor
 final class Updater: ObservableObject {
-    static let shared = Updater()
+    static let shared = Updater(resultStore: .live)
 
     enum Phase: Equatable {
         case idle
@@ -14,6 +14,7 @@ final class Updater: ObservableObject {
         case available(version: String)
         case downloading
         case installing
+        case manualDownload(version: String, reason: String)
         case failed(String)
     }
 
@@ -21,29 +22,53 @@ final class Updater: ObservableObject {
 
     static let repo = "SummerXaa-Z/tokenmeter-mac"
     private var pendingAsset: (version: String, url: URL)?
+    private let resultStore: UpdateResultStore?
+    static let releasesURL = URL(string: "https://github.com/\(repo)/releases/latest")!
 
     static var currentVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+    }
+
+    init(resultStore: UpdateResultStore? = nil) {
+        self.resultStore = resultStore
+        if resultStore?.hasFailure == true {
+            phase = .failed("上次自动更新未完成，请从官方发布页手动下载安装。")
+        }
     }
 
     // MARK: - 检查
 
     // silent=true 时（启动自动检查）无更新/出错都不打扰，只在有新版时弹确认框
     func check(silent: Bool = false) async {
-        if case .checking = phase { return }
-        if case .downloading = phase { return }
+        guard !isBusy else { return }
+        guard !RuntimeEnvironment.isIsolated else { return }
+        pendingAsset = nil
         phase = .checking
         do {
             let release = try await fetchLatestRelease()
             let latest = release.tagName.hasPrefix("v")
                 ? String(release.tagName.dropFirst()) : release.tagName
+            guard Self.versionParts(latest)?.count == 3 else {
+                throw UpdateSafetyError.invalidPackage("发布版本格式无效。")
+            }
             guard Self.isNewer(latest, than: Self.currentVersion) else {
                 phase = silent ? .idle : .upToDate
                 return
             }
-            guard let asset = release.assets.first(where: { $0.name.hasSuffix(".dmg") }),
-                  let url = URL(string: asset.browserDownloadUrl) else {
-                phase = silent ? .idle : .failed("新版 \(latest) 未附带 dmg 安装包")
+            let assetName = "TokenMeter_\(latest)_\(UpdateSafety.architecture == "arm64" ? "aarch64" : "x86_64").dmg"
+            let candidates = release.assets.filter { $0.name == assetName }
+            guard candidates.count == 1, let asset = candidates.first,
+                  let url = URL(string: asset.browserDownloadUrl),
+                  url.scheme == "https", url.host == "github.com",
+                  url.path.hasPrefix("/\(Self.repo)/releases/download/"),
+                  url.user == nil, url.password == nil else {
+                phase = .manualDownload(version: latest, reason: "新版没有唯一匹配当前架构的官方安装包，请手动下载安装。")
+                return
+            }
+            do {
+                _ = try UpdateSafety.trustAnchor(for: UpdateSafety.inspect(Bundle.main.bundleURL))
+            } catch {
+                phase = .manualDownload(version: latest, reason: error.localizedDescription)
                 return
             }
             pendingAsset = (latest, url)
@@ -54,8 +79,21 @@ final class Updater: ObservableObject {
         }
     }
 
+    var isBusy: Bool {
+        switch phase {
+        case .checking, .downloading, .installing: return true
+        default: return false
+        }
+    }
+
+    func openManualDownload() {
+        guard !RuntimeEnvironment.isIsolated else { return }
+        NSWorkspace.shared.open(Self.releasesURL)
+    }
+
     // 启动时的每日一次自动检查
     func autoCheckIfDue() {
+        guard !RuntimeEnvironment.isIsolated else { return }
         let store = ConfigStore.shared
         guard store.autoUpdateCheckEnabled else { return }
         let now = Date().timeIntervalSince1970
@@ -79,71 +117,92 @@ final class Updater: ObservableObject {
     // MARK: - 下载安装
 
     func downloadAndInstall() async {
+        guard case .available = phase, !isBusy else { return }
+        guard !RuntimeEnvironment.isIsolated else { return }
         guard let (version, url) = pendingAsset else { return }
         phase = .downloading
+        let job = FileManager.default.temporaryDirectory.appendingPathComponent("TokenMeter-update-\(UUID().uuidString)")
+        var stagedDirectory: URL?
+        defer {
+            try? FileManager.default.removeItem(at: job)
+            if let stagedDirectory { try? FileManager.default.removeItem(at: stagedDirectory) }
+        }
         do {
+            let target = Bundle.main.bundleURL.standardizedFileURL
+            guard target.resolvingSymlinksInPath() == target,
+                  try target.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else {
+                throw UpdateSafetyError.manualDownload("应用位于链接路径中，请从官方发布页手动下载安装。")
+            }
+            let current = try UpdateSafety.inspect(target)
+            _ = try UpdateSafety.trustAnchor(for: current)
+            try FileManager.default.createDirectory(at: job, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
             let (tmp, resp) = try await URLSession.shared.download(from: url)
             guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
                 phase = .failed("下载失败：HTTP \((resp as? HTTPURLResponse)?.statusCode ?? -1)")
                 return
             }
-            let dmg = FileManager.default.temporaryDirectory
-                .appendingPathComponent("TokenMeter-\(version).dmg")
-            try? FileManager.default.removeItem(at: dmg)
+            let dmg = job.appendingPathComponent("release.dmg")
             try FileManager.default.moveItem(at: tmp, to: dmg)
             phase = .installing
-            try launchInstaller(dmg: dmg)
-            // 安装脚本等本进程退出后替换 .app 并重启
+            let prepared = try await Task.detached {
+                try UpdatePreparation.prepare(dmg: dmg, jobDirectory: job, target: target, current: current, version: version)
+            }.value
+            stagedDirectory = prepared.stagingDirectory
+            try launchInstaller(prepared)
+            // The helper owns staging after launch. It waits for this exact PID, verifies
+            // it again, and preserves the old Bundle as a recovery backup.
+            stagedDirectory = nil
+            pendingAsset = nil
             NSApp.terminate(nil)
+        } catch UpdateSafetyError.manualDownload(let reason) {
+            phase = .manualDownload(version: version, reason: reason)
         } catch {
             phase = .failed("更新失败：\(error.localizedDescription)")
         }
     }
 
-    // 替换运行中的 app 不能在本进程内做：起独立脚本，等退出→挂载→覆盖→重启。
-    // 路径经环境变量传入、脚本内只用 "$VAR" 引用：bundle 路径含空格/中文/
-    // 引号/$ 等特殊字符（iCloud 同步目录、用户改名常见）也不会破坏脚本或注入命令。
-    private func launchInstaller(dmg: URL) throws {
-        let target = Bundle.main.bundlePath
-        let script = """
-        #!/bin/bash
-        for i in $(seq 1 40); do pgrep -x TokenMeter >/dev/null || break; sleep 0.5; done
-        MOUNT=$(hdiutil attach -nobrowse -readonly "$DSM_DMG" | grep -o '/Volumes/.*' | head -1)
-        [ -z "$MOUNT" ] && exit 1
-        APP_SRC=$(find "$MOUNT" -maxdepth 1 -name "*.app" | head -1)
-        if [ -n "$APP_SRC" ]; then
-            rm -rf "$DSM_TARGET"
-            ditto "$APP_SRC" "$DSM_TARGET"
-            xattr -cr "$DSM_TARGET"
-        fi
-        hdiutil detach "$MOUNT" -quiet
-        rm -f "$DSM_DMG"
-        open "$DSM_TARGET"
-        """
-        let scriptURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("dsm-update.sh")
-        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+    private func launchInstaller(_ prepared: PreparedUpdate) throws {
+        let scriptURL = prepared.stagingDirectory.appendingPathComponent("installer.sh")
+        try UpdateInstallerScript.source.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: scriptURL.path)
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/bin/bash")
         proc.arguments = [scriptURL.path]
-        var env = ProcessInfo.processInfo.environment
-        env["DSM_TARGET"] = target
-        env["DSM_DMG"] = dmg.path
-        proc.environment = env
+        proc.environment = UpdateInstallerScript.environment(target: prepared.target, stagedApp: prepared.stagedApp,
+                                                            backup: prepared.backup, requirement: prepared.requirement,
+                                                            processID: ProcessInfo.processInfo.processIdentifier,
+                                                            version: prepared.version,
+                                                            resultFile: try (resultStore ?? .live).prepareResultFile())
+        // Preserve helper failures outside the app that may be replaced.
+        let logURL = prepared.stagingDirectory.appendingPathComponent("installer.log")
+        _ = FileManager.default.createFile(atPath: logURL.path, contents: nil, attributes: [.posixPermissions: 0o600])
+        let log = try FileHandle(forWritingTo: logURL)
+        proc.standardOutput = log
+        proc.standardError = log
         try proc.run()
     }
 
     // MARK: - 版本比较（语义化，逐段数字比）
 
     static func isNewer(_ a: String, than b: String) -> Bool {
-        let av = a.split(separator: ".").map { Int($0) ?? 0 }
-        let bv = b.split(separator: ".").map { Int($0) ?? 0 }
+        guard let av = versionParts(a), let bv = versionParts(b) else { return false }
         for i in 0..<max(av.count, bv.count) {
             let x = i < av.count ? av[i] : 0
             let y = i < bv.count ? bv[i] : 0
             if x != y { return x > y }
         }
         return false
+    }
+
+    private static func versionParts(_ value: String) -> [Int]? {
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard !parts.isEmpty, parts.count <= 3 else { return nil }
+        var numbers: [Int] = []
+        for part in parts {
+            guard !part.isEmpty, part.allSatisfy({ $0.isASCII && $0.isNumber }), let number = Int(part) else { return nil }
+            numbers.append(number)
+        }
+        return numbers
     }
 
     // MARK: - GitHub API

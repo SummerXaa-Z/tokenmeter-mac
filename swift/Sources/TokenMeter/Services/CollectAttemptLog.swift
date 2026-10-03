@@ -22,7 +22,8 @@ enum CollectAttemptLog {
     private static let lock = NSLock()
     private static let key = "tokenmeter.collectAttempts.v1"
     private static var cache: [HistorySource: Attempt]?
-    private static var defaults: UserDefaults = .standard
+    private static var defaults: UserDefaults = RuntimeEnvironment.isIsolated
+        ? UserDefaults(suiteName: "TokenMeter-validation-attempts-\(UUID().uuidString)")! : .standard
 
     /// 测试/工具注入独立 defaults;同时清空内存缓存,避免读到上一个 suite 的记录。
     static func useDefaults(_ value: UserDefaults) {

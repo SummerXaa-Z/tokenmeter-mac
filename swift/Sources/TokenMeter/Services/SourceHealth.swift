@@ -64,6 +64,12 @@ enum SourceHealth {
     /// 不阻塞设置页滚动。
     @MainActor
     static func collect(store: ConfigStore = .shared) async -> Snapshot {
+        if RuntimeEnvironment.isIsolated {
+            return Snapshot(entries: codingOrder.map { source in
+                Entry(source: source, enabled: true, pathExists: false, lastWrite: nil,
+                      displayPath: "示例数据", attempt: CollectAttemptLog.attempt(for: source))
+            }, checkedAt: Date())
+        }
         let enabledByKey: [HistorySource: Bool] = [
             .claude: store.claudeMonitorEnabled,
             .codex: store.codexMonitorEnabled,
