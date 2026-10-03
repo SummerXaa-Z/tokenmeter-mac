@@ -12,6 +12,9 @@ struct ClaudeView: View {
         ScrollView {
             VStack(spacing: 10) {
                 header
+                if let error = state.claude.error {
+                    SourceReadFailureCard(message: error, showingLastGood: state.claude.result != nil)
+                }
                 if let r = state.claude.result {
                     todayCard(r)
                     hoursCard(r)
@@ -21,7 +24,7 @@ struct ClaudeView: View {
                     projectCard(r)
                 } else if state.claude.loading {
                     SourceStateView(loading: true, message: "正在读取…")
-                } else {
+                } else if state.claude.error == nil {
                     SourceStateView(message: "未找到 Claude 本地数据（~/.claude/projects）")
                 }
                 SourceAPICostCard(source: .claude, liveDayModels: state.claude.result?.dayModels)

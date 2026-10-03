@@ -10,7 +10,7 @@ import Foundation
 // 2. 消息带 model 字段，可按模型分桶（Opus/Sonnet/Haiku/Fable…）。
 //
 // 文件扫描沿用 CodexUsage 的策略：全树枚举 + mtime 过滤 + 8MB chunk 流式
-// 读 + (size, mtime) 内存缓存。去重集合按文件维度保存在缓存里，跨文件重复
+// 读 + (size, mtime, calendar) 内存缓存。去重集合按文件维度保存在缓存里，跨文件重复
 // （罕见，仅 session 续写复制时出现）不处理。
 
 struct ClaudeDayUsage: Equatable, Identifiable {
@@ -102,6 +102,9 @@ struct ClaudeUsageResult: Equatable {
     var dayModels: [String: [String: ModelTokenTally]] = [:]
     // 日期 → Skill 名 → 调用次数，与 dayModels 同窗口同语义
     var daySkills: [String: [String: Int]] = [:]
+    // 有读取失败时聚合可能不完整，不得据此覆盖已保存的完整历史。
+    var readError: String? = nil
+    var isAuthoritative: Bool { readError == nil }
     var today: ClaudeDayUsage? { days.last }
     var weekTotal: Int { days.reduce(0) { $0 + $1.totalTokens } }
     var weekMessages: Int { days.reduce(0) { $0 + $1.messageCount } }
@@ -177,6 +180,7 @@ enum ClaudeUsage {
     private struct FileSummary {
         let size: UInt64
         let mtime: Date
+        let calendar: Calendar
         let perDay: [String: Tally]
         let perDayModel: [String: [String: Tally]]
         let perDayProject: [String: [String: Tally]]
@@ -195,6 +199,8 @@ enum ClaudeUsage {
         windowDays: Int = 7
     ) -> ClaudeUsageResult {
         let fm = FileManager.default
+        let calendar = Calendar.current
+        var readError: String?
         let span = max(windowDays, 1)
         var dayMap: [String: ClaudeDayUsage] = [:]
         let window: Set<String> = Set((0..<span).map { DateUtil.key(DateUtil.addDays(now, -$0)) })
@@ -214,18 +220,46 @@ enum ClaudeUsage {
         let todayKey = DateUtil.key(now)
 
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
-        guard let walker = fm.enumerator(at: projectsDirectory, includingPropertiesForKeys: keys) else {
+        guard let walker = fm.enumerator(
+            at: projectsDirectory, includingPropertiesForKeys: keys,
+            errorHandler: { _, _ in
+                readError = readError ?? "本地会话目录读取失败"
+                return true
+            }
+        ) else {
             return ClaudeUsageResult(days: dayMap.values.sorted { $0.date < $1.date },
                                      models: [], projects: [], todayHours: [],
-                                     weekCompare: .empty, skills: [])
+                                     weekCompare: .empty, skills: [],
+                                     readError: "本地会话目录读取失败")
         }
 
         for case let file as URL in walker where file.pathExtension == "jsonl" {
-            guard let attrs = try? file.resourceValues(forKeys: Set(keys)),
-                  attrs.isRegularFile == true,
-                  let mtime = attrs.contentModificationDate, mtime >= windowStart else { continue }
-
-            let summary = summarize(file)
+            let attrs: URLResourceValues
+            do {
+                attrs = try file.resourceValues(forKeys: Set(keys))
+            } catch {
+                readError = readError ?? "本地会话属性读取失败"
+                continue
+            }
+            guard let isRegularFile = attrs.isRegularFile else {
+                readError = readError ?? "本地会话属性读取失败"
+                continue
+            }
+            guard isRegularFile else { continue }
+            guard let mtime = attrs.contentModificationDate,
+                  let size = attrs.fileSize, size >= 0 else {
+                readError = readError ?? "本地会话属性读取失败"
+                continue
+            }
+            guard mtime >= windowStart else { continue }
+            let summary: FileSummary
+            do {
+                summary = try summarize(file, size: UInt64(size), mtime: mtime, calendar: calendar)
+            } catch {
+                // 只返回阶段摘要，系统错误中的路径与会话内容不进入诊断。
+                readError = readError ?? "本地会话文件读取失败"
+                continue
+            }
             // 上周只累计三项合计，不进 days/models/projects（它们保持 7 天口径）
             for (date, t) in summary.perDay where lastWeek.contains(date) {
                 lastTotal += t.input + t.cacheCreate + t.cacheRead + t.output
@@ -313,32 +347,35 @@ enum ClaudeUsage {
         return ClaudeUsageResult(days: days, models: models, projects: projects,
                                  todayHours: todayHours, weekCompare: compare, skills: skills,
                                  dayModels: dayModels.compactMapValues(ModelTokenTally.nonEmpty),
-                                 daySkills: daySkills)
+                                 daySkills: daySkills, readError: readError)
     }
 
     // MARK: - 单文件流式扫描（带缓存）
 
-    private static func summarize(_ file: URL) -> FileSummary {
-        let attrs = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-        let size = UInt64(attrs?.fileSize ?? 0)
-        let mtime = attrs?.contentModificationDate ?? .distantPast
+    private static func summarize(
+        _ file: URL, size: UInt64, mtime: Date, calendar: Calendar
+    ) throws -> FileSummary {
+        // 权限可能改变而 size/mtime 不变；缓存不能掩盖当前的读取失败。
+        guard FileManager.default.isReadableFile(atPath: file.path) else {
+            throw CocoaError(.fileReadNoPermission)
+        }
 
         cacheLock.lock()
         let hit = cache[file.path]
         cacheLock.unlock()
-        if let hit, hit.size == size, hit.mtime == mtime { return hit }
+        if let hit, hit.size == size, hit.mtime == mtime, hit.calendar == calendar { return hit }
 
-        let summary = scan(file, size: size, mtime: mtime)
+        let summary = try scan(file, size: size, mtime: mtime, calendar: calendar)
         cacheLock.lock()
         cache[file.path] = summary
         cacheLock.unlock()
         return summary
     }
 
-    private static func scan(_ file: URL, size: UInt64, mtime: Date) -> FileSummary {
-        let empty = FileSummary(size: size, mtime: mtime, perDay: [:], perDayModel: [:],
-                                perDayProject: [:], perDayHour: [:], perDaySkill: [:])
-        guard let handle = try? FileHandle(forReadingFrom: file) else { return empty }
+    private static func scan(
+        _ file: URL, size: UInt64, mtime: Date, calendar: Calendar
+    ) throws -> FileSummary {
+        let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
 
         let usageMarker = Data("\"usage\"".utf8)
@@ -358,7 +395,7 @@ enum ClaudeUsage {
 
         var reachedEnd = false
         while !reachedEnd {
-            let chunk = (try? handle.read(upToCount: chunkSize)) ?? Data()
+            let chunk = try handle.read(upToCount: chunkSize) ?? Data()
             var data: Data
             if chunk.isEmpty {
                 // JSONL 写入过程里最后一行不一定立刻带换行；EOF 时把完整残留行当作一行消费。
@@ -457,7 +494,8 @@ enum ClaudeUsage {
                 perDayHour[day] = hourly
             }
         }
-        return FileSummary(size: size, mtime: mtime, perDay: perDay, perDayModel: perDayModel,
+        return FileSummary(size: size, mtime: mtime, calendar: calendar,
+                           perDay: perDay, perDayModel: perDayModel,
                            perDayProject: perDayProject, perDayHour: perDayHour,
                            perDaySkill: perDaySkill)
     }

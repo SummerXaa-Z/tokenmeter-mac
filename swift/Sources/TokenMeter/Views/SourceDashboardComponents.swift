@@ -90,6 +90,25 @@ private struct OptionalHelp: ViewModifier {
 
 // 各来源页统一的加载/空/错误占位：加载态带文案，错误与空态共用一套排版。
 // 不再出现裸 spinner、无兜底 else、水平边距不一致的各写一套。
+struct SourceReadFailureCard: View {
+    let message: String
+    let showingLastGood: Bool
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 5) {
+                Label("读取失败", systemImage: "exclamationmark.triangle")
+                    .font(.system(size: 12, weight: .semibold))
+                Text(message).font(.system(size: 11))
+                Text(showingLastGood ? "显示上次成功数据，请检查目录权限后刷新。" : "本次用量尚不可确认，请检查目录权限后刷新。")
+                    .font(.system(size: 11))
+            }
+            .foregroundStyle(.orange)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 struct SourceStateView: View {
     var loading = false
     let message: String

@@ -238,8 +238,30 @@ struct SettingsView: View {
                     }
                     .padding(.top, availableCodingProviders.isEmpty ? 0 : 7)
                 }
+                Divider().padding(.vertical, 7)
+                codexLiveQuotaToggle
             }
         }
+    }
+
+    private var codexLiveQuotaToggle: some View {
+        Toggle(isOn: Binding(
+            get: { state.codexLiveQuotaEnabled },
+            set: { state.setCodexLiveQuotaEnabled($0) }
+        )) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Codex 官方实时配额")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("默认关闭。开启后读取本机 Codex 登录态并请求 ChatGPT 官方接口；本地用量统计始终只读会话文件。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .toggleStyle(.switch)
+        .accessibilityIdentifier("TokenMeter.Settings.CodexLiveQuota")
+        .disabled(!state.codexEnabled)
+        .padding(.vertical, 7)
     }
 
     private func sourceToggleRow(_ provider: Provider) -> some View {
@@ -314,7 +336,7 @@ struct SettingsView: View {
     private func providerSubtitle(_ provider: Provider) -> String {
         switch provider {
         case .claude: return "transcript 用量"
-        case .codex: return "session 用量与订阅配额"
+        case .codex: return "本地 session 用量与配额快照"
         case .kimi: return "usage journal；不影响订阅额度"
         case .opencode: return "SQLite 消息用量"
         case .gemini: return "session 用量"
@@ -938,6 +960,7 @@ struct SettingsView: View {
         case .downloading: return "正在下载…"
         case .installing: return "正在安装…"
         case .available(let version): return "下载并更新到 v\(version)"
+        case .manualDownload: return "打开官方发布页"
         default: return "检查更新"
         }
     }
@@ -947,12 +970,15 @@ struct SettingsView: View {
         case .upToDate: return "已是最新版本 v\(Updater.currentVersion)"
         case .available(let version): return "发现新版本 v\(version)，更新后应用会自动重启"
         case .failed(let message): return message
+        case .manualDownload(let version, let reason): return "发现 v\(version)。\(reason)"
         default: return ""
         }
     }
 
     private func updateAction() {
-        if case .available = updater.phase {
+        if case .manualDownload = updater.phase {
+            updater.openManualDownload()
+        } else if case .available = updater.phase {
             Task { await updater.downloadAndInstall() }
         } else {
             Task { await updater.check() }
@@ -1079,6 +1105,7 @@ struct SettingsView: View {
     }
 
     private func saveApiKey() {
+        guard !RuntimeEnvironment.isIsolated else { apiStatus = "验证模式不连接真实账户"; return }
         let key = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else {
             apiStatus = CredentialStoreError.emptyCredential.errorDescription ?? "请输入 API Key"
@@ -1122,6 +1149,7 @@ struct SettingsView: View {
     }
 
     private func saveKimiCodeKey() {
+        guard !RuntimeEnvironment.isIsolated else { kimiCodeKeyStatus = "验证模式不连接真实账户"; return }
         let key = kimiCodeKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else {
             kimiCodeKeyStatus = CredentialStoreError.emptyCredential.errorDescription ?? "请输入 Key"
@@ -1175,6 +1203,7 @@ struct SettingsView: View {
     }
 
     private func saveZhipuKey() {
+        guard !RuntimeEnvironment.isIsolated else { zhipuKeyStatus = "验证模式不连接真实账户"; return }
         let key = zhipuKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else {
             zhipuKeyStatus = CredentialStoreError.emptyCredential.errorDescription ?? "请输入 Key"

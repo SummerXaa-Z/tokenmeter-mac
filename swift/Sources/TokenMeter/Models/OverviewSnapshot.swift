@@ -377,7 +377,8 @@ struct OverviewSnapshot: Equatable {
         // 小时粒度桶键即当日，金额整天恒定；缺价模型不计入(与金额卡一致)。
         var valueByBucket: [String: [HistorySource: Double]] = [:]
         let rates = APIReferencePricingCatalog.conversionRatesToUSD
-        for (date, bySource) in modelDays {
+        for date in rangeDates {
+            let bySource = modelDays[date] ?? [:]
             let bucket = Self.trendBucket(dateKey: date, granularity: trendGranularity).key
             let pricingDate = max(date, APIReferencePricingCatalog.firstObservedAt)
             for source in modelSources {

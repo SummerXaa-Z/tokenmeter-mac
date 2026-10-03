@@ -15,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 测试 host 仍由 XCTest 驱动，但不挂菜单、不采集、不请求通知或检查更新。
+        if RuntimeEnvironment.isTesting { return }
 #if DEBUG
         // 菜单栏 popover 很难被 UI 自动化稳定定位。这个显式启动参数只在
         // Debug 构建提供同尺寸普通窗口，跳过通知、更新器和后台计时器；
@@ -107,6 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 #if DEBUG
     private func showUISmokeWindow() {
+        PreviewData.seed(appState)
         NSApp.setActivationPolicy(.regular)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: Theme.panelWidth, height: Theme.panelHeight),
@@ -114,7 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "TokenMeter UI Smoke"
+        window.title = "TokenMeter UI Smoke · 示例数据"
         window.contentViewController = NSHostingController(
             rootView: RootView().environmentObject(appState)
         )
@@ -776,6 +779,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private static func collectionStatusFixture() -> some View {
+        let snapshot = OverviewSnapshot(
+            selection: OverviewSourceSelection(sources: [.claude]),
+            range: .day, history: [], streakHistory: [],
+            deepSeek: nil, claude: nil, codex: nil,
+            openCode: nil, gemini: nil, copilot: nil, cursor: nil)
+        let loading = OverviewSourceCollectionStatus(
+            provider: .claude, loading: true, hasResult: false, error: nil, available: true)
+        let failed = OverviewSourceCollectionStatus(
+            provider: .claude, loading: false, hasResult: false,
+            error: "本地会话读取失败，请检查目录权限", available: true)
+        let ready = OverviewSourceCollectionStatus(
+            provider: .claude, loading: false, hasResult: true, error: nil, available: true)
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("状态验证 · 示例数据").font(.system(size: 13, weight: .semibold))
+            OverviewUsageCard(
+                snapshot: snapshot, range: .day,
+                entries: [.init(provider: .claude, tokens: nil, detail: "正在读取用量…", running: nil)],
+                onOpen: { _ in }, collectionStatuses: [loading])
+            OverviewUsageCard(
+                snapshot: snapshot, range: .day,
+                entries: [.init(provider: .claude, tokens: nil, detail: failed.error!, running: nil)],
+                onOpen: { _ in }, collectionStatuses: [failed])
+            OverviewUsageCard(
+                snapshot: snapshot, range: .day, entries: [],
+                onOpen: { _ in }, collectionStatuses: [ready])
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+    }
+
     // 模型榜悬停预览的合成数据:悬停态说明行的数字来自真实按天留存,
     // 离屏渲染无法预测,故用固定文案 override;取数路径由单元测试覆盖。
     // 合成数据只在内存构造,不读也不写真实按天留存。
@@ -884,7 +918,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             VStack(spacing: 12) {
                 OverviewRankingsCard(
                     rankings: data.rankings, skillRankings: data.skills, range: .month,
-                    skillSparkFor: { _ in series },
+                    skillSparkFor: { _, _ in series },
                     previewSkillSparkWeek: (name: "frontend-design", weekIndex: 10))
             }
             .padding(14)
@@ -908,12 +942,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static func rankingsSortUSDFixture() -> some View {
-        // 等价档:缺价的 mystery 沉底,等价高的 gpt-5.4 升到第 2
+        // 等价档:缺价的 mystery 显示未知，等价高的 gpt-5.4 排第一。
         rankingsSortFixture(sort: .usd) { model in
             switch model {
             case "opus-5-5": return 54.5
             case "gpt-5.4 (xhigh)": return 61.2
-            default: return 0
+            default: return -1
             }
         }
     }
@@ -952,7 +986,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 OverviewRankingsCard(
                     rankings: data.rankings, skillRankings: data.skills, range: .month,
                     sparklineFor: { _, model in pattern(model) },
-                    previewSparkDay: (model: "opus-5-5", dayIndex: 24))
+                    previewSparkDay: (source: .claude, model: "opus-5-5", dayIndex: 24))
             }
             .padding(14)
         }
@@ -962,6 +996,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 生成 <page>-<appearance>.png 后退出。窗口放在屏幕外，用户无感。
     private func runUIRender(outputPath: String) {
         NSApp.setActivationPolicy(.accessory)
+        let overviewOnly = ProcessInfo.processInfo.arguments.contains("--ui-render-overview-only")
+        if overviewOnly { PreviewData.seed(appState) }
         let dir = URL(fileURLWithPath: outputPath)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
@@ -975,8 +1011,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return host
         }
 
-        // 渲染进程可能触发真实首轮采集:采集记录写入独立 suite,
-        // 不污染正式 App 域(渲染里的记录随下一次真实刷新自然作废)。
+        // 所有真实采集已在验证入口禁用；配置、历史与采集记录都隔离。
         CollectAttemptLog.useDefaults(
             UserDefaults(suiteName: "tokenmeter.ui-render") ?? .standard)
         // 健康面板「最近一次采集」行:合成成功与失败两条夹具,只进内存、
@@ -993,7 +1028,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             finishedAt: fixtureNow.addingTimeInterval(-90),
             failure: "usage_record.jsonl 解析失败：第 3 行不是合法 JSON"))
 
-        let pages: [(name: String, view: NSView)] = [
+        let pages: [(name: String, view: NSView)] = overviewOnly ? [
+            ("overview", hosting(RootView())),
+            ("overview-full", hosting(OverviewView(
+                range: .month, sources: [.claude, .codex],
+                onOpenSource: { _ in }, onSettings: {}), height: 1800)),
+            ("overview-day-full", hosting(OverviewView(
+                range: .day, sources: [.claude, .codex],
+                onOpenSource: { _ in }, onSettings: {}), height: 1800)),
+        ] : [
+            ("collection-status-fixture", hosting(Self.collectionStatusFixture(), height: 620)),
             ("overview", hosting(RootView())),
             ("dashboard", hosting(
                 DashboardView(onBack: {}, onSettings: {}, onDetail: { _ in }))),
@@ -1159,7 +1203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func evaluateQuotaPaceAlerts(codexOn: Bool) {
         let config = ConfigStore.shared
         let snapshot = SubscriptionQuotaSnapshot(
-            codex: codexOn ? appState.codex.result?.rateLimits : nil,
+            codex: codexOn ? appState.codexRateLimits : nil,
             kimi: appState.kimiQuota.result,
             ark: appState.arkPlanQuota.result,
             zhipu: appState.zhipuQuota.result
@@ -1234,7 +1278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func performQuotaBadgeRefresh() {
         // 开关与阈值在主线程一次性快照，detached 任务里不再碰共享状态
         let settings = currentStatusRefreshSettings()
-        let codexOn = settings.codexEnabled && CodexUsage.isAvailable
+        let codexOn = settings.codexEnabled && (CodexUsage.isAvailable || appState.codexLiveQuotaEnabled)
         let claudeLimitM = settings.claudeDailyLimitM
         let claudeAlertOn = settings.claudeEnabled
             && ClaudeUsage.isAvailable && claudeLimitM > 0
@@ -1346,9 +1390,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var claudeCrossed: Bool?
             var claudeToday = 0
 
-            if codexOn, let codexResult = self.appState.codex.result {
-                // AppState 已把官方实时配额合并进本地用量结果，状态栏复用同一口径。
-                let limits = codexResult.rateLimits
+            if codexOn {
+                // 配额与本地会话独立；未生成会话文件时也能展示主动开启的实时配额。
+                let limits = self.appState.codexRateLimits
                 let worstUsed = max(limits?.primary?.usedPercent ?? 0,
                                     limits?.secondary?.usedPercent ?? 0)
                 let remaining = 100 - worstUsed
@@ -1365,7 +1409,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     infoText = "\(Int(remaining))%"
                 }
                 if codexTotalInfoOn {
-                    infoTokens += codexResult.today?.totalTokens ?? 0
+                    infoTokens += self.appState.codex.result?.today?.totalTokens ?? 0
                 }
             }
 

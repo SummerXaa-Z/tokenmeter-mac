@@ -48,6 +48,7 @@ final class AppState: ObservableObject {
     @Published var deepseekEnabled: Bool = true
     @Published var claudeEnabled: Bool = true
     @Published var codexEnabled: Bool = true
+    @Published var codexLiveQuotaEnabled: Bool = false
     @Published var kimiEnabled: Bool = true
     @Published var opencodeEnabled: Bool = true
     @Published var geminiEnabled: Bool = true
@@ -65,6 +66,15 @@ final class AppState: ObservableObject {
     // 不再重扫；只有手动刷新、定时器、或缓存超过 TTL 才真正重新加载。
     @Published var claude: SourceCache<ClaudeUsageResult> = .init()
     @Published var codex: SourceCache<CodexUsageResult> = .init()
+    @Published private(set) var codexLiveRateLimits: [CodexRateLimits] = []
+    private(set) var codexLiveQuotaRevision: UInt = 0
+    private var codexLiveQuotaLoadedAt: Date?
+
+    var codexAllRateLimits: [CodexRateLimits] {
+        codexLiveQuotaEnabled && !codexLiveRateLimits.isEmpty
+            ? codexLiveRateLimits : (codex.result?.allRateLimits ?? [])
+    }
+    var codexRateLimits: CodexRateLimits? { codexAllRateLimits.first }
     @Published var kimi: SourceCache<KimiUsageResult> = .init()
     @Published var opencode: SourceCache<OpenCodeUsageResult> = .init()
     @Published var gemini: SourceCache<GeminiUsageResult> = .init()
@@ -122,6 +132,7 @@ final class AppState: ObservableObject {
         deepseekEnabled = store.deepseekMonitorEnabled
         claudeEnabled = store.claudeMonitorEnabled
         codexEnabled = store.codexMonitorEnabled
+        codexLiveQuotaEnabled = store.codexLiveQuotaEnabled
         kimiEnabled = store.kimiMonitorEnabled
         opencodeEnabled = store.opencodeMonitorEnabled
         geminiEnabled = store.geminiMonitorEnabled
@@ -134,6 +145,7 @@ final class AppState: ObservableObject {
 
     // 余额加载，对应 loadBalance
     func loadBalance(force: Bool = false) async {
+        guard !RuntimeEnvironment.isIsolated else { return }
         guard balanceRefresh.request(force: force) else {
             if force { await balanceRefreshCompletion.wait() }
             return
@@ -174,6 +186,7 @@ final class AppState: ObservableObject {
 
     // 用量加载（含跨月拼接），对应 fetchCurrentUsage + loadUsage
     func loadUsage(force: Bool = false) async {
+        guard !RuntimeEnvironment.isIsolated else { return }
         guard usageRefresh.request(force: force) else {
             if force { await usageRefreshCompletion.wait() }
             return
@@ -325,6 +338,7 @@ final class AppState: ObservableObject {
     }
 
     func loadClaude(force: Bool = false) async {
+        guard !RuntimeEnvironment.isIsolated else { return }
         guard claudeEnabled, ClaudeUsage.isAvailable else { return }
         if !force, !claudeRefresh.isRefreshing, isFresh(claude.loadedAt) { return }
         guard claudeRefresh.request(force: force) else {
@@ -342,20 +356,11 @@ final class AppState: ObservableObject {
             claude.proc = ProcessStatus.claude()
             let collectStarted = Date()
             let r = await Task.detached(priority: .userInitiated) { ClaudeUsage.load() }.value
-            claude.result = r
-            claude.loadedAt = Date()
             CollectAttemptLog.record(.init(
                 source: .claude, startedAt: collectStarted,
-                finishedAt: Date(), failure: nil))
+                finishedAt: Date(), failure: r.readError.map(CollectAttemptLog.failureSummary)))
             collectRevision &+= 1
-            // 历史按工具归属：Claude Code session 中经 deepseek-* 模型产生的
-            // token 仍属于 Claude 工具用量。DeepSeek 平台账户是独立账户口径，
-            // 不得用它与 Claude 模型子集做跨源扣减。
-            HistoryStore.reconcile(.claude, authoritativeDays: Self.claudeHistoryDays(from: r))
-            recordModelHistory(.claude, windowDates: r.days.map(\.date),
-                               dayModels: r.dayModels, daySkills: r.daySkills,
-                               daySessions: r.daySessions, authoritative: true)
-            historyRevision &+= 1
+            if claudeEnabled { acceptClaudeCollection(r) }
 
             guard claudeRefresh.finish() else { break }
             guard claudeEnabled, ClaudeUsage.isAvailable else {
@@ -363,6 +368,46 @@ final class AppState: ObservableObject {
                 break
             }
         }
+    }
+
+    // 读取失败的部分聚合不能成为权威快照。保留最后成功结果及两份历史，
+    // 失败也保留刷新间隔，防止状态栏自动复查形成循环；手动刷新可立即重试。
+    @discardableResult
+    func acceptClaudeCollection(_ result: ClaudeUsageResult) -> Bool {
+        guard result.isAuthoritative else {
+            claude.error = result.readError
+            claude.loadedAt = Date()
+            return false
+        }
+        claude.result = result
+        claude.error = nil
+        claude.loadedAt = Date()
+        HistoryStore.reconcile(.claude, authoritativeDays: Self.claudeHistoryDays(from: result))
+        recordModelHistory(.claude, windowDates: result.days.map(\.date),
+                           dayModels: result.dayModels, daySkills: result.daySkills,
+                           daySessions: result.daySessions, authoritative: true)
+        historyRevision &+= 1
+        return true
+    }
+
+    @discardableResult
+    func acceptCodexCollection(_ result: CodexUsageResult) -> Bool {
+        guard result.isAuthoritative else {
+            codex.error = result.readError
+            codex.loadedAt = Date()
+            return false
+        }
+        codex.result = result
+        codex.error = nil
+        codex.loadedAt = Date()
+        HistoryStore.record(.codex, days: result.days.map {
+            (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
+        })
+        recordModelHistory(.codex, windowDates: result.days.map(\.date),
+                           dayModels: result.dayModels, daySkills: result.daySkills,
+                           daySessions: result.daySessions, authoritative: false)
+        historyRevision &+= 1
+        return true
     }
 
     // 按天明细与 HistoryStore 同口径落盘：模型 Token、Skill 次数与会话数
@@ -392,6 +437,7 @@ final class AppState: ObservableObject {
     // 回填进按天明细，让 30D/全部 在升级当天就有完整回溯。加载逐来源串行、
     // utility 优先级，不与实时刷新抢主线程；任一来源失败只跳过该来源。
     func backfillModelDetail(now: Date = Date()) async {
+        guard !RuntimeEnvironment.isIsolated else { return }
         let todayKey = DateUtil.key(now)
         guard DetailBackfill.shouldRun(
             markerDay: ConfigStore.shared.lastModelDetailBackfillDay,
@@ -399,21 +445,26 @@ final class AppState: ObservableObject {
         ) else { return }
 
         let span = DetailBackfill.windowDays
+        var hadReadFailure = false
         if claudeEnabled, ClaudeUsage.isAvailable {
             let r = await Task.detached(priority: .utility) {
                 ClaudeUsage.load(windowDays: span)
             }.value
-            recordModelHistory(.claude, windowDates: r.days.map(\.date),
+            if r.isAuthoritative {
+                recordModelHistory(.claude, windowDates: r.days.map(\.date),
                                dayModels: r.dayModels, daySkills: r.daySkills,
                                daySessions: r.daySessions, authoritative: true)
+            } else { hadReadFailure = true }
         }
         if codexEnabled, CodexUsage.isAvailable {
             let r = await Task.detached(priority: .utility) {
                 CodexUsage.load(windowDays: span)
             }.value
-            recordModelHistory(.codex, windowDates: r.days.map(\.date),
+            if r.isAuthoritative {
+                recordModelHistory(.codex, windowDates: r.days.map(\.date),
                                dayModels: r.dayModels, daySkills: r.daySkills,
                                daySessions: r.daySessions, authoritative: false)
+            } else { hadReadFailure = true }
         }
         if kimiEnabled, KimiUsage.isAvailable {
             let r = try? await Task.detached(priority: .utility) {
@@ -466,7 +517,7 @@ final class AppState: ObservableObject {
             }
         }
 
-        ConfigStore.shared.lastModelDetailBackfillDay = todayKey
+        if !hadReadFailure { ConfigStore.shared.lastModelDetailBackfillDay = todayKey }
         historyRevision &+= 1
     }
 
@@ -479,8 +530,11 @@ final class AppState: ObservableObject {
     }
 
     func loadCodex(force: Bool = false) async {
-        guard codexEnabled, CodexUsage.isAvailable else { return }
-        if !force, !codexRefresh.isRefreshing, isFresh(codex.loadedAt) { return }
+        guard !RuntimeEnvironment.isIsolated else { return }
+        guard codexEnabled, CodexUsage.isAvailable || codexLiveQuotaEnabled else { return }
+        if !force, !codexRefresh.isRefreshing,
+           (!CodexUsage.isAvailable || isFresh(codex.loadedAt)),
+           (!codexLiveQuotaEnabled || isFresh(codexLiveQuotaLoadedAt)) { return }
         guard codexRefresh.request(force: force) else {
             if force { await codexRefreshCompletion.wait() }
             return
@@ -497,39 +551,43 @@ final class AppState: ObservableObject {
             // 本地扫描与官方实时配额并行；实时拿到就替换配额卡（用量统计仍是本地）
             // 采集计时只覆盖本地扫描(await local),不含网络等待。
             let collectStarted = Date()
-            async let local = Task.detached(priority: .userInitiated) { CodexUsage.load() }.value
-            async let live = CodexUsage.fetchLiveRateLimits()
-            var r = await local
-            CollectAttemptLog.record(.init(
-                source: .codex, startedAt: collectStarted,
-                finishedAt: Date(), failure: nil))
-            collectRevision &+= 1
-            if let liveLimits = await live {
-                r = CodexUsageResult(rateLimits: liveLimits.first, allRateLimits: liveLimits,
-                                     days: r.days, models: r.models,
-                                     projects: r.projects, todayHours: r.todayHours,
-                                     skills: r.skills, dayModels: r.dayModels,
-                                     daySkills: r.daySkills)
+            let localAvailable = CodexUsage.isAvailable
+            async let local: CodexUsageResult? = Task.detached(priority: .userInitiated) {
+                localAvailable ? CodexUsage.load() : nil
+            }.value
+            let requestedLiveQuota = codexLiveQuotaEnabled
+            let requestRevision = codexLiveQuotaRevision
+            async let live = CodexUsage.fetchLiveRateLimits(enabled: requestedLiveQuota)
+            if let result = await local {
+                CollectAttemptLog.record(.init(
+                    source: .codex, startedAt: collectStarted,
+                    finishedAt: Date(), failure: result.readError.map(CollectAttemptLog.failureSummary)))
+                collectRevision &+= 1
+                if codexEnabled { acceptCodexCollection(result) }
             }
-            codex.result = r
-            codex.loadedAt = Date()
-            HistoryStore.record(.codex, days: r.days.map {
-                (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
-            })
-            recordModelHistory(.codex, windowDates: r.days.map(\.date),
-                               dayModels: r.dayModels, daySkills: r.daySkills,
-                               daySessions: r.daySessions, authoritative: false)
-            historyRevision &+= 1
+            acceptCodexLiveQuota(await live, requestRevision: requestRevision, wasEnabled: requestedLiveQuota)
 
             guard codexRefresh.finish() else { break }
-            guard codexEnabled, CodexUsage.isAvailable else {
+            guard codexEnabled, CodexUsage.isAvailable || codexLiveQuotaEnabled else {
                 codexRefresh.cancel()
                 break
             }
         }
     }
 
+    @discardableResult
+    func acceptCodexLiveQuota(
+        _ limits: [CodexRateLimits]?, requestRevision: UInt, wasEnabled: Bool
+    ) -> Bool {
+        guard codexEnabled, wasEnabled, codexLiveQuotaEnabled,
+              requestRevision == codexLiveQuotaRevision else { return false }
+        codexLiveRateLimits = (limits ?? []).filter { $0.primary != nil || $0.secondary != nil }
+        codexLiveQuotaLoadedAt = Date()
+        return true
+    }
+
     func loadKimi(force: Bool = false) async {
+        guard !RuntimeEnvironment.isIsolated else { return }
         guard kimiEnabled, KimiUsage.isAvailable else { return }
         if !force, !kimiRefresh.isRefreshing, isFresh(kimi.loadedAt) { return }
         guard kimiRefresh.request(force: force) else {
@@ -582,6 +640,7 @@ final class AppState: ObservableObject {
     }
 
     func loadOpenCode(force: Bool = false) async {
+        guard !RuntimeEnvironment.isIsolated else { return }
         guard opencodeEnabled, OpenCodeUsage.isAvailable else { return }
         if !force, !opencodeRefresh.isRefreshing, isFresh(opencode.loadedAt) { return }
         guard opencodeRefresh.request(force: force) else {
@@ -634,6 +693,7 @@ final class AppState: ObservableObject {
     }
 
     func loadGemini(force: Bool = false) async {
+        guard !RuntimeEnvironment.isIsolated else { return }
         guard geminiEnabled, GeminiUsage.isAvailable else { return }
         if !force, !geminiRefresh.isRefreshing, isFresh(gemini.loadedAt) { return }
         guard geminiRefresh.request(force: force) else {
@@ -686,6 +746,7 @@ final class AppState: ObservableObject {
     }
 
     func loadCopilot(force: Bool = false) async {
+        guard !RuntimeEnvironment.isIsolated else { return }
         guard copilotEnabled, CopilotUsage.isAvailable else { return }
         if !force, !copilotRefresh.isRefreshing, isFresh(copilot.loadedAt) { return }
         guard copilotRefresh.request(force: force) else {
@@ -738,6 +799,7 @@ final class AppState: ObservableObject {
     }
 
     func loadQwen(force: Bool = false) async {
+        guard !RuntimeEnvironment.isIsolated else { return }
         guard qwenEnabled, QwenCodeUsage.isAvailable else { return }
         if !force, !qwenRefresh.isRefreshing, isFresh(qwen.loadedAt) { return }
         guard qwenRefresh.request(force: force) else {
@@ -790,6 +852,7 @@ final class AppState: ObservableObject {
     }
 
     func loadCursor(force: Bool = false) async {
+        guard !RuntimeEnvironment.isIsolated else { return }
         guard cursorEnabled, CursorUsage.isAvailable else { return }
         if !force, !cursorRefresh.isRefreshing, isFresh(cursor.loadedAt) { return }
         guard cursorRefresh.request(force: force) else {
@@ -842,6 +905,7 @@ final class AppState: ObservableObject {
     // MARK: - 订阅剩余量（只读快照，不写历史）
 
     func loadKimiQuota(force: Bool = false) async {
+        guard !RuntimeEnvironment.isIsolated else { return }
         if !force, !kimiQuotaRefresh.isRefreshing, isFresh(kimiQuota.loadedAt) { return }
         guard kimiQuotaRefresh.request(force: force) else {
             if force { await kimiQuotaRefreshCompletion.wait() }
@@ -934,6 +998,7 @@ final class AppState: ObservableObject {
     }
 
     func loadZhipuQuota(force: Bool = false) async {
+        guard !RuntimeEnvironment.isIsolated else { return }
         if !force, !zhipuQuotaRefresh.isRefreshing, isFresh(zhipuQuota.loadedAt) { return }
         guard zhipuQuotaRefresh.request(force: force) else {
             if force { await zhipuQuotaRefreshCompletion.wait() }
@@ -1035,6 +1100,7 @@ final class AppState: ObservableObject {
     }
 
     func loadArkPlanQuota(force: Bool = false) async {
+        guard !RuntimeEnvironment.isIsolated else { return }
         if !force, !arkPlanQuotaRefresh.isRefreshing, isFresh(arkPlanQuota.loadedAt) { return }
         guard arkPlanQuotaRefresh.request(force: force) else {
             if force { await arkPlanQuotaRefreshCompletion.wait() }
@@ -1062,6 +1128,7 @@ final class AppState: ObservableObject {
     }
 
     func loadSubscriptionQuotas(force: Bool = false) async {
+        guard !RuntimeEnvironment.isIsolated else { return }
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.loadKimiQuota(force: force) }
             group.addTask { await self.loadArkPlanQuota(force: force) }
@@ -1109,7 +1176,21 @@ final class AppState: ObservableObject {
     func setCodexEnabled(_ enabled: Bool) {
         store.codexMonitorEnabled = enabled
         codexEnabled = enabled
+        codexLiveQuotaRevision &+= 1
+        codexLiveRateLimits = []
+        codexLiveQuotaLoadedAt = nil
         if enabled { Task { await loadCodex(force: true) } }
+        requestStatusRefresh()
+    }
+
+    func setCodexLiveQuotaEnabled(_ enabled: Bool) {
+        store.codexLiveQuotaEnabled = enabled
+        codexLiveQuotaEnabled = enabled
+        codexLiveQuotaRevision &+= 1
+        codexLiveRateLimits = []
+        codexLiveQuotaLoadedAt = nil
+        codex.loadedAt = nil
+        if codexEnabled { Task { await loadCodex(force: true) } }
         requestStatusRefresh()
     }
 

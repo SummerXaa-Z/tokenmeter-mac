@@ -163,9 +163,7 @@ struct ModelUsageHistoryStore {
 
     static let shared = ModelUsageHistoryStore(directory: defaultDirectory)
 
-    static let defaultDirectory: URL = FileManager.default
-        .urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        .appendingPathComponent("TokenMeter", isDirectory: true)
+    static let defaultDirectory: URL = RuntimeEnvironment.applicationSupportDirectory
         .appendingPathComponent("model-history", isDirectory: true)
 
     // 所有实例共用一把锁：同一目录可能被多个来源的刷新并发写入

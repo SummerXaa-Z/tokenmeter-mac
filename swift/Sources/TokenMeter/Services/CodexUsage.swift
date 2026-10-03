@@ -1,7 +1,7 @@
 import Foundation
 
 // Codex CLI 用量解析：纯本地读 ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl，
-// 零网络、零凭据。
+// 本地用量扫描零网络、零凭据；官方实时配额是独立的默认关闭选项。
 //
 // 归因口径：session 文件里每条 token_count 事件带累计 total_token_usage，
 // 用相邻事件的差值（cumulative diff）归到事件时间戳当天。跨天 session
@@ -9,7 +9,7 @@ import Foundation
 // 配额 rate_limits 取全部事件中时间戳最新的一条。
 //
 // 单文件可达数百 MB，顺序分块流式扫描（8MB chunk），只解码含
-// token_count 标记的行；按 (size, mtime) 做内存级缓存，刷新时未变的
+// token_count 标记的行；按 (size, mtime, calendar) 做内存级缓存，刷新时未变的
 // 文件不重扫。
 
 struct CodexRateWindow: Equatable {
@@ -80,6 +80,9 @@ struct CodexUsageResult: Equatable {
     var dayModels: [String: [String: ModelTokenTally]] = [:]
     // 日期 → Skill 名 → 调用次数，与 dayModels 同窗口同语义
     var daySkills: [String: [String: Int]] = [:]
+    // 有读取失败时聚合可能不完整，不得据此覆盖已保存的完整历史。
+    var readError: String? = nil
+    var isAuthoritative: Bool { readError == nil }
     var today: CodexDayUsage? { days.last }
     var weekTotal: Int { days.reduce(0) { $0 + $1.totalTokens } }
     var weekSessions: Int { days.reduce(0) { $0 + $1.sessionCount } }
@@ -195,6 +198,7 @@ enum CodexUsage {
     private struct FileSummary {
         let size: UInt64
         let mtime: Date
+        let calendar: Calendar
         let perDay: [String: Tally]
         let perDayModel: [String: [String: Tally]] // day → 模型 → token 明细
         let perDayHour: [String: [Int: Int]] // day → hour → totalTokens
@@ -218,6 +222,8 @@ enum CodexUsage {
         windowDays: Int = 7
     ) -> CodexUsageResult {
         let fm = FileManager.default
+        let calendar = Calendar.current
+        var readError: String?
         let span = max(windowDays, 1)
         var dayMap: [String: CodexDayUsage] = [:]
         let window: Set<String> = Set((0..<span).map { DateUtil.key(DateUtil.addDays(now, -$0)) })
@@ -234,18 +240,46 @@ enum CodexUsage {
         let todayKey = DateUtil.key(now)
 
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
-        guard let walker = fm.enumerator(at: sessionsDirectory, includingPropertiesForKeys: keys) else {
+        guard let walker = fm.enumerator(
+            at: sessionsDirectory, includingPropertiesForKeys: keys,
+            errorHandler: { _, _ in
+                readError = readError ?? "本地会话目录读取失败"
+                return true
+            }
+        ) else {
             return CodexUsageResult(rateLimits: nil, allRateLimits: [],
                                     days: dayMap.values.sorted { $0.date < $1.date },
-                                    models: [], projects: [], todayHours: [], skills: [])
+                                    models: [], projects: [], todayHours: [], skills: [],
+                                    readError: "本地会话目录读取失败")
         }
 
         for case let file as URL in walker where file.pathExtension == "jsonl" {
-            guard let attrs = try? file.resourceValues(forKeys: Set(keys)),
-                  attrs.isRegularFile == true,
-                  let mtime = attrs.contentModificationDate, mtime >= windowStart else { continue }
-
-            let summary = summarize(file)
+            let attrs: URLResourceValues
+            do {
+                attrs = try file.resourceValues(forKeys: Set(keys))
+            } catch {
+                readError = readError ?? "本地会话属性读取失败"
+                continue
+            }
+            guard let isRegularFile = attrs.isRegularFile else {
+                readError = readError ?? "本地会话属性读取失败"
+                continue
+            }
+            guard isRegularFile else { continue }
+            guard let mtime = attrs.contentModificationDate,
+                  let size = attrs.fileSize, size >= 0 else {
+                readError = readError ?? "本地会话属性读取失败"
+                continue
+            }
+            guard mtime >= windowStart else { continue }
+            let summary: FileSummary
+            do {
+                summary = try summarize(file, size: UInt64(size), mtime: mtime, calendar: calendar)
+            } catch {
+                // 只返回阶段摘要，系统错误中的路径与会话内容不进入诊断。
+                readError = readError ?? "本地会话文件读取失败"
+                continue
+            }
             var counted = false
             var fileTokens = 0
             for (date, t) in summary.perDay where window.contains(date) {
@@ -317,33 +351,35 @@ enum CodexUsage {
                                 models: models, projects: projects, todayHours: todayHours,
                                 skills: skills,
                                 dayModels: dayModels.compactMapValues(ModelTokenTally.nonEmpty),
-                                daySkills: daySkills)
+                                daySkills: daySkills, readError: readError)
     }
 
     // MARK: - 单文件流式扫描（带缓存）
 
-    private static func summarize(_ file: URL) -> FileSummary {
-        let attrs = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-        let size = UInt64(attrs?.fileSize ?? 0)
-        let mtime = attrs?.contentModificationDate ?? .distantPast
+    private static func summarize(
+        _ file: URL, size: UInt64, mtime: Date, calendar: Calendar
+    ) throws -> FileSummary {
+        // 权限可能改变而 size/mtime 不变；缓存不能掩盖当前的读取失败。
+        guard FileManager.default.isReadableFile(atPath: file.path) else {
+            throw CocoaError(.fileReadNoPermission)
+        }
 
         cacheLock.lock()
         let hit = cache[file.path]
         cacheLock.unlock()
-        if let hit, hit.size == size, hit.mtime == mtime { return hit }
+        if let hit, hit.size == size, hit.mtime == mtime, hit.calendar == calendar { return hit }
 
-        let summary = scan(file, size: size, mtime: mtime)
+        let summary = try scan(file, size: size, mtime: mtime, calendar: calendar)
         cacheLock.lock()
         cache[file.path] = summary
         cacheLock.unlock()
         return summary
     }
 
-    private static func scan(_ file: URL, size: UInt64, mtime: Date) -> FileSummary {
-        let empty = FileSummary(size: size, mtime: mtime, perDay: [:], perDayModel: [:],
-                                perDayHour: [:], project: nil, rateLimitsByChannel: [:],
-                                perDaySkill: [:])
-        guard let handle = try? FileHandle(forReadingFrom: file) else { return empty }
+    private static func scan(
+        _ file: URL, size: UInt64, mtime: Date, calendar: Calendar
+    ) throws -> FileSummary {
+        let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
 
         let marker = Data("\"token_count\"".utf8)
@@ -367,7 +403,7 @@ enum CodexUsage {
 
         var reachedEnd = false
         while !reachedEnd {
-            let chunk = (try? handle.read(upToCount: chunkSize)) ?? Data()
+            let chunk = try handle.read(upToCount: chunkSize) ?? Data()
             var data: Data
             if chunk.isEmpty {
                 // JSONL 写入过程里最后一行不一定立刻带换行；EOF 时把完整残留行当作一行消费。
@@ -470,7 +506,8 @@ enum CodexUsage {
                 }
             }
         }
-        return FileSummary(size: size, mtime: mtime, perDay: perDay, perDayModel: perDayModel,
+        return FileSummary(size: size, mtime: mtime, calendar: calendar,
+                           perDay: perDay, perDayModel: perDayModel,
                            perDayHour: perDayHour, project: project,
                            rateLimitsByChannel: rlByChannel, perDaySkill: perDaySkill)
     }
@@ -603,10 +640,16 @@ enum CodexUsage {
     }
 
     // 失败（无凭据/过期/网络）返回 nil，调用方回退本地快照
-    static func fetchLiveRateLimits() async -> [CodexRateLimits]? {
-        let authURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".codex/auth.json")
-        guard let authData = try? Data(contentsOf: authURL),
+    static func fetchLiveRateLimits(
+        enabled: Bool = ConfigStore.shared.codexLiveQuotaEnabled,
+        credentialLoader: () -> Data? = {
+            let url = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".codex/auth.json")
+            return try? Data(contentsOf: url)
+        }
+    ) async -> [CodexRateLimits]? {
+        guard enabled else { return nil }
+        guard let authData = credentialLoader(),
               let auth = try? JSONDecoder().decode(AuthFile.self, from: authData),
               let token = auth.tokens?.accessToken, !token.isEmpty else { return nil }
 

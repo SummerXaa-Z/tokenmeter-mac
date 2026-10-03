@@ -10,7 +10,7 @@ struct OverviewView: View {
     // 模型榜下钻：(来源, 模型名) → 7|30|90 天可切的明细页
     var onOpenModel: (HistorySource, String) -> Void = { _, _ in }
     // Skills 榜下钻：所点行 → 近 13 周走势与来源拆解页
-    var onOpenSkill: (PersonalSkillRankings.Entry) -> Void = { _ in }
+    var onOpenSkill: (PersonalSkillRankings.Entry, HistorySource?, [HistorySource]) -> Void = { _, _, _ in }
     var onSettings: () -> Void
     @State private var history: [HistoryStore.DayPoint] = []
     @State private var modelHistory: [ModelUsageDay] = []
@@ -21,7 +21,7 @@ struct OverviewView: View {
         let data = snapshot
         let entries = toolEntries(for: data)
         ScrollView {
-            VStack(spacing: 10) {
+            VStack(spacing: 0) {
                 header
                 OverviewUsageCard(
                     snapshot: data,
@@ -29,7 +29,8 @@ struct OverviewView: View {
                     entries: entries,
                     onOpen: onOpenSource,
                     history: history,
-                    participants: Set(sourceSelection.sources)
+                    participants: Set(sourceSelection.sources),
+                    collectionStatuses: collectionStatuses
                 )
                 if sources.contains(.deepseek) {
                     OverviewDeepSeekPlatformCard(
@@ -49,19 +50,8 @@ struct OverviewView: View {
                     snapshot: subscriptionQuotaSnapshot,
                     statuses: subscriptionQuotaStatuses
                 )
-                if !history.isEmpty {
-                    OverviewCompareCard(
-                        history: history,
-                        participants: Set(sourceSelection.sources)
-                    )
-                    OverviewHeatmapCard(
-                        history: history,
-                        participants: Set(sourceSelection.sources)
-                    )
-                }
                 if data.periodTotal > 0 {
                     OverviewTrendCard(snapshot: data, range: range)
-                    OverviewProfileCard(profile: data.profile, range: range)
                     OverviewRankingsCard(
                         rankings: data.rankings,
                         skillRankings: data.skillRankings,
@@ -71,21 +61,41 @@ struct OverviewView: View {
                         onOpenSkill: onOpenSkill
                     )
                     if data.apiReferenceCost.totalTokens > 0 {
-                        OverviewAPICostCard(
-                            summary: data.apiReferenceCost,
-                            range: range,
-                            priorSummary: data.priorAPIReferenceCost,
-                            subscriptionValue: data.subscriptionValue,
-                            roiCurve: data.roiCurve,
-                            coverageNote: data.modelCoverageNote
+                        DisclosureGroup("费用与订阅明细") {
+                            OverviewAPICostCard(
+                                summary: data.apiReferenceCost,
+                                range: range,
+                                priorSummary: data.priorAPIReferenceCost,
+                                subscriptionValue: data.subscriptionValue,
+                                roiCurve: data.roiCurve,
+                                coverageNote: data.modelCoverageNote
+                            )
+                        }
+                        .font(Theme.cardTitleFont)
+                        .padding(.vertical, 12)
+                    }
+                    OverviewProfileCard(profile: data.profile, range: range)
+                }
+                if !history.isEmpty {
+                    OverviewHeatmapCard(
+                        history: history,
+                        participants: Set(sourceSelection.sources)
+                    )
+                    DisclosureGroup("周期对比") {
+                        OverviewCompareCard(
+                            history: history,
+                            participants: Set(sourceSelection.sources)
                         )
                     }
+                    .font(Theme.cardTitleFont)
+                    .padding(.vertical, 12)
                 }
                 Spacer(minLength: 0)
             }
             .padding(14)
         }
         .scrollIndicators(.hidden)
+        .background(Color(nsColor: .controlBackgroundColor))
         .task {
             // 先用本机留存的历史与明细出图，扫描完成后再刷新一次
             reloadHistory()
@@ -138,18 +148,46 @@ struct OverviewView: View {
     }
 
     private func toolEntries(for snapshot: OverviewSnapshot) -> [OverviewToolEntry] {
-        let visible = Set(snapshot.nonzeroPeriodSources)
         return sources.compactMap { provider in
-            guard let source = provider.codingHistorySource,
-                  visible.contains(source),
-                  let tokens = snapshot.periodBySource[source],
-                  tokens > 0 else { return nil }
+            guard let source = provider.codingHistorySource else { return nil }
+            let status = collectionStatus(for: provider)
+            let tokens = snapshot.periodBySource[source] ?? 0
+            guard tokens > 0 || status.phase == .loading || status.phase == .failed else { return nil }
+            let detail: String
+            switch status.phase {
+            case .loading: detail = "正在读取用量…"
+            case .failed: detail = status.hasResult ? "读取失败，保留上次成功数据" : (status.error ?? "读取失败")
+            case .ready, .unavailable: detail = self.detail(for: provider)
+            }
             return OverviewToolEntry(
                 provider: provider,
-                tokens: tokens,
-                detail: detail(for: provider),
+                tokens: tokens > 0 ? tokens : nil,
+                detail: detail,
                 running: runningState(for: provider)
             )
+        }
+    }
+
+    private var collectionStatuses: [OverviewSourceCollectionStatus] {
+        sources.filter { $0.codingHistorySource != nil }.map(collectionStatus)
+    }
+
+    private func collectionStatus(for provider: Provider) -> OverviewSourceCollectionStatus {
+        func status<T>(_ cache: SourceCache<T>) -> OverviewSourceCollectionStatus {
+            OverviewSourceCollectionStatus(
+                provider: provider, loading: cache.loading, hasResult: cache.result != nil,
+                error: cache.error, available: provider.available)
+        }
+        switch provider {
+        case .claude: return status(state.claude)
+        case .codex: return status(state.codex)
+        case .kimi: return status(state.kimi)
+        case .opencode: return status(state.opencode)
+        case .gemini: return status(state.gemini)
+        case .copilot: return status(state.copilot)
+        case .qwen: return status(state.qwen)
+        case .cursor: return status(state.cursor)
+        case .deepseek: return .init(provider: provider, loading: false, hasResult: false, error: nil, available: false)
         }
     }
 
@@ -165,7 +203,7 @@ struct OverviewView: View {
             guard let result = state.claude.result else { return state.claude.error ?? "本地用量待加载" }
             return "近 7 天 \(Fmt.int(result.weekSessions)) 会话 · \(Fmt.int(result.weekMessages)) 请求"
         case .codex:
-            if let limits = state.codex.result?.rateLimits {
+            if let limits = state.codexRateLimits {
                 let values = [limits.primary, limits.secondary].compactMap { window -> String? in
                     guard let window else { return nil }
                     return "\(Self.windowName(window.windowMinutes))剩余 \(Int(max(100 - window.usedPercent, 0)))%"
@@ -244,7 +282,7 @@ struct OverviewView: View {
 
     private var subscriptionQuotaSnapshot: SubscriptionQuotaSnapshot {
         SubscriptionQuotaSnapshot(
-            codex: state.codexEnabled ? state.codex.result?.rateLimits : nil,
+            codex: state.codexEnabled ? state.codexRateLimits : nil,
             kimi: state.kimiQuota.result,
             ark: state.arkPlanQuota.result,
             zhipu: state.zhipuQuota.result
@@ -261,27 +299,33 @@ struct OverviewView: View {
                     ? "监控源已关闭"
                     : (!CodexUsage.isAvailable
                         ? "未检测到 Codex 本地数据"
-                        : (state.codex.error ?? "尚未获得可验证的官方配额快照"))
+                        : (state.codex.error ?? (state.codexLiveQuotaEnabled
+                            ? "尚未获得可验证的官方配额快照"
+                            : "实时查询已关闭，仅展示本地配额快照"))),
+                failed: state.codexEnabled && state.codex.error != nil
             ),
             .init(
                 source: .kimiCode,
                 title: "Kimi Code",
                 loading: state.kimiQuota.loading,
                 message: state.kimiQuota.error ?? "尚未获得 Kimi Code 配额快照",
-                warning: kimiQuotaWarning
+                warning: kimiQuotaWarning,
+                failed: state.kimiQuota.error != nil
             ),
             .init(
                 source: .ark,
                 title: "火山方舟 Agent Plan",
                 loading: state.arkPlanQuota.loading,
-                message: state.arkPlanQuota.error ?? "未检测到已订阅的 Agent/Coding Plan"
+                message: state.arkPlanQuota.error ?? "未检测到已订阅的 Agent/Coding Plan",
+                failed: state.arkPlanQuota.error != nil
             ),
             .init(
                 source: .zhipu,
                 title: "智谱 GLM",
                 loading: state.zhipuQuota.loading,
                 message: state.zhipuQuota.error ?? "未配置 API Key，可在设置中添加",
-                warning: zhipuQuotaWarning
+                warning: zhipuQuotaWarning,
+                failed: state.zhipuQuota.error != nil
             ),
         ]
     }
