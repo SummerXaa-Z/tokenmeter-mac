@@ -78,4 +78,32 @@ final class SourceTrendCSVExportTests: XCTestCase {
                 source: .kimi, spanDays: 30, todayKey: "2026-10-03"),
             "TokenMeter-trend-Kimi-Code-30d-2026-10-03.csv")
     }
+
+    // 单系列档(Cursor 历史趋势卡):按日合计、无分量列,乱序输入按日期升序
+    func testSingleSeriesRowsSortByDateWithoutParts() {
+        let csv = SourceTrendCSVExport.makeSingleSeriesCSV(
+            source: .cursor,
+            spanDays: 7,
+            days: [
+                ("2026-10-02", 400),
+                ("2026-10-01", 900),
+                ("2026-10-03", 0),   // 零天照列 0
+            ],
+            todayKey: "2026-10-03")
+        let rows = parseRows(csv)
+        XCTAssertEqual(rows[0], ["日期", "星期", "Token"])
+        XCTAssertEqual(rows[1], ["2026-10-01", "四", "900"])
+        XCTAssertEqual(rows[2], ["2026-10-02", "五", "400"])
+        XCTAssertEqual(rows[3], ["2026-10-03", "六", "0"])
+        XCTAssertEqual(rows[4], ["合计", "", "1300"])
+        XCTAssertTrue(csv.contains("Cursor · 近 7 天（与来源页趋势卡同档）"))
+        XCTAssertTrue(csv.contains("按日合计，来自本机按天历史（Cursor 仅有订阅周期聚合，无逐请求分量）"))
+        // 单系列档没有分量折叠说明
+        XCTAssertFalse(csv.contains("推理"))
+        // 文件名与分量档同规格
+        XCTAssertEqual(
+            SourceTrendCSVExport.suggestedFilename(
+                source: .cursor, spanDays: 7, todayKey: "2026-10-03"),
+            "TokenMeter-trend-Cursor-7d-2026-10-03.csv")
+    }
 }

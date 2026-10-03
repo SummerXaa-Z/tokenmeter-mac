@@ -80,18 +80,12 @@ struct QwenCodeView: View {
     }
 
     private func hourlyCard(_ result: QwenCodeUsageResult) -> some View {
-        Card {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("今日分时（Token）", systemImage: "clock")
-                    .font(.system(size: 12, weight: .semibold))
-                SourceHourChart(
-                    bars: result.todayHours.map { .init(hour: $0.hour, tokens: $0.totalTokens) },
-                    color: Theme.qwen
-                )
-                Text("Qwen 在 Session 结束时写入聚合记录，因此小时归属按 Session 结束时间。")
-                    .font(.system(size: 10)).foregroundStyle(.tertiary)
-            }
-        }
+        SourceHourCard(
+            source: .qwen,
+            bars: result.todayHours.map { .init(hour: $0.hour, tokens: $0.totalTokens) },
+            color: Theme.qwen,
+            note: "Qwen 在 Session 结束时写入聚合记录，因此小时归属按 Session 结束时间。"
+        )
     }
 
     private func weekCard(_ result: QwenCodeUsageResult) -> some View {

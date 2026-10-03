@@ -84,16 +84,11 @@ struct KimiView: View {
     }
 
     private func hoursCard(_ result: KimiUsageResult) -> some View {
-        Card {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("今日分时（Token）", systemImage: "clock")
-                    .font(.system(size: 12, weight: .semibold))
-                SourceHourChart(
-                    bars: result.todayHours.map { .init(hour: $0.hour, tokens: $0.totalTokens) },
-                    color: Theme.kimi
-                )
-            }
-        }
+        SourceHourCard(
+            source: .kimi,
+            bars: result.todayHours.map { .init(hour: $0.hour, tokens: $0.totalTokens) },
+            color: Theme.kimi
+        )
     }
 
     private func weekChartCard(_ result: KimiUsageResult) -> some View {

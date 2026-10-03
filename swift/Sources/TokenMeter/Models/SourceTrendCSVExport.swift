@@ -97,6 +97,48 @@ enum SourceTrendCSVExport {
         }
     }
 
+    /// 单系列档（Cursor 历史趋势卡）：按日合计、无分量列——Cursor 只有
+    /// 订阅周期聚合，没有逐请求分量，不凑不存在的口径。
+    static func makeSingleSeriesCSV(
+        source: HistorySource,
+        spanDays: Int,
+        days: [(date: String, tokens: Int)],
+        todayKey: String = DateUtil.today()
+    ) -> String {
+        var lines: [[String]] = []
+        lines.append(["日期", "星期", "Token"])
+        let sorted = days.sorted { $0.date < $1.date }
+        for day in sorted {
+            lines.append([day.date, weekday(of: day.date), String(day.tokens)])
+        }
+        if !sorted.isEmpty {
+            let total = sorted.reduce(0) { $0 + $1.tokens }
+            lines.append(["合计", "", String(total)])
+        }
+        appendSingleSeriesNotes(
+            to: &lines, source: source, spanDays: spanDays, todayKey: todayKey)
+        return lines.map { $0.joined(separator: ",") }.joined(separator: "\n") + "\n"
+    }
+
+    private static func appendSingleSeriesNotes(
+        to lines: inout [[String]],
+        source: HistorySource,
+        spanDays: Int,
+        todayKey: String
+    ) {
+        let notes: [String] = [
+            "口径",
+            "\(source.overviewName) · 近 \(spanDays) 天（与来源页趋势卡同档）",
+            "按日合计，来自本机按天历史（Cursor 仅有订阅周期聚合，无逐请求分量）",
+            "补零时间轴：无用量日照列 0（真实零）",
+            "Token 为原始整数",
+            "导出于 \(todayKey)",
+        ]
+        for note in notes {
+            lines.append([ModelRankingCSVExport.escaped(note)])
+        }
+    }
+
     static func suggestedFilename(
         source: HistorySource,
         spanDays: Int,

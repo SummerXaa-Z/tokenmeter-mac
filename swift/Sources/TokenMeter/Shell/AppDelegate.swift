@@ -335,6 +335,86 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // 导出全覆盖收尾三卡:24 小时分时卡(Qwen 形态,带 Session 归属脚注)、
+    // Cursor 历史趋势卡(injectedTotals 注入合成按日合计)、DeepSeek 缓存
+    // 命中卡(合成 7 天三系列)——previewExportStatus 预置「已导出」态
+    private static func exportFinalFixture() -> some View {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        // 分时卡:上午到深夜有量的合成 24 小时(数小时留零验证真实零)
+        let hourBars: [SourceHourChart.Bar] = (0..<24).map { hour in
+            let tokens: Int
+            switch hour {
+            case 0..<8: tokens = hour % 4 == 0 ? 120_000 : 0
+            case 8..<12: tokens = (400 + hour * 60) * 1_000
+            case 12..<19: tokens = (700 + hour * 45) * 1_000
+            default: tokens = (300 + hour * 25) * 1_000
+            }
+            return SourceHourChart.Bar(hour: hour, tokens: tokens)
+        }
+        // Cursor 历史趋势卡:近 7 天合成按日合计(隔天留零验证空柱)
+        let cursorTotals: [(date: String, tokens: Int)] = (0..<7).reversed()
+            .compactMap { offset in
+                guard let date = calendar.date(byAdding: .day, value: -offset, to: today)
+                else { return nil }
+                let value = offset % 2 == 0 ? (2 + offset % 3) * 1_000_000 : 0
+                return (date: DateUtil.key(date), tokens: value)
+            }
+        // DeepSeek 缓存命中卡:合成 7 天命中/未命中/输出
+        let cacheDays: [UsageDay] = (0..<7).compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: today)
+            else { return nil }
+            let base = 40 + (offset % 3) * 25
+            return UsageDay(
+                date: DateUtil.key(date),
+                flashTokens: base * 1_000_000,
+                flashCacheHit: base * 600_000,
+                flashCacheMiss: base * 100_000,
+                flashResponse: base * 300_000,
+                proTokens: (base + 20) * 1_000_000,
+                proCacheHit: (base + 20) * 500_000,
+                proCacheMiss: (base + 20) * 120_000,
+                proResponse: (base + 20) * 380_000,
+                totalTokens: (base * 2 + 20) * 1_000_000,
+                totalCost: 1.2)
+        }
+        let usage = UsageResult(
+            models: [
+                UsageModelSummary(
+                    key: "flash", name: "V4 Flash",
+                    totalTokens: 6_400_000, requestCount: 320,
+                    cacheHitTokens: 3_800_000, cacheMissTokens: 700_000,
+                    responseTokens: 1_900_000, cost: 12.5),
+                UsageModelSummary(
+                    key: "pro", name: "V4 Pro",
+                    totalTokens: 7_200_000, requestCount: 180,
+                    cacheHitTokens: 3_400_000, cacheMissTokens: 900_000,
+                    responseTokens: 2_900_000, cost: 18.7),
+            ],
+            days: cacheDays,
+            monthCost: 31.2)
+        return ScrollView {
+            VStack(spacing: 12) {
+                SourceHourCard(
+                    source: .qwen,
+                    bars: hourBars,
+                    color: Theme.qwen,
+                    note: "Qwen 在 Session 结束时写入聚合记录，因此小时归属按 Session 结束时间。",
+                    previewExportStatus: "已导出 TokenMeter-hours-Qwen-Code-2026-10-03.csv · 09:41")
+                SourceHistoryTrendCard(
+                    source: .cursor,
+                    color: Theme.cursor,
+                    injectedTotals: cursorTotals,
+                    previewExportStatus: "已导出 TokenMeter-trend-Cursor-7d-2026-10-03.csv · 09:41")
+                UsageChartCard(
+                    usage: usage,
+                    state: .ok,
+                    previewExportStatus: "已导出 TokenMeter-deepseek-cache-2026-10-03.csv · 09:41")
+            }
+            .padding(14)
+        }
+    }
+
     // 图表零数据统一空态:总览趋势卡(空快照)、来源页 7|30 天卡(整窗零)、
     // 24 小时分时图(全天零)三种形态各一卡,共用 ChartHover.emptyState
     private static func trendEmptyFixture() -> some View {
@@ -1021,6 +1101,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 按钮与反馈行(同一张页三种不同类型卡)
             ("chart-export-fixture", hosting(
                 Self.chartExportFixture(), height: 1250)),
+            // 导出全覆盖收尾:24 小时分时卡 + Cursor 历史趋势卡 + DeepSeek
+            // 缓存命中卡三处新导出按钮与反馈行(三种不同类型卡同页)
+            ("export-final-fixture", hosting(
+                Self.exportFinalFixture(), height: 1000)),
         ]
 
         var windows: [NSWindow] = []

@@ -75,16 +75,11 @@ struct ClaudeView: View {
 
     // MARK: - 今日分时
     private func hoursCard(_ r: ClaudeUsageResult) -> some View {
-        Card {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("今日分时（Token）", systemImage: "clock")
-                    .font(.system(size: 12, weight: .semibold))
-                SourceHourChart(
-                    bars: r.todayHours.map { .init(hour: $0.hour, tokens: $0.totalTokens) },
-                    color: Theme.claude
-                )
-            }
-        }
+        SourceHourCard(
+            source: .claude,
+            bars: r.todayHours.map { .init(hour: $0.hour, tokens: $0.totalTokens) },
+            color: Theme.claude
+        )
     }
 
     // MARK: - 7|30 天柱图

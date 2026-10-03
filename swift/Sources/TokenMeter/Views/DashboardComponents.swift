@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import AppKit
 
 // 余额卡：总余额 + 今日/本月消费
 struct BalanceCard: View {
@@ -135,7 +136,11 @@ struct UsageRow: View {
 struct UsageChartCard: View {
     let usage: UsageResult?
     let state: LoadState
+    // 渲染 fixture 注入的导出反馈(离屏渲染走不到保存面板)
+    var previewExportStatus: String? = nil
     @State private var hoverDate: String?
+    // 导出完成后的行内反馈(「已导出 <文件名> · 时刻」)
+    @State private var exportStatus: String?
 
     private struct Seg: Identifiable {
         let id = UUID()
@@ -194,6 +199,18 @@ struct UsageChartCard: View {
                     Spacer()
                     Text(state == .ok ? summary : "—")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
+                    // 导出近 7 天逐日三系列 CSV(与图例同列,附口径行)
+                    Button {
+                        exportCSV()
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(state != .ok || days.isEmpty)
+                    .help("导出近 7 天 CSV（逐日命中/未命中/输出，附口径行）")
+                    .accessibilityLabel("导出缓存命中 CSV")
                 }
                 if state == .ok {
                     ChartHover.caption(hover: hoverDate, buckets: hoverBuckets)
@@ -202,7 +219,29 @@ struct UsageChartCard: View {
                     Text(placeholder).font(.callout).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, minHeight: 120)
                 }
+                // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
+                ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
             }
+        }
+    }
+
+    private func exportCSV() {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSSavePanel()
+        panel.title = "导出缓存命中 CSV"
+        panel.nameFieldStringValue = DeepSeekCacheCSVExport.suggestedFilename()
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowedContentTypes = [.commaSeparatedText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try DeepSeekCacheCSVExport.makeCSV(days: days)
+                .write(to: url, atomically: true, encoding: .utf8)
+            exportStatus = ExportFeedback.text(fileURL: url)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.messageText = "导出缓存命中 CSV 失败"
+            alert.runModal()
         }
     }
 

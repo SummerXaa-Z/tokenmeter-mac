@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import AppKit
 
 // 各来源页共用的轻量展示原语。只统一稳定的视觉结构，不试图把不同工具的
 // Token、会话与配额语义塞进一个万能 Dashboard。
@@ -167,6 +168,69 @@ struct SourceHourChart: View {
     /// 全天零用量(24 根柱全 0)
     static func isEmpty(_ bars: [Bar]) -> Bool {
         bars.allSatisfy { $0.tokens == 0 }
+    }
+}
+
+// 今日分时卡：四个本地来源页（Claude / Codex / Kimi / Qwen）此前各自
+// 手写同构的 Card + 标题 + SourceHourChart，此处收拢为共用组件并补上
+// 导出按钮——逐小时一行（0-23 全钟点）与图同口径。Qwen 的「Session
+// 结束时间归属」脚注经 note 参数带进，并随 CSV 口径行原样带出。
+struct SourceHourCard: View {
+    let source: HistorySource
+    let bars: [SourceHourChart.Bar]
+    let color: Color
+    var note: String? = nil
+    var previewExportStatus: String? = nil
+    @State private var exportStatus: String?
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("今日分时（Token）", systemImage: "clock")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Button {
+                        exportCSV()
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(SourceHourChart.isEmpty(bars))
+                    .help("导出今日分时 CSV（逐小时一行，附口径行）")
+                    .accessibilityLabel("导出今日分时 CSV")
+                }
+                SourceHourChart(bars: bars, color: color)
+                if let note {
+                    Text(note)
+                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                }
+                ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
+            }
+        }
+    }
+
+    private func exportCSV() {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSSavePanel()
+        panel.title = "导出今日分时 CSV"
+        panel.nameFieldStringValue = SourceHourCSVExport.suggestedFilename(source: source)
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowedContentTypes = [.commaSeparatedText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try SourceHourCSVExport.makeCSV(
+                source: source, bars: bars, note: note
+            ).write(to: url, atomically: true, encoding: .utf8)
+            exportStatus = ExportFeedback.text(fileURL: url)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.messageText = "导出今日分时 CSV 失败"
+            alert.runModal()
+        }
     }
 }
 

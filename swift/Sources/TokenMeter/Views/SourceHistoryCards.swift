@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import AppKit
 
 // 来源页通用的历史分析卡。自包含读取本机按天历史(HistoryStore),不依赖
 // 各来源的实时采集——工具未运行、本地数据暂时缺失时历史对比依然可见,
@@ -84,14 +85,21 @@ struct SourceWeekCompareCard: View {
 struct SourceHistoryTrendCard: View {
     let source: HistorySource
     let color: Color
+    // 渲染 fixture 注入的按日合计(离屏渲染不读真实 HistoryStore)
+    var injectedTotals: [(date: String, tokens: Int)]? = nil
+    var previewExportStatus: String? = nil
     @State private var hoverDate: String?
     // 与来源页趋势卡同款 7|30 档(Cursor 只有按日合计,无分量无金额)
     @State private var span: SourceTrendCard.Span = .week
+    // 导出完成后的行内反馈(「已导出 <文件名> · 时刻」)
+    @State private var exportStatus: String?
 
     private var history: [HistoryStore.DayPoint] { HistoryStore.all() }
 
     var body: some View {
-        let used = history.contains { ($0.bySource[source] ?? 0) > 0 }
+        // fixture 注入时以注入数据判断可见性(离屏渲染不读真实 HistoryStore)
+        let used = injectedTotals.map { $0.contains { $0.tokens > 0 } }
+            ?? history.contains { ($0.bySource[source] ?? 0) > 0 }
         return Group {
             if used {
                 content
@@ -99,21 +107,38 @@ struct SourceHistoryTrendCard: View {
         }
     }
 
-    private var content: some View {
-        var totals: [String: Int] = [:]
+    /// 有量的日期 → 当日合计(>0 才进表,零天由窗口骨架补)
+    private var totals: [String: Int] {
+        if let injectedTotals {
+            var map: [String: Int] = [:]
+            for entry in injectedTotals where entry.tokens > 0 {
+                map[entry.date] = entry.tokens
+            }
+            return map
+        }
+        var map: [String: Int] = [:]
         for day in history {
             let value = max(day.bySource[source] ?? 0, 0)
-            if value > 0 { totals[day.date] = value }
+            if value > 0 { map[day.date] = value }
         }
-        // 所选档窗口骨架(含零天),保证柱数与日期稳定
+        return map
+    }
+
+    /// 所选档窗口骨架(含零天),保证柱数与日期稳定
+    private var buckets: [(date: String, label: String, value: Int)] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        var buckets: [(date: String, label: String, value: Int)] = []
+        var result: [(date: String, label: String, value: Int)] = []
         for offset in stride(from: -(span.rawValue - 1), through: 0, by: 1) {
             guard let date = calendar.date(byAdding: .day, value: offset, to: today) else { continue }
             let key = DateUtil.key(date)
-            buckets.append((key, Fmt.mmdd(date), totals[key] ?? 0))
+            result.append((key, Fmt.mmdd(date), totals[key] ?? 0))
         }
+        return result
+    }
+
+    private var content: some View {
+        let buckets = buckets
         let captions = buckets.map { (label: $0.label, total: $0.value, parts: [(name: String, value: Int, color: Color)]()) }
         return Card {
             VStack(alignment: .leading, spacing: 4) {
@@ -129,6 +154,19 @@ struct SourceHistoryTrendCard: View {
                     .pickerStyle(.segmented)
                     .controlSize(.mini)
                     .frame(width: 104)
+                    // 导出当前档按日合计 CSV(单系列、附口径行);与来源页
+                    // 分量趋势卡同款按钮与文件名规格
+                    Button {
+                        exportCSV(buckets)
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(buckets.allSatisfy { $0.value == 0 })
+                    .help("导出当前档 CSV（逐日一行按日合计，附口径行）")
+                    .accessibilityLabel("导出趋势 CSV")
                 }
                 ChartHover.caption(hover: hoverDate, buckets: captions)
                 Chart {
@@ -145,7 +183,33 @@ struct SourceHistoryTrendCard: View {
                 .chartXSelection(value: $hoverDate)
                 .tokenYAxis()
                 .frame(height: 100)
+                // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
+                ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
             }
+        }
+    }
+
+    private func exportCSV(_ days: [(date: String, label: String, value: Int)]) {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSSavePanel()
+        panel.title = "导出趋势 CSV"
+        panel.nameFieldStringValue = SourceTrendCSVExport.suggestedFilename(
+            source: source, spanDays: span.rawValue)
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowedContentTypes = [.commaSeparatedText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try SourceTrendCSVExport.makeSingleSeriesCSV(
+                source: source,
+                spanDays: span.rawValue,
+                days: days.map { (date: $0.date, tokens: $0.value) }
+            ).write(to: url, atomically: true, encoding: .utf8)
+            exportStatus = ExportFeedback.text(fileURL: url)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.messageText = "导出趋势 CSV 失败"
+            alert.runModal()
         }
     }
 }
