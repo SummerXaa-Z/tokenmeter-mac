@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.81.0 — 2026-10-03 — 导出全覆盖收尾三件套：分时图 · Cursor 趋势 · 缓存命中
+
+- **24 小时分时图导出 CSV**：四个本地来源页（Claude / Codex / Kimi / Qwen）的「今日分时（Token）」卡头新增导出按钮——四页此前各自手写的同构卡收拢为共用 SourceHourCard 组件，一处加按钮全部受益。逐小时一行（0-23 小时升序、无用量小时照列 0 真实零）+ 合计行；口径行自带来源与「今日逐时（与分时图同口径）」，Qwen 的「小时按 Session 结束时间归属」脚注原样带出（有脚注的来源才带该行）。文件名 `TokenMeter-hours-<来源>-<日期>.csv`。
+- **Cursor 历史趋势卡导出 CSV**：Cursor 页「近 7|30 天 Token」卡头新增导出按钮（单系列按日合计，无分量列——Cursor 仅有订阅周期聚合，不凑不存在的口径）——逐日一行附星期几、零天照列 0、合计行 + 口径行（按日合计来自本机按天历史）。文件名与来源页分量趋势卡同规格 `TokenMeter-trend-Cursor-<7d|30d>-<日期>.csv`。
+- **DeepSeek 缓存命中图导出 CSV**：DeepSeek 页「缓存命中明细」卡头新增导出按钮（摘要右侧，未配置/加载中置灰）——近 7 天滚动窗口含今天逐日一行，命中/未命中/输出三列与图例同名同口径（V4 Flash + Pro 合并），合计行 + 口径行（命中率 = 命中 ÷（命中 + 未命中）、输出不计入分母，窗口合计命中率写进口径行）。文件名 `TokenMeter-deepseek-cache-<日期>.csv`。
+- 三处新导出均带 v3.79 的导出反馈行；三个导出器为纯函数可单测（沿用私有助手拆分风格）。新增 8 个测试（合计 464）：分时导出（小时升序、真实零、合计、Qwen 脚注带出、无脚注来源省略、空柱仅表头、文件名净化）、单系列趋势导出（按日排序无分量列、零天照列、合计、口径行、文件名）、缓存导出（Flash+Pro 合并、滚动窗口外日期丢弃、补零骨架、命中率分母不含输出、文件名）。渲染验证：新增 export-final 夹具页（分时 Qwen 形态带脚注 + Cursor 趋势 injectedTotals 注入 + DeepSeek 缓存合成 7 天三卡同页，明暗两模式三行反馈与三枚导出图标像素 180/94 全量落位）；为拿到干净回归基线，以 HEAD 构建重渲 v3.80 全套 50 页逐一比对——claude/kimi/cursor/deepseek 四组页为新增按钮的预期变化，overview 与 chart-export 夹具为实时数据漂移（今日金额 $14.20→$14.40），pace/settings 为倒计时与相对时间滚动；opencode-full 的分段控件与两个 dark 夹具页的右侧条带在同二进制重复渲染间即抖动（与本次改动无关的渲染非确定性），codex/qwen 页两次均处加载/无数据态（数据时相），无未解释回归。至此全库每张主图表均有导出；余下无导出的仅为周内节律小柱图、回本走势折线与 Skills 榜迷你条等辅助小图。影响范围：`SourceHourCSVExport.swift`（新）、`DeepSeekCacheCSVExport.swift`（新）、`SourceTrendCSVExport.swift`、`SourceDashboardComponents.swift`、`ClaudeView.swift`、`CodexView.swift`、`KimiView.swift`、`QwenCodeView.swift`、`SourceHistoryCards.swift`、`DashboardComponents.swift`、`AppDelegate.swift`。
+
 ## v3.80.0 — 2026-10-03 — 图表导出补全三件套：总览趋势 · 来源页趋势 · 环比卡
 
 - **总览趋势卡导出 CSV**：卡头新增导出按钮——当前范围逐桶一行（1D 档今日逐时、7D/30D 档逐日、「全部」随历史长度自动按日/周/月降采样），来源分列、列序与图例 chips 一致（范围内合计降序）；图例点暗隐藏的来源不导（与所见一致）；API 等价列与悬停金额同口径（无金额留空、合计行金额留空由口径行说明），小时档无逐时金额不设该列、今日合计金额写进口径行。文件名 `TokenMeter-trend-<1d|7d|30d|all>-<日期>.csv`。
