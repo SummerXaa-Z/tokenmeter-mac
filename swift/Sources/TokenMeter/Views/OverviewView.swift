@@ -21,7 +21,7 @@ struct OverviewView: View {
         let data = snapshot
         let entries = toolEntries(for: data)
         ScrollView {
-            VStack(spacing: 10) {
+            VStack(spacing: 0) {
                 header
                 OverviewUsageCard(
                     snapshot: data,
@@ -50,19 +50,8 @@ struct OverviewView: View {
                     snapshot: subscriptionQuotaSnapshot,
                     statuses: subscriptionQuotaStatuses
                 )
-                if !history.isEmpty {
-                    OverviewCompareCard(
-                        history: history,
-                        participants: Set(sourceSelection.sources)
-                    )
-                    OverviewHeatmapCard(
-                        history: history,
-                        participants: Set(sourceSelection.sources)
-                    )
-                }
                 if data.periodTotal > 0 {
                     OverviewTrendCard(snapshot: data, range: range)
-                    OverviewProfileCard(profile: data.profile, range: range)
                     OverviewRankingsCard(
                         rankings: data.rankings,
                         skillRankings: data.skillRankings,
@@ -72,21 +61,41 @@ struct OverviewView: View {
                         onOpenSkill: onOpenSkill
                     )
                     if data.apiReferenceCost.totalTokens > 0 {
-                        OverviewAPICostCard(
-                            summary: data.apiReferenceCost,
-                            range: range,
-                            priorSummary: data.priorAPIReferenceCost,
-                            subscriptionValue: data.subscriptionValue,
-                            roiCurve: data.roiCurve,
-                            coverageNote: data.modelCoverageNote
+                        DisclosureGroup("费用与订阅明细") {
+                            OverviewAPICostCard(
+                                summary: data.apiReferenceCost,
+                                range: range,
+                                priorSummary: data.priorAPIReferenceCost,
+                                subscriptionValue: data.subscriptionValue,
+                                roiCurve: data.roiCurve,
+                                coverageNote: data.modelCoverageNote
+                            )
+                        }
+                        .font(Theme.cardTitleFont)
+                        .padding(.vertical, 12)
+                    }
+                    OverviewProfileCard(profile: data.profile, range: range)
+                }
+                if !history.isEmpty {
+                    OverviewHeatmapCard(
+                        history: history,
+                        participants: Set(sourceSelection.sources)
+                    )
+                    DisclosureGroup("周期对比") {
+                        OverviewCompareCard(
+                            history: history,
+                            participants: Set(sourceSelection.sources)
                         )
                     }
+                    .font(Theme.cardTitleFont)
+                    .padding(.vertical, 12)
                 }
                 Spacer(minLength: 0)
             }
             .padding(14)
         }
         .scrollIndicators(.hidden)
+        .background(Color(nsColor: .controlBackgroundColor))
         .task {
             // 先用本机留存的历史与明细出图，扫描完成后再刷新一次
             reloadHistory()
@@ -292,27 +301,31 @@ struct OverviewView: View {
                         ? "未检测到 Codex 本地数据"
                         : (state.codex.error ?? (state.codexLiveQuotaEnabled
                             ? "尚未获得可验证的官方配额快照"
-                            : "实时查询已关闭，仅展示本地配额快照")))
+                            : "实时查询已关闭，仅展示本地配额快照"))),
+                failed: state.codexEnabled && state.codex.error != nil
             ),
             .init(
                 source: .kimiCode,
                 title: "Kimi Code",
                 loading: state.kimiQuota.loading,
                 message: state.kimiQuota.error ?? "尚未获得 Kimi Code 配额快照",
-                warning: kimiQuotaWarning
+                warning: kimiQuotaWarning,
+                failed: state.kimiQuota.error != nil
             ),
             .init(
                 source: .ark,
                 title: "火山方舟 Agent Plan",
                 loading: state.arkPlanQuota.loading,
-                message: state.arkPlanQuota.error ?? "未检测到已订阅的 Agent/Coding Plan"
+                message: state.arkPlanQuota.error ?? "未检测到已订阅的 Agent/Coding Plan",
+                failed: state.arkPlanQuota.error != nil
             ),
             .init(
                 source: .zhipu,
                 title: "智谱 GLM",
                 loading: state.zhipuQuota.loading,
                 message: state.zhipuQuota.error ?? "未配置 API Key，可在设置中添加",
-                warning: zhipuQuotaWarning
+                warning: zhipuQuotaWarning,
+                failed: state.zhipuQuota.error != nil
             ),
         ]
     }

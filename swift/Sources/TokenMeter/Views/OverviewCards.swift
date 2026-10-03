@@ -18,19 +18,22 @@ struct SubscriptionQuotaSourceStatus: Identifiable {
     let loading: Bool
     let message: String
     let warning: String?
+    let failed: Bool
 
     init(
         source: SubscriptionQuotaSource,
         title: String,
         loading: Bool,
         message: String,
-        warning: String? = nil
+        warning: String? = nil,
+        failed: Bool = false
     ) {
         self.source = source
         self.title = title
         self.loading = loading
         self.message = message
         self.warning = warning
+        self.failed = failed
     }
 
     var id: String { source.rawValue }
@@ -54,22 +57,38 @@ struct OverviewUsageCard: View {
     }
 
     var body: some View {
-        Card {
+        OverviewSection {
             VStack(alignment: .leading, spacing: 0) {
                 Label("\(range.scopeTitle) AI Coding 用量", systemImage: "calendar")
                     .font(.system(size: 12, weight: .semibold))
-                // 数字当主角、单位退后：整行同字号会让 "tokens" 与数值抢重点
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
                     Text(OverviewSourceCollectionStatus.totalIsUnknown(
                         snapshot.periodTotal, statuses: collectionStatuses
                     ) ? "—" : Fmt.tokensShort(snapshot.periodTotal))
                         .font(Theme.heroFont)
-                        .foregroundStyle(Theme.brand)
+                        .foregroundStyle(.primary)
                     Text("tokens")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Theme.brand.opacity(0.55))
+                        .font(Theme.footnoteFont)
+                        .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Text("API 等价参考")
+                            .font(Theme.detailFont).foregroundStyle(.secondary)
+                        Text(snapshot.apiReferenceCost.amounts.isEmpty ? "—" : Fmt.usd(snapshot.apiReferenceCost.total))
+                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                            .foregroundStyle(Theme.codex)
+                        Text(snapshot.apiReferenceCost.coverage.map { "明细价格覆盖 \(Int(($0 * 100).rounded()))%" } ?? "暂无参考价")
+                            .font(Theme.footnoteFont).foregroundStyle(.secondary)
+                    }
+                    .help("按模型 Token 和参考单价估算，不是实际账单。缺价模型不计入金额；详情可查看价格来源和订阅费用。")
                 }
                 .padding(.top, 5)
+                if let note = snapshot.modelCoverageNote {
+                    Text(note).font(Theme.footnoteFont).foregroundStyle(.secondary)
+                        .padding(.top, 5)
+                }
                 // 1D 档下补一行参照:今天 vs 近 7 天日均,回答"今天算多吗"
                 if range == .day, weekDailyAverage > 0 {
                     HStack(spacing: 5) {
@@ -101,50 +120,90 @@ struct OverviewUsageCard: View {
                             ? Color.orange : Color.secondary)
                         .padding(.top, 4)
                 }
+                if let rate = snapshot.profile.cacheHitRate {
+                    QuotaBar(progress: rate, tint: Theme.codex)
+                        .padding(.top, 10)
+                    HStack {
+                        Text("缓存 \(Fmt.tokensShort(snapshot.profile.cachedInputTokens))")
+                        Spacer()
+                        Text("非缓存输入 \(Fmt.tokensShort(snapshot.profile.nonCachedInputTokens))")
+                        Spacer()
+                        Text("复用 \(Int((rate * 100).rounded()))%")
+                    }
+                    .font(Theme.footnoteFont).foregroundStyle(.secondary)
+                    .padding(.top, 5)
+                    .help("按有模型明细的输入 Token 计算，不含 Cursor；不是全部 Token 的缓存占比。")
+                }
                 if !entries.isEmpty {
                     Divider().opacity(0.35).padding(.top, 8)
                 }
-                ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                    if index > 0 { Divider().opacity(0.35) }
-                    Button { onOpen(entry.provider) } label: {
-                        HStack(spacing: 9) {
-                            Image(systemName: entry.provider.overviewIcon)
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(entry.provider.overviewColor)
-                                .frame(width: 20)
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 5) {
-                                    Text(entry.provider.rawValue)
-                                        .font(.system(size: 11, weight: .semibold))
-                                    if let running = entry.running {
-                                        Circle()
-                                            .fill(running ? Color.green : Color.secondary.opacity(0.35))
-                                            .frame(width: 5, height: 5)
-                                    }
-                                }
-                                Text(entry.detail)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                            Spacer(minLength: 4)
-                            if let tokens = entry.tokens {
-                                Text(Fmt.tokensShort(tokens))
-                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(entry.provider.overviewColor)
-                            }
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                        .padding(.vertical, 7)
-                        .contentShape(Rectangle())
-                        .hoverHighlight()
+                sourceRows(attentionEntries)
+                if !otherEntries.isEmpty {
+                    DisclosureGroup("来源用量 · \(otherEntries.count) 个工具") {
+                        sourceRows(otherEntries)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("TokenMeter.Source.\(entry.provider.rawValue)")
+                    .font(Theme.detailFont)
+                    .padding(.top, 8)
                 }
             }
+        }
+    }
+
+    private var attentionEntries: [OverviewToolEntry] {
+        entries.filter { entry in
+            collectionStatuses.contains {
+                $0.provider == entry.provider && ($0.phase == .failed || $0.phase == .loading)
+            }
+        }
+    }
+
+    private var otherEntries: [OverviewToolEntry] {
+        entries.filter { entry in !attentionEntries.contains { $0.id == entry.id } }
+    }
+
+    private func sourceRows(_ items: [OverviewToolEntry]) -> some View {
+        ForEach(Array(items.enumerated()), id: \.element.id) { index, entry in
+            if index > 0 { Divider().opacity(0.35) }
+            Button { onOpen(entry.provider) } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: entry.provider.overviewIcon)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(entry.provider.overviewColor)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 5) {
+                            Text(entry.provider.rawValue)
+                                .font(.system(size: 11, weight: .semibold))
+                            if let running = entry.running {
+                                Circle()
+                                    .fill(running ? Color.green : Color.secondary.opacity(0.35))
+                                    .frame(width: 5, height: 5)
+                            }
+                        }
+                        Text(entry.detail)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    if let tokens = entry.tokens {
+                        QuotaBar(progress: snapshot.periodTotal > 0 ? Double(tokens) / Double(snapshot.periodTotal) : 0,
+                                 tint: entry.provider.overviewColor)
+                            .frame(width: 62)
+                        Text(Fmt.tokensShort(tokens))
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundStyle(entry.provider.overviewColor)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
+                .hoverHighlight()
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("TokenMeter.Source.\(entry.provider.rawValue)")
         }
     }
 }
@@ -164,7 +223,7 @@ struct OverviewDeepSeekPlatformCard: View {
     let onOpen: () -> Void
 
     var body: some View {
-        Card {
+        OverviewSection {
             Button(action: onOpen) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 7) {
@@ -303,12 +362,12 @@ struct OverviewSubscriptionQuotaCard: View {
     let statuses: [SubscriptionQuotaSourceStatus]
 
     var body: some View {
-        Card {
+        OverviewSection {
             VStack(alignment: .leading, spacing: 9) {
                 Label("订阅剩余量", systemImage: "fuelpump")
                     .font(.system(size: 12, weight: .semibold))
 
-                ForEach(Array(statuses.enumerated()), id: \.element.id) { index, status in
+                ForEach(Array(visibleStatuses.enumerated()), id: \.element.id) { index, status in
                     if index > 0 { Divider().opacity(0.35) }
                     let groups = snapshot.groups.filter { $0.source == status.source }
                     if groups.isEmpty {
@@ -324,22 +383,46 @@ struct OverviewSubscriptionQuotaCard: View {
                                 .foregroundStyle(.orange)
                                 .padding(.leading, 26)
                                 .fixedSize(horizontal: false, vertical: true)
+                        } else if status.failed {
+                            Label("\(status.message)（显示上次成功数据）", systemImage: "exclamationmark.triangle")
+                                .font(Theme.detailFont).foregroundStyle(.orange)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
 
-                if hasPace {
-                    Text("刻度线为匀速消耗此刻应剩的位置；节奏按窗口内已用比例线性外推，仅供参考。")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
+                if !otherStatuses.isEmpty {
+                    DisclosureGroup("其他额度来源（\(otherStatuses.count)）") {
+                        ForEach(otherStatuses) { placeholder($0).padding(.top, 5) }
+                    }
+                    .font(Theme.detailFont).foregroundStyle(.secondary)
                 }
+
                 Divider().opacity(0.35)
-                Text("额度只读：Codex 默认读取本地快照，主动开启实时配额后才使用本机登录态查询官方接口；Kimi 使用用户配置的 Key 查询官方接口，未配置时仅访问本机 127.0.0.1；方舟只调用本机已登录 arkcli；智谱使用用户配置的 Key 查询所选域名的官方接口。本地会话和统计结果不会上传。")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                DisclosureGroup("额度查询方式 · 本地会话不会上传") {
+                    if hasPace {
+                        Text("刻度线为匀速消耗此刻应剩的位置；节奏按窗口内已用比例线性外推，仅供参考。")
+                            .font(Theme.footnoteFont).foregroundStyle(.secondary)
+                    }
+                    Text("Codex 默认读取本地快照，开启实时配额后才使用本机登录态查询官方接口。Kimi 使用配置的 Key 查询官方接口，未配置时仅访问本机 127.0.0.1。方舟只调用本机已登录 arkcli；智谱使用配置的 Key 查询所选域名的官方接口。")
+                        .font(Theme.detailFont).foregroundStyle(.secondary)
+                        .padding(.top, 5)
+                }
+                .font(Theme.footnoteFont).foregroundStyle(.secondary)
             }
         }
         .accessibilityIdentifier("TokenMeter.SubscriptionQuota")
+    }
+
+    private var visibleStatuses: [SubscriptionQuotaSourceStatus] {
+        statuses.filter { status in
+            status.loading || status.failed || status.warning != nil
+                || snapshot.groups.contains { $0.source == status.source }
+        }
+    }
+
+    private var otherStatuses: [SubscriptionQuotaSourceStatus] {
+        statuses.filter { status in !visibleStatuses.contains { $0.id == status.id } }
     }
 
     private var hasPace: Bool {
@@ -358,7 +441,7 @@ struct OverviewSubscriptionQuotaCard: View {
                     .font(.system(size: 11, weight: .semibold))
                 Text(status.loading ? "正在读取剩余额度…" : status.message)
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(status.failed ? Color.orange : Color.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 4)
@@ -562,7 +645,7 @@ struct OverviewProfileCard: View {
     let range: UsageHistoryRange
 
     var body: some View {
-        Card {
+        OverviewSection {
             VStack(alignment: .leading, spacing: 9) {
                 Label("个人 AI 画像", systemImage: "person.crop.circle.badge.checkmark")
                     .font(.system(size: 12, weight: .semibold))
@@ -722,6 +805,22 @@ struct OverviewRankingsCard: View {
 
     private var activeSort: ModelSort { previewSort ?? sort }
 
+    private func displayedModelValue(_ entry: PersonalUsageRankings.ModelEntry) -> Double? {
+        if activeSort == .usage { return Double(entry.totalTokens) }
+        if let sortValueFor {
+            let value = sortValueFor(entry.source, entry.model, activeSort)
+            return value >= 0 ? value : nil
+        }
+        guard let summary = CodingModelDetail.summary(
+            source: entry.source, model: entry.model,
+            liveDayModels: CodingModelDetailView.liveDayModels(entry.source, state: state),
+            windowDays: activeSort == .week ? 7 : 30) else { return nil }
+        if activeSort == .usd {
+            return (summary.coverage ?? 0) > 0 ? summary.totalUSD : nil
+        }
+        return Double(summary.tally.total)
+    }
+
     /// 稳定降序排序(键相等保持原顺序)。纯函数供单元测试。
     static func sortedBySortValue(
         _ models: [PersonalUsageRankings.ModelEntry],
@@ -756,10 +855,7 @@ struct OverviewRankingsCard: View {
     private var sortedModels: [PersonalUsageRankings.ModelEntry] {
         if activeSort == .usage { return rankings.models }
         return Self.sortedBySortValue(rankings.models) { entry in
-            if let sortValueFor { return sortValueFor(entry.source, entry.model, activeSort) }
-            return Self.modelSortValue(
-                for: entry, sort: activeSort,
-                liveDayModels: CodingModelDetailView.liveDayModels(entry.source, state: state))
+            displayedModelValue(entry) ?? -1
         }
     }
 
@@ -947,7 +1043,9 @@ struct OverviewRankingsCard: View {
     }
 
     var body: some View {
-        Card {
+        let values = Dictionary(uniqueKeysWithValues: rankings.models.map { ($0.id, displayedModelValue($0)) })
+        let total = values.values.compactMap { $0 }.reduce(0, +)
+        OverviewSection {
             VStack(alignment: .leading, spacing: 9) {
                 Label("模型与 Skills", systemImage: "list.number")
                     .font(.system(size: 12, weight: .semibold))
@@ -955,7 +1053,7 @@ struct OverviewRankingsCard: View {
                 HStack {
                     Text("模型榜").font(.system(size: 11, weight: .semibold))
                     Spacer()
-                    Picker("排序", selection: $sort) {
+                    Picker("排序", selection: Binding(get: { activeSort }, set: { sort = $0 })) {
                         ForEach(ModelSort.allCases, id: \.self) { option in
                             Text(option.rawValue).tag(option)
                         }
@@ -979,6 +1077,8 @@ struct OverviewRankingsCard: View {
                     .help("导出模型榜 CSV（当前排序的完整榜单）")
                     .accessibilityLabel("导出模型榜 CSV")
                 }
+                Text(activeSort == .usd ? "近 30 天 API 等价参考" : (activeSort == .week ? "近 7 天 Token 占比" : "\(range.scopeTitle) Token 占比"))
+                    .font(Theme.footnoteFont).foregroundStyle(.secondary)
                 if rankings.models.isEmpty {
                     empty("刷新任一本地用量来源后生成")
                 } else {
@@ -988,11 +1088,10 @@ struct OverviewRankingsCard: View {
                             onOpenModel(entry.source, entry.model)
                         } label: {
                             rankingRow(
-                                rank: index + 1,
                                 name: entry.model,
                                 source: entry.source,
-                                tokens: entry.totalTokens,
-                                share: entry.share,
+                                value: values[entry.id] ?? nil,
+                                share: activeSort == .usage ? entry.share : ((values[entry.id] ?? nil).flatMap { total > 0 ? $0 / total : nil }),
                                 showsSource: true,
                                 highlighted: previewId == entry.id,
                                 sparkline: sparklineValues(source: entry.source, model: entry.model),
@@ -1022,11 +1121,9 @@ struct OverviewRankingsCard: View {
                     modelHoverCaption
                 }
 
-                Text("用量按所选范围排序；等价按近 30 天、近 7 天按各自窗口排序。悬停查用量，点击模型看详情；右上角导出当前榜单。")
+                Text("点击模型看明细；悬停查近 30 天用量。")
                     .font(.system(size: 10)).foregroundStyle(.secondary)
-                    .help("参考单价为输入 / 输出每百万 tokens；缺价不标。小柱图为近 30 天逐日用量。没有对应窗口明细的行排在末尾，CSV 缺少的数值留空。")
-                Text("模型榜保留采集来源；Cursor 当前只有订阅周期聚合，暂不混入模型榜。")
-                    .font(.system(size: 10)).foregroundStyle(.tertiary)
+                    .help("用量按所选范围排序；等价按近 30 天、近 7 天按各自窗口排序。小柱图为近 30 天逐日用量。没有对应窗口明细的行排在末尾，CSV 缺少的数值留空。模型榜保留采集来源；Cursor 只有订阅周期聚合，不混入模型榜。")
                 if let coverageNote {
                     Text(coverageNote)
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
@@ -1077,7 +1174,7 @@ struct OverviewRankingsCard: View {
                             onOpenSkill(entry, activeSkillSourceFilter, skillRankings.enabledSources)
                         } label: {
                             skillRow(
-                                rank: index + 1, entry: entry,
+                                entry: entry,
                                 highlighted: (hoverSkill ?? previewSkillEntry)?.id == entry.id,
                                 weekly: skillWeeklyCounts(name: entry.name),
                                 onWeekHover: { weekIndex in
@@ -1107,9 +1204,9 @@ struct OverviewRankingsCard: View {
                     skillHoverCaption
                 }
 
-                Text("仅计工具确认的调用。点击来源徽标筛选，次数、近 13 周趋势和导出随来源变化；再次点击还原，点击 Skill 查看详情。")
+                Text("点击来源筛选，点击 Skill 看明细。")
                     .font(.system(size: 10)).foregroundStyle(.secondary)
-                    .help("Claude 统计原生 Skill 工具，Codex 统计实际读取标准 SKILL.md，Copilot 统计 skill.invoked；普通消息提及不计入。周趋势只含已启用来源，悬停查单周；右上角导出当前筛选的完整榜单 CSV。")
+                    .help("只计工具确认的调用：Claude 统计原生 Skill 工具，Codex 统计实际读取标准 SKILL.md，Copilot 统计 skill.invoked；普通消息提及不计入。点击来源后，次数、近 13 周趋势、详情与导出随筛选变化；再次点击还原。")
                 // 导出反馈行:模型榜与 Skills 榜共用,保存面板点完「存储」后可见
                 ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
             }
@@ -1280,40 +1377,47 @@ struct OverviewRankingsCard: View {
     }
 
     private func rankingRow(
-        rank: Int,
         name: String,
         source: HistorySource,
-        tokens: Int,
-        share: Double,
+        value: Double?,
+        share: Double?,
         showsSource: Bool,
         highlighted: Bool = false,
         sparkline: [(date: String, tokens: Int)]? = nil,
         onDayHover: ((Int?) -> Void)? = nil,
         highlightOverride: Int? = nil
     ) -> some View {
-        HStack(spacing: 7) {
-            rankLabel(rank)
-            Circle().fill(source.overviewColor).frame(width: 6, height: 6)
-            Text(name).font(.system(size: 11, weight: .medium)).lineLimit(1)
-            if showsSource { sourceBadge(source) }
-            Spacer(minLength: 4)
-            if let sparkline {
-                ModelSparkline(
-                    values: sparkline.map(\.tokens),
-                    color: source.overviewColor,
-                    onDayHover: onDayHover,
-                    highlightOverride: highlightOverride)
+        VStack(spacing: 5) {
+            HStack(spacing: 7) {
+                Circle().fill(source.overviewColor).frame(width: 6, height: 6)
+                Text(name).font(Theme.rowTitleFont).lineLimit(1)
+                    .help(name)
+                if showsSource { sourceBadge(source) }
+                Spacer(minLength: 4)
+                Text(value.map { activeSort == .usd ? Fmt.usd($0) : Fmt.tokensShort(Int($0)) } ?? "—")
+                    .font(Theme.detailFont).foregroundStyle(.secondary)
+                    .fixedSize()
+                Text(share.map { "\(Int(($0 * 100).rounded()))%" } ?? "—")
+                    .font(Theme.rowTitleFont).frame(width: 35, alignment: .trailing)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text("\(Fmt.tokensShort(tokens)) · \(Int((share * 100).rounded()))%")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                if let price = ModelPriceCheatSheet.caption(model: name) {
-                    Text(price)
-                        .font(.system(size: 9)).foregroundStyle(.tertiary)
+            HStack(spacing: 10) {
+                if let share {
+                    QuotaBar(progress: share, tint: source.overviewColor)
+                } else {
+                    Text(activeSort == .usd ? "暂无可计价明细" : "暂无该窗口明细")
+                        .font(Theme.footnoteFont).foregroundStyle(.secondary)
+                    Spacer(minLength: 4)
+                }
+                if let sparkline {
+                    ModelSparkline(
+                        values: sparkline.map(\.tokens), color: source.overviewColor,
+                        onDayHover: onDayHover, highlightOverride: highlightOverride)
                 }
             }
         }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .help(ModelPriceCheatSheet.caption(model: name).map { "参考输入 / 输出单价：\($0)" } ?? "暂无参考单价")
         .background {
             // 高亮底色向两侧出血 4pt,行文本与卡内标题/脚注保持对齐
             RoundedRectangle(cornerRadius: 4)
@@ -1323,7 +1427,6 @@ struct OverviewRankingsCard: View {
     }
 
     private func skillRow(
-        rank: Int,
         entry: PersonalSkillRankings.Entry,
         highlighted: Bool = false,
         weekly: [(weekOf: String, count: Int)]? = nil,
@@ -1332,54 +1435,52 @@ struct OverviewRankingsCard: View {
         onSourceTap: ((HistorySource) -> Void)? = nil,
         activeFilter: HistorySource? = nil
     ) -> some View {
-        HStack(spacing: 7) {
-            rankLabel(rank)
-            Image(systemName: "sparkles")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.brand)
-            Text(entry.name).font(.system(size: 11, weight: .medium)).lineLimit(1)
-            ForEach(Array(entry.sources.prefix(2))) { sourceCount in
-                // 徽标可点:只看该来源的 Skill 调用(再点/点胶囊还原)。
-                // 行本身是 Button(进详情),嵌套 Button 的命中区各自独立。
-                Button {
-                    onSourceTap?(sourceCount.source)
-                } label: {
-                    sourceBadge(
-                        sourceCount.source,
-                        active: sourceCount.source == activeFilter)
+        VStack(spacing: 5) {
+            HStack(spacing: 7) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.brand)
+                Text(entry.name).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                ForEach(Array(entry.sources.prefix(2))) { sourceCount in
+                    // 徽标可点:只看该来源的 Skill 调用(再点/点胶囊还原)。
+                    // 行本身是 Button(进详情),嵌套 Button 的命中区各自独立。
+                    Button {
+                        onSourceTap?(sourceCount.source)
+                    } label: {
+                        sourceBadge(
+                            sourceCount.source,
+                            active: sourceCount.source == activeFilter)
+                    }
+                    .buttonStyle(.plain)
+                    .help("只看 \(sourceCount.source.overviewName) 的 Skill 调用")
+            }
+                if entry.sources.count > 2 {
+                    Text("+\(entry.sources.count - 2)")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+                Spacer(minLength: 4)
+                Text("\(Fmt.int(entry.invocationCount))次")
+                    .font(Theme.detailFont).foregroundStyle(.secondary).fixedSize()
+                Text("\(Int((entry.share * 100).rounded()))%")
+                    .font(Theme.rowTitleFont).frame(width: 35, alignment: .trailing)
+            }
+            HStack(spacing: 10) {
+                QuotaBar(progress: entry.share, tint: Theme.brand)
+                if let weekly {
+                    ModelSparkline(
+                        values: weekly.map(\.count), color: Theme.brand,
+                        onDayHover: onWeekHover, highlightOverride: highlightOverride)
                 }
-                .buttonStyle(.plain)
-                .help("只看 \(sourceCount.source.overviewName) 的 Skill 调用")
             }
-            if entry.sources.count > 2 {
-                Text("+\(entry.sources.count - 2)")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 4)
-            if let weekly {
-                ModelSparkline(
-                    values: weekly.map(\.count),
-                    color: Theme.brand,
-                    onDayHover: onWeekHover,
-                    highlightOverride: highlightOverride)
-            }
-            Text("\(Fmt.int(entry.invocationCount))次 · \(Int((entry.share * 100).rounded()))%")
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
         }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
         .background {
             // 高亮底色向两侧出血 4pt,行文本与卡内标题/脚注保持对齐
             RoundedRectangle(cornerRadius: 4)
                 .fill(Color.primary.opacity(highlighted ? 0.05 : 0))
                 .padding(.horizontal, -4)
         }
-    }
-
-    private func rankLabel(_ rank: Int) -> some View {
-        Text("\(rank)")
-            .font(.system(size: 11, weight: .bold, design: .rounded))
-            .foregroundStyle(rank <= 3 ? Theme.brand : .secondary)
-            .frame(width: 14)
     }
 
     private func sourceBadge(_ source: HistorySource, active: Bool = false) -> some View {
@@ -1445,7 +1546,7 @@ struct OverviewAPICostCard: View {
 
     var body: some View {
         let coverage = summary.coverage ?? 0
-        Card {
+        OverviewSection {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Label("\(range.scopeTitle) API 等价参考", systemImage: "dollarsign.circle")
@@ -1631,7 +1732,7 @@ struct OverviewTrendCard: View {
     ]
 
     var body: some View {
-        Card {
+        OverviewSection {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Label(

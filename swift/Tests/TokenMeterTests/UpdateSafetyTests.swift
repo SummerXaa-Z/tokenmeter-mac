@@ -183,6 +183,37 @@ final class UpdateSafetyTests: XCTestCase {
         }
     }
 
+    func testFailedLaunchRecoversOriginalWhenMoveBackToStageFails() throws {
+        try withInstallerFixture { fixture in
+            try fixture.run(openExit: 1, failRollbackStageMove: true)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.target.appendingPathComponent("old-marker").path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.target.appendingPathComponent("new-marker").path))
+            XCTAssertEqual(try String(contentsOf: fixture.root.appendingPathComponent("open-attempts"), encoding: .utf8), "new\nold\n")
+            XCTAssertEqual(try String(contentsOf: fixture.root.appendingPathComponent("result"), encoding: .utf8), "failed\n")
+            let retainedFiles = FileManager.default.enumerator(at: fixture.root, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? []
+            XCTAssertEqual(retainedFiles.filter { $0.lastPathComponent == "new-marker" }.count, 1)
+        }
+    }
+
+    func testFailedLaunchPreservesBackupWhenCandidateCannotBeMovedDuringRollback() throws {
+        try withInstallerFixture { fixture in
+            try fixture.run(openExit: 1, failRollbackStageMove: true, failRollbackRecoveryMove: true)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.target.appendingPathComponent("new-marker").path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.backup.appendingPathComponent("old-marker").path))
+            XCTAssertEqual(try String(contentsOf: fixture.root.appendingPathComponent("open-attempts"), encoding: .utf8), "new\n")
+            XCTAssertEqual(try String(contentsOf: fixture.root.appendingPathComponent("result"), encoding: .utf8), "failed\n")
+        }
+    }
+
+    func testFailedLaunchDoesNotReopenRestoredOriginalWhenVerificationFails() throws {
+        try withInstallerFixture { fixture in
+            try fixture.run(openExit: 1, failRollbackStageMove: true, failRestoredVerify: true)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.target.appendingPathComponent("old-marker").path))
+            XCTAssertEqual(try String(contentsOf: fixture.root.appendingPathComponent("open-attempts"), encoding: .utf8), "new\n")
+            XCTAssertEqual(try String(contentsOf: fixture.root.appendingPathComponent("result"), encoding: .utf8), "failed\n")
+        }
+    }
+
     func testSuccessfulReplacementRetainsRecoveryBackup() throws {
         try withInstallerFixture { fixture in
             try fixture.run()
@@ -219,12 +250,33 @@ private struct InstallerFixture {
         try Data("new".utf8).write(to: stage.appendingPathComponent("new-marker"))
     }
 
-    func run(verifyExit: Int = 0, openExit: Int = 0, failStageMove: Bool = false, failStageVerifyOnly: Bool = false) throws {
-        let verify = try tool("verify", "if [ \"${@: -1}\" = \"$TM_STAGE\" ] && [ \"\(failStageVerifyOnly ? "yes" : "no")\" = yes ]; then exit 7; fi\nexit \(verifyExit)")
-        let open = try tool("open", "touch \"${TM_RESULT%/*}/opened\"\nexit \(openExit)")
+    func run(verifyExit: Int = 0, openExit: Int = 0, failStageMove: Bool = false, failStageVerifyOnly: Bool = false,
+             failRollbackStageMove: Bool = false, failRollbackRecoveryMove: Bool = false, failRestoredVerify: Bool = false) throws {
+        let verify = try tool("verify", """
+        if [ "${@: -1}" = "$TM_STAGE" ] && [ "\(failStageVerifyOnly ? "yes" : "no")" = yes ]; then exit 7; fi
+        if [ "${@: -1}" = "$TM_TARGET" ] && [ -e "${TM_RESULT%/*}/open-attempts" ] && [ "\(failRestoredVerify ? "yes" : "no")" = yes ]; then exit 9; fi
+        exit \(verifyExit)
+        """)
+        let open = try tool("open", """
+        touch "${TM_RESULT%/*}/opened"
+        if [ -e "$1/new-marker" ]; then
+          printf 'new\\n' >> "${TM_RESULT%/*}/open-attempts"
+          exit \(openExit)
+        fi
+        if [ -e "$1/old-marker" ]; then
+          printf 'old\\n' >> "${TM_RESULT%/*}/open-attempts"
+          exit 0
+        fi
+        exit 1
+        """)
         let plist = try tool("plist", "case \"$2\" in *CFBundleIdentifier) echo com.deepseek.monitor.mac;; *CFBundleShortVersionString) echo 4.0.0;; *CFBundleExecutable) echo TokenMeter;; *) exit 1;; esac")
         let arch = try tool("arch", "echo 'Mach-O universal binary x86_64 arm64'")
-        let move = try tool("move", "if [ \"$1\" = \"$TM_STAGE\" ] && [ \"\(failStageMove ? "yes" : "no")\" = yes ]; then exit 7; fi\nexec /bin/mv \"$@\"")
+        let move = try tool("move", """
+        if [ "$1" = "$TM_STAGE" ] && [ "\(failStageMove ? "yes" : "no")" = yes ]; then exit 7; fi
+        if [ "$1" = "$TM_TARGET" ] && [ "$2" = "$TM_STAGE" ] && [ "\(failRollbackStageMove ? "yes" : "no")" = yes ]; then exit 7; fi
+        if [ "$1" = "$TM_TARGET" ] && [ "$2" != "$TM_STAGE" ] && [ "$2" != "$TM_BACKUP" ] && [ "\(failRollbackRecoveryMove ? "yes" : "no")" = yes ]; then exit 7; fi
+        exec /bin/mv "$@"
+        """)
         let script = root.appendingPathComponent("installer.sh")
         try UpdateInstallerScript.source.write(to: script, atomically: true, encoding: .utf8)
         let process = Process()

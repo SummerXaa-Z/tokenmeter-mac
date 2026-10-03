@@ -296,7 +296,13 @@ enum UpdateInstallerScript {
     rollback() {
       if [ -e "$TM_BACKUP" ]; then
         if [ -e "$TM_TARGET" ]; then
-          "$TM_MOVE" "$TM_TARGET" "$TM_STAGE" || return 1
+          if ! "$TM_MOVE" "$TM_TARGET" "$TM_STAGE"; then
+            # Keep the failed candidate in private staging if its original slot is unavailable.
+            # If this also fails, leave the old backup untouched and do not reopen the target.
+            local recoveryDirectory
+            recoveryDirectory=$(/usr/bin/mktemp -d "${TM_STAGE%/*}/recovery.XXXXXXXX") || return 1
+            "$TM_MOVE" "$TM_TARGET" "$recoveryDirectory/TokenMeter.app" || return 1
+          fi
         fi
         "$TM_MOVE" "$TM_BACKUP" "$TM_TARGET" || return 1
       fi

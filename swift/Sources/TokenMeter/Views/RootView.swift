@@ -145,7 +145,7 @@ struct RootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(width: Theme.panelWidth, height: Theme.panelHeight, alignment: .top)
-        .background(.regularMaterial)
+        .background(Color(nsColor: .controlBackgroundColor))
         // 详情对应来源被关闭时直接回首页；本地数据路径暂时消失不抹掉历史入口。
         .onChange(of: sources) { _, newSources in
             if case .source(let provider) = view, !newSources.contains(provider) {

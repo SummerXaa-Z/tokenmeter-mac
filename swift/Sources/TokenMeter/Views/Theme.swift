@@ -81,6 +81,19 @@ struct Card<Content: View>: View {
     }
 }
 
+// 总览用轻分隔线组织连续读数，避免每个指标都套一层灰色卡片。
+struct OverviewSection<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        content
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .bottom) {
+                Divider().opacity(0.45)
+            }
+    }
+}
+
 // 全 app 统一的细进度条（4pt 胶囊）：用量占比、配额剩余、覆盖率都用它，
 // 不再各页混用 GeometryReader 手绘与内联 ProgressView。
 struct QuotaBar: View {

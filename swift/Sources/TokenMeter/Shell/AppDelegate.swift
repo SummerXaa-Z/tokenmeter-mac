@@ -996,6 +996,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 生成 <page>-<appearance>.png 后退出。窗口放在屏幕外，用户无感。
     private func runUIRender(outputPath: String) {
         NSApp.setActivationPolicy(.accessory)
+        let overviewOnly = ProcessInfo.processInfo.arguments.contains("--ui-render-overview-only")
+        if overviewOnly { PreviewData.seed(appState) }
         let dir = URL(fileURLWithPath: outputPath)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
@@ -1026,7 +1028,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             finishedAt: fixtureNow.addingTimeInterval(-90),
             failure: "usage_record.jsonl 解析失败：第 3 行不是合法 JSON"))
 
-        let pages: [(name: String, view: NSView)] = [
+        let pages: [(name: String, view: NSView)] = overviewOnly ? [
+            ("overview", hosting(RootView())),
+            ("overview-full", hosting(OverviewView(
+                range: .month, sources: [.claude, .codex],
+                onOpenSource: { _ in }, onSettings: {}), height: 1800)),
+            ("overview-day-full", hosting(OverviewView(
+                range: .day, sources: [.claude, .codex],
+                onOpenSource: { _ in }, onSettings: {}), height: 1800)),
+        ] : [
             ("collection-status-fixture", hosting(Self.collectionStatusFixture(), height: 620)),
             ("overview", hosting(RootView())),
             ("dashboard", hosting(
