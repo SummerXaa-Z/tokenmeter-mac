@@ -33,40 +33,21 @@ struct HistoryStore {
     }
 
     // 磁盘结构：源 → 日期(YYYY-MM-DD) → 记录
-    private typealias Table = [String: [String: DayEntry]]
-
-    private static let fileURL: URL = {
-        let base = RuntimeEnvironment.applicationSupportDirectory
-        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        return base.appendingPathComponent("history.json")
-    }()
-
-    private static let lock = NSLock()
-
-    private static func read() -> Table {
-        guard let data = try? Data(contentsOf: fileURL),
-              let table = try? JSONDecoder().decode(Table.self, from: data) else { return [:] }
-        return table
-    }
-
-    private static func write(_ table: Table) {
-        guard let data = try? JSONEncoder().encode(table) else { return }
-        try? data.write(to: fileURL, options: .atomic)
-    }
+    fileprivate typealias Table = [String: [String: DayEntry]]
+    private static let storage = HistoryFileStore(fileURL:
+        RuntimeEnvironment.applicationSupportDirectory.appendingPathComponent("history.json"))
 
     // 把某源窗口内的按日用量 upsert 进库。days: 日期 → (token, cost?)
     static func record(_ source: HistorySource, days: [(date: String, totalTokens: Int, cost: Double?)]) {
-        guard !days.isEmpty else { return }
-        lock.lock(); defer { lock.unlock() }
-        var table = read()
-        var bucket = table[source.rawValue] ?? [:]
-        for d in days {
-            // 全 0 的补零天不写，避免把"无数据"固化成"0 用量"覆盖真实历史
-            guard d.totalTokens > 0 else { continue }
-            bucket[d.date] = DayEntry(totalTokens: d.totalTokens, cost: d.cost)
-        }
-        table[source.rawValue] = bucket
-        write(table)
+        // 仅兼容旧测试/调用；应用持久化管线使用抛错入口。
+        _ = try? recordChecked(source, days: days)
+    }
+
+    @discardableResult
+    static func recordChecked(
+        _ source: HistorySource, days: [(date: String, totalTokens: Int, cost: Double?)]
+    ) throws -> Bool {
+        try storage.recordChecked(source, days: days)
     }
 
     // 用完整重扫得到的权威窗口修正已有记录。与 record 的区别是：0 代表
@@ -78,15 +59,15 @@ struct HistoryStore {
         _ source: HistorySource,
         authoritativeDays: [(date: String, totalTokens: Int, cost: Double?)]
     ) -> Bool {
-        guard !authoritativeDays.isEmpty else { return false }
-        lock.lock(); defer { lock.unlock() }
-        var table = read()
-        let existing = table[source.rawValue] ?? [:]
-        let updated = reconciledBucket(existing, authoritativeDays: authoritativeDays)
-        guard updated != existing else { return false }
-        table[source.rawValue] = updated
-        write(table)
-        return true
+        (try? reconcileChecked(source, authoritativeDays: authoritativeDays)) ?? false
+    }
+
+    @discardableResult
+    static func reconcileChecked(
+        _ source: HistorySource,
+        authoritativeDays: [(date: String, totalTokens: Int, cost: Double?)]
+    ) throws -> Bool {
+        try storage.reconcileChecked(source, authoritativeDays: authoritativeDays)
     }
 
     // 纯函数留给回归测试：测试不需要触碰用户真实的 history.json。
@@ -123,19 +104,20 @@ struct HistoryStore {
     }
 
     static func recent(_ count: Int = 30) -> [DayPoint] {
-        lock.lock(); let table = read(); lock.unlock()
-        let now = Date()
-        return (0..<count).map { idx in
-            let date = DateUtil.key(DateUtil.addDays(now, idx - count + 1))
-            return point(date: date, table: table)
-        }
+        (try? storage.recentChecked(count)) ?? []
     }
 
     // 从本机第一条有效记录到今天，缺失日期同样补 0，供“全部”范围和连续
     // 活跃计算使用。不会读取任何 session，也不会访问网络。
     static func all() -> [DayPoint] {
-        lock.lock(); let table = read(); lock.unlock()
-        let today = Date()
+        (try? allChecked()) ?? []
+    }
+
+    static func allChecked(now: Date = Date()) throws -> [DayPoint] {
+        try storage.allChecked(now: now)
+    }
+
+    fileprivate static func points(table: Table, now today: Date) -> [DayPoint] {
         let todayKey = DateUtil.key(today)
         let validDates = table.values.flatMap(\.keys).compactMap { key -> Date? in
             guard key <= todayKey else { return nil }
@@ -151,7 +133,7 @@ struct HistoryStore {
         }
     }
 
-    private static func point(date: String, table: Table) -> DayPoint {
+    fileprivate static func point(date: String, table: Table) -> DayPoint {
         var bySource: [HistorySource: Int] = [:]
         var costBySource: [HistorySource: Double] = [:]
         var cost = 0.0
@@ -170,5 +152,70 @@ struct HistoryStore {
             cost: cost,
             costBySource: costBySource
         )
+    }
+}
+
+/// 与静态默认入口使用同一 JSON 格式；实例 URL 可指向合成测试目录。
+struct HistoryFileStore {
+    let fileURL: URL
+    private let io: HistoryFileIO
+    // 同一路径的多实例也必须串行 read-modify-write。
+    private static let lock = NSLock()
+
+    init(fileURL: URL, io: HistoryFileIO = HistoryFileIO()) {
+        self.fileURL = fileURL
+        self.io = io
+    }
+
+    @discardableResult
+    func recordChecked(
+        _ source: HistorySource, days: [(date: String, totalTokens: Int, cost: Double?)]
+    ) throws -> Bool {
+        guard !days.isEmpty else { return false }
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        let existing = try readChecked()
+        var updated = existing
+        var bucket = existing[source.rawValue] ?? [:]
+        // 非权威来源仍不把补零天覆盖成真实零。
+        for day in days where day.totalTokens > 0 {
+            bucket[day.date] = HistoryStore.DayEntry(totalTokens: day.totalTokens, cost: day.cost)
+        }
+        updated[source.rawValue] = bucket
+        guard updated != existing else { return false }
+        try io.writeJSON(updated, to: fileURL)
+        return true
+    }
+
+    @discardableResult
+    func reconcileChecked(
+        _ source: HistorySource,
+        authoritativeDays: [(date: String, totalTokens: Int, cost: Double?)]
+    ) throws -> Bool {
+        guard !authoritativeDays.isEmpty else { return false }
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        var table = try readChecked()
+        let existing = table[source.rawValue] ?? [:]
+        let updated = HistoryStore.reconciledBucket(existing, authoritativeDays: authoritativeDays)
+        guard updated != existing else { return false }
+        table[source.rawValue] = updated
+        try io.writeJSON(table, to: fileURL)
+        return true
+    }
+
+    func allChecked(now: Date = Date()) throws -> [HistoryStore.DayPoint] {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        return HistoryStore.points(table: try readChecked(), now: now)
+    }
+
+    func recentChecked(_ count: Int = 30, now: Date = Date()) throws -> [HistoryStore.DayPoint] {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        let table = try readChecked()
+        return (0..<max(count, 0)).map { idx in
+            HistoryStore.point(date: DateUtil.key(DateUtil.addDays(now, idx - count + 1)), table: table)
+        }
+    }
+
+    private func readChecked() throws -> HistoryStore.Table {
+        try io.readJSON(HistoryStore.Table.self, from: fileURL) ?? [:]
     }
 }

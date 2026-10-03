@@ -4,6 +4,7 @@ import AppKit
 // 全来源周期环比：周/月切换，合计行 + 各来源行，数据来自本机按天历史。
 // 与 Claude 页「周趋势」同语义（本期截至今天 vs 完整上期），口径为全部 Coding 来源。
 struct OverviewCompareCard: View {
+    @EnvironmentObject private var historyReader: HistorySnapshotReader
     let history: [HistoryStore.DayPoint]
     let participants: Set<HistorySource>
     @State private var period: PeriodCompare.Period = .week
@@ -41,7 +42,7 @@ struct OverviewCompareCard: View {
                             .foregroundStyle(.tertiary)
                     }
                     .buttonStyle(.plain)
-                    .disabled(rows.isEmpty)
+                    .disabled(rows.isEmpty || !historyReader.canUseSnapshot)
                     .help("导出当前周期环比 CSV（合计与各来源本期/上期/环比）")
                     .accessibilityLabel("导出环比 CSV")
                 }
@@ -72,6 +73,10 @@ struct OverviewCompareCard: View {
     private func exportCSV(
         compare: (this: [HistorySource: Int], last: [HistorySource: Int])
     ) {
+        guard historyReader.canUseSnapshot else {
+            exportStatus = historyReader.unavailableMessage
+            return
+        }
         let outcome = LocalTextExportPresenter.shared.export(
             title: "导出环比 CSV",
             filename: PeriodCompareCSVExport.suggestedFilename(period: period)

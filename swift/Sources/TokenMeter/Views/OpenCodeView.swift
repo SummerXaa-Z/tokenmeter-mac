@@ -11,17 +11,11 @@ struct OpenCodeView: View {
         ScrollView {
             VStack(spacing: 10) {
                 header
-                if let result = state.opencode.result {
+                SourceCollectionContent(cache: state.opencode, emptyMessage: "未找到 OpenCode 本地数据") { result in
                     todayCard(result)
                     weekChartCard(result)
                     modelsCard(result)
                     privacyCard
-                } else if state.opencode.loading {
-                    SourceStateView(loading: true, message: "正在读取…")
-                } else if let error = state.opencode.error {
-                    SourceStateView(message: error)
-                } else {
-                    SourceStateView(message: "未找到 OpenCode 本地数据")
                 }
                 SourceAPICostCard(source: .opencode, liveDayModels: state.opencode.result?.dayModels)
                 SourceWeekCompareCard(source: .opencode)

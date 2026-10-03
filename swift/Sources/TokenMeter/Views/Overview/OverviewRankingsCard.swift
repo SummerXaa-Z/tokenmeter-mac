@@ -27,6 +27,7 @@ enum ModelPriceCheatSheet {
 }
 
 struct OverviewRankingsCard: View {
+    @EnvironmentObject private var historyReader: HistorySnapshotReader
     let rankings: PersonalUsageRankings
     let skillRankings: PersonalSkillRankings
     let range: UsageHistoryRange
@@ -35,6 +36,7 @@ struct OverviewRankingsCard: View {
     var onOpenModel: (HistorySource, String) -> Void = { _, _ in }
     // Skill 行点击下钻到详情页（近 13 周走势与来源拆解）
     var onOpenSkill: (PersonalSkillRankings.Entry, HistorySource?, [HistorySource]) -> Void = { _, _, _ in }
+    var persisted: [ModelUsageDay] = []
     // 渲染夹具:强制某行进入悬停态(行高亮 + 说明行用固定文案),
     // 离屏渲染无法模拟指针悬停
     var previewRowId: String? = nil
@@ -101,6 +103,7 @@ struct OverviewRankingsCard: View {
         guard let summary = CodingModelDetail.summary(
             source: entry.source, model: entry.model,
             liveDayModels: CodingModelDetailView.liveDayModels(entry.source, state: state),
+            persisted: persisted,
             windowDays: activeSort == .week ? 7 : 30) else { return nil }
         if activeSort == .usd {
             return (summary.coverage ?? 0) > 0 ? summary.totalUSD : nil
@@ -125,7 +128,7 @@ struct OverviewRankingsCard: View {
         for entry: PersonalUsageRankings.ModelEntry,
         sort: ModelSort,
         liveDayModels: [String: [String: ModelTokenTally]]?,
-        persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
+        persisted: [ModelUsageDay] = [],
         todayKey: String = DateUtil.today()
     ) -> Double {
         if sort == .usage { return Double(entry.totalTokens) }
@@ -259,7 +262,7 @@ struct OverviewRankingsCard: View {
         return Self.weeklySkillCounts(
             name: name, filteredBy: activeSkillSourceFilter,
             enabledSources: skillRankings.enabledSources,
-            liveSkills: Self.liveDaySkills(state))
+            liveSkills: Self.liveDaySkills(state), persisted: persisted)
     }
 
     static func weeklySkillCounts(
@@ -267,7 +270,7 @@ struct OverviewRankingsCard: View {
         filteredBy source: HistorySource?,
         enabledSources: [HistorySource]? = nil,
         liveSkills: [HistorySource: [String: [String: Int]]],
-        persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
+        persisted: [ModelUsageDay] = [],
         todayKey: String = DateUtil.today()
     ) -> [(weekOf: String, count: Int)]? {
         return SkillUsageTrend.weeklyCounts(
@@ -280,6 +283,10 @@ struct OverviewRankingsCard: View {
     /// 数字同管线。保存面板流程与「设置 → 用量导出」同款，写盘失败
     /// 弹系统错误框。
     private func exportRankingsCSV() {
+        guard historyReader.canUseSnapshot else {
+            exportStatus = historyReader.unavailableMessage
+            return
+        }
         let outcome = LocalTextExportPresenter.shared.export(
             title: "导出模型榜 CSV",
             filename: ModelRankingCSVExport.suggestedFilename()
@@ -300,10 +307,10 @@ struct OverviewRankingsCard: View {
             let live = CodingModelDetailView.liveDayModels(entry.source, state: state)
             let month = CodingModelDetail.summary(
                 source: entry.source, model: entry.model,
-                liveDayModels: live, windowDays: 30)
+                liveDayModels: live, persisted: persisted, windowDays: 30)
             let week = month == nil ? nil : CodingModelDetail.summary(
                 source: entry.source, model: entry.model,
-                liveDayModels: live, windowDays: 7)
+                liveDayModels: live, persisted: persisted, windowDays: 7)
             return ModelRankingCSVExport.Row(
                 rank: index + 1,
                 source: entry.source.overviewName,
@@ -351,7 +358,7 @@ struct OverviewRankingsCard: View {
                             .foregroundStyle(.tertiary)
                     }
                     .buttonStyle(.plain)
-                    .disabled(rankings.models.isEmpty)
+                    .disabled(rankings.models.isEmpty || !historyReader.canUseSnapshot)
                     .help("导出模型榜 CSV（当前排序的完整榜单）")
                     .accessibilityLabel("导出模型榜 CSV")
                 }
@@ -437,7 +444,7 @@ struct OverviewRankingsCard: View {
                             .foregroundStyle(.tertiary)
                     }
                     .buttonStyle(.plain)
-                    .disabled(skillRankings.entries.isEmpty)
+                    .disabled(skillRankings.entries.isEmpty || !historyReader.canUseSnapshot)
                     .help("导出 Skills 榜 CSV（完整榜单与近 13 周次数）")
                     .accessibilityLabel("导出 Skills 榜 CSV")
                 }
@@ -494,6 +501,10 @@ struct OverviewRankingsCard: View {
     /// 导出当前榜单顺序下的完整 Skills 榜（不只界面前 5）为 CSV;
     /// 来源拆解与近 13 周次数和榜内悬停/迷你条同一条取数管线
     private func exportSkillsCSV() {
+        guard historyReader.canUseSnapshot else {
+            exportStatus = historyReader.unavailableMessage
+            return
+        }
         let outcome = LocalTextExportPresenter.shared.export(
             title: "导出 Skills 榜 CSV",
             filename: SkillRankingCSVExport.suggestedFilename()
@@ -570,7 +581,7 @@ struct OverviewRankingsCard: View {
         }
         // 夹具强制行优先(渲染无法模拟指针),其次真实悬停行
         if let entry = hoverEntry ?? rankings.models.first(where: { $0.id == previewRowId }) {
-            return Self.hoverText(for: entry, state: state)
+            return Self.hoverText(for: entry, state: state, persisted: persisted)
         }
         // 未悬停:占位提示占住同一行高,悬停时版面不跳;附当前排序档,
         // 切档后说明行自证口径(文案保持单行放得下,长档名也不截断)
@@ -584,6 +595,7 @@ struct OverviewRankingsCard: View {
         guard let summary = CodingModelDetail.summary(
             source: source, model: model,
             liveDayModels: CodingModelDetailView.liveDayModels(source, state: state),
+            persisted: persisted,
             windowDays: 30)
         else { return nil }
         return summary.days.map { (date: $0.date, tokens: $0.tokens) }
@@ -591,16 +603,17 @@ struct OverviewRankingsCard: View {
 
     /// 悬停行的取数与拼串:近 30 天断流时引导进详情页
     static func hoverText(
-        for entry: PersonalUsageRankings.ModelEntry, state: AppState
+        for entry: PersonalUsageRankings.ModelEntry, state: AppState,
+        persisted: [ModelUsageDay] = []
     ) -> String {        let live = CodingModelDetailView.liveDayModels(entry.source, state: state)
         guard let month = CodingModelDetail.summary(
             source: entry.source, model: entry.model,
-            liveDayModels: live, windowDays: 30)
+            liveDayModels: live, persisted: persisted, windowDays: 30)
         else { return "近 30 天无用量（该行来自更早历史），点进详情页看 90 天" }
         // 周窗可以比月窗更早断流(月内有量但最近 7 天没有),nil 按 0 处理
         let week = CodingModelDetail.summary(
             source: entry.source, model: entry.model,
-            liveDayModels: live, windowDays: 7)
+            liveDayModels: live, persisted: persisted, windowDays: 7)
         return hoverPreviewText(week: week, month: month)
     }
 

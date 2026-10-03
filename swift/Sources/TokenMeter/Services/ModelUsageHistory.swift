@@ -170,9 +170,11 @@ struct ModelUsageHistoryStore {
     private static let lock = NSLock()
 
     let directory: URL
+    private let io: HistoryFileIO
 
-    init(directory: URL) {
+    init(directory: URL, io: HistoryFileIO = HistoryFileIO()) {
         self.directory = directory
+        self.io = io
     }
 
     // 把某源一次刷新的窗口写入明细。windowDates 是本次扫描覆盖的日期
@@ -184,6 +186,18 @@ struct ModelUsageHistoryStore {
         days: [String: SourceDayDetail],
         deletesEmptyDays: Bool
     ) -> Bool {
+        // 旧测试/调用的兼容入口；应用管线必须接收 writeChecked 的错误。
+        (try? writeChecked(source, windowDates: windowDates, days: days,
+                          deletesEmptyDays: deletesEmptyDays)) ?? false
+    }
+
+    @discardableResult
+    func writeChecked(
+        _ source: HistorySource,
+        windowDates: [String],
+        days: [String: SourceDayDetail],
+        deletesEmptyDays: Bool
+    ) throws -> Bool {
         let cleaned = Self.cleaned(days)
         let dates = Set(windowDates).union(cleaned.keys).filter(Self.isDateKey)
         guard !dates.isEmpty else { return false }
@@ -191,13 +205,15 @@ struct ModelUsageHistoryStore {
 
         Self.lock.lock(); defer { Self.lock.unlock() }
         var changed = false
-        for (month, monthDates) in datesByMonth {
-            let existing = readShard(month)
+        // 固定提交次序；部分成功后重试相同窗口只写尚未完成的分片。
+        for month in datesByMonth.keys.sorted() {
+            let monthDates = datesByMonth[month] ?? []
+            let existing = try readShardChecked(month)
             let updated = Self.merged(
                 existing, source: source, dates: Set(monthDates),
                 days: cleaned, deletesEmptyDays: deletesEmptyDays)
             guard updated != existing else { continue }
-            writeShard(updated, month: month)
+            try writeShardChecked(updated, month: month)
             changed = true
         }
         return changed
@@ -230,11 +246,25 @@ struct ModelUsageHistoryStore {
 
     // 全部有明细的天，按日期升序；不补零，缺明细的天由调用方决定如何呈现。
     func all() -> [ModelUsageDay] {
-        Self.lock.lock()
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
-        let shards = names.filter(Self.isShardFileName).map { readShard(String($0.prefix(7))) }
-        Self.lock.unlock()
+        // 兼容旧版容错读；新的快照仓库使用 allChecked，保留上次成功结果。
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        let names = (try? io.contentsChecked(directory)) ?? []
+        let shards = names.filter(Self.isShardFileName).compactMap {
+            try? readShardChecked(String($0.prefix(7)))
+        }
+        return Self.days(from: shards)
+    }
 
+    func allChecked() throws -> [ModelUsageDay] {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        let names = try io.contentsChecked(directory)
+        let shards = try names.filter(Self.isShardFileName).sorted().map {
+            try readShardChecked(String($0.prefix(7)))
+        }
+        return Self.days(from: shards)
+    }
+
+    private static func days(from shards: [Shard]) -> [ModelUsageDay] {
         var byDate: [String: [HistorySource: SourceDayDetail]] = [:]
         for shard in shards {
             for (rawSource, dates) in shard {
@@ -251,23 +281,17 @@ struct ModelUsageHistoryStore {
         directory.appendingPathComponent("\(month).json")
     }
 
-    private func readShard(_ month: String) -> Shard {
-        guard let data = try? Data(contentsOf: shardURL(month)),
-              let shard = try? JSONDecoder().decode(Shard.self, from: data) else { return [:] }
-        return shard
+    private func readShardChecked(_ month: String) throws -> Shard {
+        try io.readJSON(Shard.self, from: shardURL(month)) ?? [:]
     }
 
-    private func writeShard(_ shard: Shard, month: String) {
+    private func writeShardChecked(_ shard: Shard, month: String) throws {
         let url = shardURL(month)
         if shard.isEmpty {
-            try? FileManager.default.removeItem(at: url)
+            try io.removeChecked(url)
             return
         }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        guard let data = try? encoder.encode(shard) else { return }
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try? data.write(to: url, options: .atomic)
+        try io.writeJSON(shard, to: url, sortedKeys: true)
     }
 
     private static func cleaned(_ days: [String: SourceDayDetail]) -> [String: SourceDayDetail] {

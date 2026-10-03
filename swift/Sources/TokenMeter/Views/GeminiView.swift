@@ -10,17 +10,11 @@ struct GeminiView: View {
         ScrollView {
             VStack(spacing: 10) {
                 header
-                if let result = state.gemini.result {
+                SourceCollectionContent(cache: state.gemini, emptyMessage: "未找到 Gemini CLI 本地数据") { result in
                     todayCard(result)
                     weekChartCard(result)
                     modelsCard(result)
                     privacyCard
-                } else if state.gemini.loading {
-                    SourceStateView(loading: true, message: "正在读取…")
-                } else if let error = state.gemini.error {
-                    SourceStateView(message: error)
-                } else {
-                    SourceStateView(message: "未找到 Gemini CLI 本地数据")
                 }
                 SourceAPICostCard(source: .gemini, liveDayModels: state.gemini.result?.dayModels)
                 SourceWeekCompareCard(source: .gemini)

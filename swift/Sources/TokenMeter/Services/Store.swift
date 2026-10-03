@@ -12,6 +12,23 @@ enum SecretSlot: String {
     case zhipuCodeKey = "zhipu.slot.quota"
 }
 
+// An unavailable Keychain is not the same as an account with no saved key.
+// Keep this distinction at the IO boundary; callers must not silently fall back.
+enum CredentialReadResult: Equatable {
+    case found(String)
+    case missing
+    case unavailable
+
+    var value: String? {
+        if case .found(let value) = self { return value }
+        return nil
+    }
+
+    var error: CredentialStoreError? {
+        self == .unavailable ? .keychainReadFailed : nil
+    }
+}
+
 struct Keychain {
     static let service = "com.deepseek.monitor.mac"
 
@@ -41,6 +58,10 @@ struct Keychain {
     }
 
     static func get(_ slot: SecretSlot) -> String? {
+        read(slot).value
+    }
+
+    static func read(_ slot: SecretSlot) -> CredentialReadResult {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -49,11 +70,16 @@ struct Keychain {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data,
-              let str = String(data: data, encoding: .utf8), !str.isEmpty
-        else { return nil }
-        return str
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        return classifyRead(status: status, data: result as? Data)
+    }
+
+    static func classifyRead(status: OSStatus, data: Data?) -> CredentialReadResult {
+        if status == errSecItemNotFound { return .missing }
+        guard status == errSecSuccess, let data,
+              let value = String(data: data, encoding: .utf8), !value.isEmpty
+        else { return .unavailable }
+        return .found(value)
     }
 
     @discardableResult
@@ -69,6 +95,7 @@ struct Keychain {
 
 enum CredentialStoreError: LocalizedError, Equatable {
     case emptyCredential
+    case keychainReadFailed
     case keychainWriteFailed
     case keychainDeleteFailed
 
@@ -76,6 +103,8 @@ enum CredentialStoreError: LocalizedError, Equatable {
         switch self {
         case .emptyCredential:
             return "凭据不能为空，原凭据已保留"
+        case .keychainReadFailed:
+            return "暂时无法读取本机 Keychain，请检查授权后重试；不会切换账户来源"
         case .keychainWriteFailed:
             return "无法安全写入本机 Keychain，原凭据已保留"
         case .keychainDeleteFailed:
@@ -97,17 +126,28 @@ final class ConfigStore {
     }()
     private let defaults: UserDefaults
     private let keychainGet: (SecretSlot) -> String?
+    private let keychainRead: (SecretSlot) -> CredentialReadResult
     private let keychainSet: (String, SecretSlot) -> OSStatus
     private let keychainDelete: (SecretSlot) -> OSStatus
 
     init(
         defaults: UserDefaults = .standard,
-        keychainGet: @escaping (SecretSlot) -> String? = Keychain.get,
+        keychainGet: ((SecretSlot) -> String?)? = nil,
+        keychainRead: ((SecretSlot) -> CredentialReadResult)? = nil,
         keychainSet: @escaping (String, SecretSlot) -> OSStatus = Keychain.set,
         keychainDelete: @escaping (SecretSlot) -> OSStatus = Keychain.delete
     ) {
         self.defaults = defaults
-        self.keychainGet = keychainGet
+        let reader: (SecretSlot) -> CredentialReadResult
+        if let keychainRead {
+            reader = keychainRead
+        } else if let keychainGet {
+            reader = { slot in keychainGet(slot).map(CredentialReadResult.found) ?? .missing }
+        } else {
+            reader = RuntimeEnvironment.isIsolated ? { _ in .missing } : Keychain.read
+        }
+        self.keychainRead = reader
+        self.keychainGet = { reader($0).value }
         self.keychainSet = keychainSet
         self.keychainDelete = keychainDelete
     }
@@ -417,4 +457,9 @@ final class ConfigStore {
     var usageTokenConfigured: Bool { credUsageToken?.isEmpty == false }
     var kimiCodeKeyConfigured: Bool { credKimiCodeKey?.isEmpty == false }
     var zhipuKeyConfigured: Bool { credZhipuKey?.isEmpty == false }
+
+    var apiKeyRead: CredentialReadResult { keychainRead(.balanceKey) }
+    var usageTokenRead: CredentialReadResult { keychainRead(.usageGrant) }
+    var kimiCodeKeyRead: CredentialReadResult { keychainRead(.kimiCodeKey) }
+    var zhipuKeyRead: CredentialReadResult { keychainRead(.zhipuCodeKey) }
 }

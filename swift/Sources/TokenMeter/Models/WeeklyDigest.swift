@@ -55,7 +55,7 @@ enum WeeklyDigest {
     static func message(
         _ days: [HistoryStore.DayPoint],
         participants: some Sequence<HistorySource>,
-        modelDays: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
+        modelDays: [ModelUsageDay] = [],
         plans: [SubscriptionPlan] = [],
         today: Date = Date(),
         calendar: Calendar = .current
@@ -350,15 +350,6 @@ enum WeeklyDigest {
 
     /// 设置里已启用的 Coding 来源(DeepSeek 平台账户天然不在其列)。
     static func participants(_ store: ConfigStore) -> [HistorySource] {
-        [
-            store.claudeMonitorEnabled ? .claude : nil,
-            store.codexMonitorEnabled ? .codex : nil,
-            store.kimiMonitorEnabled ? .kimi : nil,
-            store.opencodeMonitorEnabled ? .opencode : nil,
-            store.geminiMonitorEnabled ? .gemini : nil,
-            store.copilotMonitorEnabled ? .copilot : nil,
-            store.qwenMonitorEnabled ? .qwen : nil,
-            store.cursorMonitorEnabled ? .cursor : nil,
-        ].compactMap { $0 }
+        SourceCatalog.entries.filter { $0.isCodingAgent && $0.isEnabled(in: store) }.map(\.source)
     }
 }

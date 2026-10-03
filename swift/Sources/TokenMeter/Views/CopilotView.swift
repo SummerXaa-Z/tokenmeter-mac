@@ -12,18 +12,12 @@ struct CopilotView: View {
         ScrollView {
             VStack(spacing: 10) {
                 header
-                if let result = state.copilot.result {
+                SourceCollectionContent(cache: state.copilot, emptyMessage: "未找到 GitHub Copilot CLI 本地数据") { result in
                     todayCard(result)
                     weekChartCard(result)
                     modelsCard(result)
                     outputCard(result)
                     privacyCard
-                } else if state.copilot.loading {
-                    SourceStateView(loading: true, message: "正在读取…")
-                } else if let error = state.copilot.error {
-                    SourceStateView(message: error)
-                } else {
-                    SourceStateView(message: "未找到 GitHub Copilot CLI 本地数据")
                 }
                 SourceAPICostCard(source: .copilot, liveDayModels: state.copilot.result?.dayModels)
                 SourceWeekCompareCard(source: .copilot)

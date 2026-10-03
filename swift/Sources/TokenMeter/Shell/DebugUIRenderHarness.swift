@@ -681,6 +681,18 @@ enum DebugUIRenderHarness {
             OverviewUsageCard(
                 snapshot: snapshot, range: .day, entries: [],
                 onOpen: { _ in }, collectionStatuses: [ready])
+            SourceCollectionContent(
+                cache: SourceCache<Int>(result: 12_500_000, error: "本地会话读取失败，请检查目录权限"),
+                emptyMessage: "未找到本地数据"
+            ) { tokens in
+                Card {
+                    HStack {
+                        Text("上次成功用量").font(.system(size: 12))
+                        Spacer()
+                        Text(Fmt.tokensShort(tokens)).font(.system(size: 16, weight: .semibold))
+                    }
+                }
+            }
             Spacer(minLength: 0)
         }
         .padding(14)
@@ -877,12 +889,40 @@ enum DebugUIRenderHarness {
         let dir = URL(fileURLWithPath: outputPath)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
+        // Derive a fixed in-memory history from the synthetic preview sources.
+        // Directly hosted cards do not run RootView's history-loading lifecycle.
+        var dailyByDate: [String: [HistorySource: Int]] = [:]
+        var modelsByDate: [String: [HistorySource: SourceDayDetail]] = [:]
+        if let result = appState.claude.result {
+            for day in result.days { dailyByDate[day.date, default: [:]][.claude] = day.totalTokens }
+            for (date, models) in result.dayModels {
+                modelsByDate[date, default: [:]][.claude] = SourceDayDetail(
+                    models: models, skills: result.daySkills[date] ?? [:], sessions: result.daySessions[date] ?? 0)
+            }
+        }
+        if let result = appState.codex.result {
+            for day in result.days { dailyByDate[day.date, default: [:]][.codex] = day.totalTokens }
+            for (date, models) in result.dayModels {
+                modelsByDate[date, default: [:]][.codex] = SourceDayDetail(
+                    models: models, skills: result.daySkills[date] ?? [:], sessions: result.daySessions[date] ?? 0)
+            }
+        }
+        let fixtureHistory = HistorySnapshotReader.Snapshot(
+            daily: dailyByDate.keys.sorted().map {
+                HistoryStore.DayPoint(date: $0, bySource: dailyByDate[$0] ?? [:], cost: 0)
+            },
+            models: modelsByDate.keys.sorted().map {
+                ModelUsageDay(date: $0, bySource: modelsByDate[$0] ?? [:])
+            })
+        let historyReader = HistorySnapshotReader(initial: fixtureHistory, read: { fixtureHistory })
+
         func hosting<V: View>(_ view: V, height: CGFloat = Theme.panelHeight) -> NSView {
             // cacheDisplay 只渲染视图树本身，页面不自带底色（真实 app 里由
             // popover 窗口背景提供），离屏导出必须在这里补上等价底色。
             let host = NSHostingView(rootView: view
                 .background(Color(nsColor: .windowBackgroundColor))
-                .environmentObject(appState))
+                .environmentObject(appState)
+                .environmentObject(historyReader))
             host.setFrameSize(NSSize(width: Theme.panelWidth, height: height))
             return host
         }
@@ -913,7 +953,7 @@ enum DebugUIRenderHarness {
                 range: .day, sources: [.claude, .codex],
                 onOpenSource: { _ in }, onSettings: {}), height: 1800)),
         ] : [
-            ("collection-status-fixture", hosting(Self.collectionStatusFixture(), height: 620)),
+            ("collection-status-fixture", hosting(Self.collectionStatusFixture(), height: 810)),
             ("overview", hosting(RootView())),
             ("dashboard", hosting(
                 DashboardView(onBack: {}, onSettings: {}, onDetail: { _ in }))),

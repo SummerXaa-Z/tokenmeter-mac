@@ -2,19 +2,19 @@ import SwiftUI
 import Charts
 import AppKit
 
-// 来源页通用的历史分析卡。自包含读取本机按天历史(HistoryStore),不依赖
+// 来源页通用的历史分析卡。消费视图树共享的按天历史快照，不依赖
 // 各来源的实时采集——工具未运行、本地数据暂时缺失时历史对比依然可见,
 // 与"数据路径消失不抹掉已积累历史"的既有承诺一致。从未有过记录时整卡隐藏。
 
 // 单来源周期环比:周|近7天|月 三档(与总览环比卡同口径),下挂一行
 // 今日 vs 近 7 天日均的滚动参照。Claude 页保留更细的缓存拆解周趋势,不用此卡。
-// 历史在 body 内直接读取:按天历史 JSON 极小(毫秒级),不依赖 .task 的
-// appear 时序——挂在初始为空的视图上时,离屏渲染等场景可能永不触发。
+// body 不访问磁盘；实际加载由 RootView 的 revision reader 执行，渲染夹具注入快照。
 struct SourceWeekCompareCard: View {
+    @EnvironmentObject private var historyReader: HistorySnapshotReader
     let source: HistorySource
     @State private var period: PeriodCompare.Period = .week
 
-    private var history: [HistoryStore.DayPoint] { HistoryStore.all() }
+    private var history: [HistoryStore.DayPoint] { historyReader.snapshot.daily }
 
     var body: some View {
         let used = history.contains { ($0.bySource[source] ?? 0) > 0 }
@@ -83,6 +83,7 @@ struct SourceWeekCompareCard: View {
 // 近 7 天单系列历史柱图。其他来源的 7 天图来自各自实时采集,带分量堆叠;
 // Cursor 只有订阅周期聚合,趋势走按天历史,故单独成卡(悬停查值同款)。
 struct SourceHistoryTrendCard: View {
+    @EnvironmentObject private var historyReader: HistorySnapshotReader
     let source: HistorySource
     let color: Color
     // 渲染 fixture 注入的按日合计(离屏渲染不读真实 HistoryStore)
@@ -94,7 +95,7 @@ struct SourceHistoryTrendCard: View {
     // 导出完成后的行内反馈(「已导出 <文件名> · 时刻」)
     @State private var exportStatus: String?
 
-    private var history: [HistoryStore.DayPoint] { HistoryStore.all() }
+    private var history: [HistoryStore.DayPoint] { historyReader.snapshot.daily }
 
     var body: some View {
         // fixture 注入时以注入数据判断可见性(离屏渲染不读真实 HistoryStore)
@@ -126,6 +127,7 @@ struct SourceHistoryTrendCard: View {
 
     /// 所选档窗口骨架(含零天),保证柱数与日期稳定
     private var buckets: [(date: String, label: String, value: Int)] {
+        let totals = totals
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         var result: [(date: String, label: String, value: Int)] = []
@@ -164,7 +166,7 @@ struct SourceHistoryTrendCard: View {
                             .foregroundStyle(.tertiary)
                     }
                     .buttonStyle(.plain)
-                    .disabled(buckets.allSatisfy { $0.value == 0 })
+                    .disabled(buckets.allSatisfy { $0.value == 0 } || !historyReader.canUseSnapshot)
                     .help("导出当前档 CSV（逐日一行按日合计，附口径行）")
                     .accessibilityLabel("导出趋势 CSV")
                 }
@@ -190,6 +192,10 @@ struct SourceHistoryTrendCard: View {
     }
 
     private func exportCSV(_ days: [(date: String, label: String, value: Int)]) {
+        guard historyReader.canUseSnapshot else {
+            exportStatus = historyReader.unavailableMessage
+            return
+        }
         let outcome = LocalTextExportPresenter.shared.export(
             title: "导出趋势 CSV",
             filename: SourceTrendCSVExport.suggestedFilename(

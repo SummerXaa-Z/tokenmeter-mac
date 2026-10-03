@@ -161,7 +161,7 @@ enum UsageHeatmap {
     /// 不建条目（tooltip 自然不显示，不冒充 $0）。
     static func dailyAPIValues(
         participants: some Sequence<HistorySource>,
-        persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
+        persisted: [ModelUsageDay] = [],
         today: Date = Date(),
         windowWeeks: Int = UsageHeatmap.windowWeeks,
         weekOffset: Int = 0,
@@ -178,7 +178,7 @@ enum UsageHeatmap {
     /// 指定自然日区间（含两端）的逐日 API 等价：周窗口与月视图共用同一口径。
     static func dailyAPIValues(
         participants: some Sequence<HistorySource>,
-        persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
+        persisted: [ModelUsageDay] = [],
         dateRange: (start: Date, end: Date),
         calendar: Calendar = .current
     ) -> [String: Double] {

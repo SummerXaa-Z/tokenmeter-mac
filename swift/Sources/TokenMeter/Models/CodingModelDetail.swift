@@ -30,7 +30,7 @@ enum CodingModelDetail {
         source: HistorySource,
         model: String,
         liveDayModels: [String: [String: ModelTokenTally]]?,
-        persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
+        persisted: [ModelUsageDay] = [],
         todayKey: String = DateUtil.today(),
         calendar: Calendar = .current,
         windowDays: Int = CodingModelDetail.windowDays

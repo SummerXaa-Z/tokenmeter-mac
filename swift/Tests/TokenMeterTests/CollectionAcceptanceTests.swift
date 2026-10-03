@@ -114,7 +114,11 @@ final class CollectionAcceptanceTests: XCTestCase {
         for source in [.claude, .codex] + newLocalSources {
             let state = AppState()
             setEnabled(true, source: source, state: state)
+            let backfillTicket = state.backfillCollectionTicket(for: source)
+            XCTAssertTrue(state.acceptsBackfillCollection(backfillTicket))
             XCTAssertTrue(acceptFixture(source, state: state, tokens: 70))
+            XCTAssertFalse(state.acceptsBackfillCollection(backfillTicket),
+                           "Every accepted live source must supersede its older backfill")
             let oldRevision = state.localCollectionRevision(for: source)
             setEnabled(false, source: source, state: state)
             XCTAssertFalse(acceptFixture(source, state: state, tokens: 700, requestRevision: oldRevision))

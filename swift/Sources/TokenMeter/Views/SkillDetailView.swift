@@ -21,6 +21,7 @@ struct SkillDetailView: View {
     // 渲染夹具：注入固定的导出反馈文案（离屏渲染无法模拟保存面板）
     var previewExportStatus: String? = nil
     @EnvironmentObject var state: AppState
+    @EnvironmentObject private var historyReader: HistorySnapshotReader
     @State private var hoverWeek: String?
     // 导出完成后的行内反馈（「已导出 <文件名> · 时刻」）
     @State private var exportStatus: String?
@@ -30,7 +31,8 @@ struct SkillDetailView: View {
         return OverviewRankingsCard.weeklySkillCounts(
             name: entry.name, filteredBy: sourceFilter,
             enabledSources: enabledSources,
-            liveSkills: OverviewRankingsCard.liveDaySkills(state))
+            liveSkills: OverviewRankingsCard.liveDaySkills(state),
+            persisted: historyReader.snapshot.models)
     }
 
     private var scopedRangeTitle: String {
@@ -106,7 +108,7 @@ struct SkillDetailView: View {
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
                     // 与热力图/模型榜/Skills 榜导出同款入口；卡只在有
-                    // 13 周数据时出现，按钮无需禁用态
+                    // 13 周数据时出现；共享历史尚未成功读取时禁止导出。
                     Button {
                         exportCSV(weekly)
                     } label: {
@@ -117,6 +119,7 @@ struct SkillDetailView: View {
                     .buttonStyle(.plain)
                     .help("导出近 13 周走势 CSV（逐周次数，附范围与来源口径行）")
                     .accessibilityLabel("导出 Skill 走势 CSV")
+                    .disabled(!historyReader.canUseSnapshot)
                 }
                 HStack(spacing: 6) {
                     Text(active?.label ?? "")
@@ -176,6 +179,10 @@ struct SkillDetailView: View {
     /// 导出近 13 周走势 CSV；保存面板流程与模型榜/Skills 榜导出同款，
     /// 写盘失败弹系统错误框。来源拆解复用榜内悬停文案。
     private func exportCSV(_ weekly: [(weekOf: String, count: Int)]) {
+        guard historyReader.canUseSnapshot else {
+            exportStatus = historyReader.unavailableMessage
+            return
+        }
         let outcome = LocalTextExportPresenter.shared.export(
             title: "导出 Skill 走势 CSV",
             filename: SkillDetailCSVExport.suggestedFilename(skill: entry.name)

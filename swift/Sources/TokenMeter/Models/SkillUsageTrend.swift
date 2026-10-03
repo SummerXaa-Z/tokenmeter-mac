@@ -14,7 +14,7 @@ enum SkillUsageTrend {
         sourceFilter: HistorySource? = nil,
         enabledSources: [HistorySource]? = nil,
         liveSkills: [HistorySource: [String: [String: Int]]],
-        persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
+        persisted: [ModelUsageDay] = [],
         todayKey: String = DateUtil.today(),
         calendar: Calendar = .current
     ) -> [(weekOf: String, count: Int)]? {

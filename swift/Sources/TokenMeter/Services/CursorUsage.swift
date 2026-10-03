@@ -40,6 +40,14 @@ struct CursorUsageResult: Equatable {
     // nil 表示“今日独立查询失败”，与确认查到 0 严格区分。这样失败时不会
     // 用假 0 覆盖本机上一份可信日记录。
     var todayTokens: Int? = nil  // 今日(本地0点→now)用量，与 totalTokens 同口径
+    // Keep the query's calendar day, not the date when an asynchronous reply arrives.
+    var todayDate: String? = nil
+    var observedAt: Date? = nil
+
+    func dailyTokens(on date: String) -> Int? {
+        guard todayDate == date else { return nil }
+        return todayTokens
+    }
     var totalTokens: Int { models.reduce(0) { $0 + $1.totalTokens } }
     var totalInputTokens: Int { models.reduce(0) { $0 + $1.inputTokens } }
     var totalOutputTokens: Int { models.reduce(0) { $0 + $1.outputTokens } }
@@ -265,6 +273,8 @@ enum CursorUsage {
                                  startOfMonth: windowStart, subscription: subscription,
                                  models: models,
                                  totalCostCents: parsed.totalCostCents ?? 0,
-                                 todayTokens: todayTokens)
+                                 todayTokens: todayTokens,
+                                 todayDate: todayTokens == nil ? nil : DateUtil.key(now),
+                                 observedAt: now)
     }
 }
