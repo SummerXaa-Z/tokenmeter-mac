@@ -34,20 +34,12 @@ body:
         - 其他
     validations:
       required: true
-  - type: dropdown
+  - type: input
     id: source
     attributes:
       label: 影响的数据源或功能
-      options:
-        - DeepSeek
-        - Claude
-        - Codex
-        - Cursor
-        - 配置同步
-        - 自动更新
-        - 安装 / 签名 / Gatekeeper
-        - 菜单栏 / UI
-        - 其他
+      description: 填写具体来源名称或功能，避免遗漏新来源。
+      placeholder: "Codex 实时额度 / Kimi Code / 自动更新 / 总览"
     validations:
       required: true
   - type: textarea

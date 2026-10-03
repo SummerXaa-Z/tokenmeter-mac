@@ -1,49 +1,16 @@
-# Contributing to TokenMeter
+# 贡献说明
 
-感谢关注 TokenMeter。这个项目优先服务 macOS 菜单栏用量监控场景，改动请尽量小而清晰，方便维护者 review 和回归。
+TokenMeter 优先服务 macOS 菜单栏用量监控。改动尽量围绕一个问题，说明触发条件、结果和验证证据。
 
-## 开发环境
+开发环境、命令和产物路径见 [开发指南](docs/development.md)，模块职责见 [架构说明](docs/architecture.md)。工程定义修改 `swift/project.yml`，随后执行 `make project`，同步提交生成的 Xcode 工程。
 
-- macOS 14 或更高。
-- Xcode 与 Command Line Tools。
-- XcodeGen：`brew install xcodegen`。
-- Python 工具按项目约定使用 `uv`，不要把虚拟环境或本机路径提交进仓库。
+提交前按改动范围验证：
 
-## 本地验证
+- 逻辑改动运行 `make test`；涉及构建或发布元数据时运行 `make release-check`，它已包含测试。
+- UI 改动运行 `make ui-smoke` 或 `make ui-render`，附隔离示例数据截图与交互检查结果。
+- 凭据、登录、安装或更新改动需要覆盖对应边界与失败分支。真实签名、打包、公证和安装验证按 [发布清单](docs/release.md) 单独执行。
+- 文档改动核对链接和命令，不必重复无关测试。
 
-根目录提供验证入口：
+PR 描述写清问题、改动、验证和剩余限制，注明是否影响旧偏好、Keychain 授权或安装更新。用户可见改动同步更新指南与 CHANGELOG。
 
-```bash
-make test
-make release-check
-```
-
-GitHub Actions 会在 push / PR 时运行 `make release-check`，本地提交前建议按改动风险选择同一命令复验。
-
-发布打包验证：
-
-```bash
-make package
-```
-
-`make package` 默认使用本机自签证书 `DeepSeekMonitor Dev`，找不到时回退 ad-hoc 签名。维护者发布公证版时按 [docs/release.md](docs/release.md) 配置 Developer ID 和 notary 凭据。
-
-## 代码与文档约定
-
-- Swift 代码保持现有 SwiftUI + AppKit 风格，优先复用 `Theme`、`Card`、`SourceCache` 等已有结构。
-- 新增用户可见能力时，同步更新 `README.md` 和 `CHANGELOG.md`。
-- 涉及配置、凭据、Keychain、登录态、更新安装脚本的改动，需要说明安全影响，并补测试或 dry-run 记录。
-- 不要提交 API key、token、cookie、p12、App 专用密码、Keychain profile 明文或真实用户日志。
-- 不要把本机绝对路径、个人信息、构建产物、`.xcresult` 提交进仓库。
-
-## 提交 PR 前
-
-请在 PR 描述里写清楚：
-
-- 改了什么。
-- 为什么需要改。
-- 跑过哪些命令。
-- UI 改动附截图或录屏。
-- 是否影响安装、自动更新、Keychain 授权、公证或旧用户偏好。
-
-如果改动很小，至少跑 `make test`。发布链路、安装脚本、配置同步、凭据处理相关改动请跑 `make release-check` 或 `make package`。
+不要提交 API key、token、cookie、证书、真实会话日志、个人信息、本机绝对路径或构建产物。公开 issue 只提供检查过的脱敏诊断；安全问题先看 [SECURITY.md](SECURITY.md)。

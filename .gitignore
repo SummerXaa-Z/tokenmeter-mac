@@ -5,21 +5,11 @@ node_modules/
 dist/
 src-tauri/target/
 
-# ---------- Markdown docs policy ----------
-*.md
-*.MD
-!README.md
-!CHANGELOG.md
-!CONTRIBUTING.md
-!SECURITY.md
-!.github/PULL_REQUEST_TEMPLATE.md
-
 # ---------- Internal docs ----------
 PRD.md
 IMPLEMENTATION_NOTES.md
-docs/
-!docs/
-!docs/release.md
+docs/superpowers/
+.superpowers/
 
 # ---------- Local environment and secrets ----------
 .npmrc
