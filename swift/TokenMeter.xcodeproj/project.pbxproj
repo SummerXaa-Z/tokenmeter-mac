@@ -67,6 +67,7 @@
 		5A0EF33BE92E5C281E19D918 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C7FF91B5D91E2641E200E35 /* DashboardView.swift */; };
 		5A85B048EED103F94F2814EC /* SourceAPICostCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2169DA16BFEB3828CC1D724 /* SourceAPICostCard.swift */; };
 		5A8C73B3E4D7863A682811CE /* CursorUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4BE502EE001B896AC0C9D26 /* CursorUsage.swift */; };
+		5D5E0A67CFE1221610A76173 /* DebugUIRenderHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F6535CFD82C62169850421A /* DebugUIRenderHarness.swift */; };
 		5E0A66E0AF6105689EE8E977 /* UsageHeatmapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A469D7B74DB4BE364D6EE182 /* UsageHeatmapTests.swift */; };
 		60DDF014BFB9C779F7FF049D /* CopilotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D88FBE440263BB448540F2F /* CopilotView.swift */; };
 		633B4B8C12B6D61591846BAF /* SubscriptionQuotaAlertTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F38419432160E7DE0198F0A8 /* SubscriptionQuotaAlertTests.swift */; };
@@ -205,6 +206,7 @@
 		0A96A717B32EC8A930DC3947 /* ChartHover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartHover.swift; sourceTree = "<group>"; };
 		0AB5C8B4A29701DC68C925D9 /* CursorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorView.swift; sourceTree = "<group>"; };
 		0CBDEBD7A8663EF892B78924 /* CodingModelDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodingModelDetail.swift; sourceTree = "<group>"; };
+		0F6535CFD82C62169850421A /* DebugUIRenderHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugUIRenderHarness.swift; sourceTree = "<group>"; };
 		10C5D68C952CC99005CB4E46 /* OpenCodeUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeUsageTests.swift; sourceTree = "<group>"; };
 		12ABD16531AB8CFE83C688B0 /* DetailBackfillTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailBackfillTests.swift; sourceTree = "<group>"; };
 		14A60991D1A15A114E2810A6 /* SourceHealthTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceHealthTests.swift; sourceTree = "<group>"; };
@@ -557,6 +559,7 @@
 			isa = PBXGroup;
 			children = (
 				A670A6857DFC3EF8E8F2B737 /* AppDelegate.swift */,
+				0F6535CFD82C62169850421A /* DebugUIRenderHarness.swift */,
 				4DA229440BE85C4E2C15FA8F /* main.swift */,
 			);
 			path = Shell;
@@ -825,6 +828,7 @@
 				9130F93DD0C058FA7B74774F /* CursorView.swift in Sources */,
 				1CE23BCAD7B5D4370FDC44A9 /* DashboardComponents.swift in Sources */,
 				5A0EF33BE92E5C281E19D918 /* DashboardView.swift in Sources */,
+				5D5E0A67CFE1221610A76173 /* DebugUIRenderHarness.swift in Sources */,
 				92F95A043BD876CB2F16A817 /* DeepSeekAPI.swift in Sources */,
 				37A51EAEDE4AB50BE0B37ED1 /* DeepSeekCacheCSVExport.swift in Sources */,
 				FCCCED910A3139C89E73401D /* DeepSeekModelCSVExport.swift in Sources */,
