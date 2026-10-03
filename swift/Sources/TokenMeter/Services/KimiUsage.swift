@@ -72,9 +72,13 @@ struct KimiUsageResult: Equatable {
 
 enum KimiUsageError: LocalizedError, Equatable {
     case dataUnavailable
+    case scanFailed
 
     var errorDescription: String? {
-        "未找到 Kimi Code 本地 session"
+        switch self {
+        case .dataUnavailable: return "未找到 Kimi Code 本地 session"
+        case .scanFailed: return "Kimi Code 本地用量读取失败"
+        }
     }
 }
 
@@ -210,6 +214,20 @@ enum KimiUsage {
         windowDays: Int = 7,
         calendar: Calendar = .current
     ) throws -> KimiUsageResult {
+        do {
+            return try loadSnapshot(homeDirectories: homeDirectories, now: now,
+                                    windowDays: windowDays, calendar: calendar)
+        } catch let error as KimiUsageError {
+            throw error
+        } catch {
+            // 不把系统 IO 错误中的本地路径带入 UI 或持久诊断。
+            throw KimiUsageError.scanFailed
+        }
+    }
+
+    private static func loadSnapshot(
+        homeDirectories: [URL], now: Date, windowDays: Int, calendar: Calendar
+    ) throws -> KimiUsageResult {
         let homes = uniqueHomes(homeDirectories)
         guard homes.contains(where: { isDirectory($0.appendingPathComponent("sessions")) }) else {
             throw KimiUsageError.dataUnavailable
@@ -218,8 +236,8 @@ enum KimiUsage {
         let span = max(windowDays, 1)
         let oldestDate = calendar.date(byAdding: .day, value: 1 - span, to: now) ?? now
         let oldestDay = calendar.startOfDay(for: oldestDate)
-        let candidates = homes
-            .flatMap { journalCandidates(in: $0, modifiedSince: oldestDay) }
+        let candidates = try homes
+            .flatMap { try journalCandidates(in: $0, modifiedSince: oldestDay) }
             .sorted { candidateOrder($0, $1) }
             .prefix(maximumWireFiles)
 
@@ -227,7 +245,7 @@ enum KimiUsage {
         // 在 session 层做，不能把同一 session 的不同 agent 互相淘汰。
         var copiesByPath: [String: SessionCopy] = [:]
         for candidate in candidates {
-            let summary = cachedSummary(candidate)
+            let summary = try cachedSummary(candidate)
             guard !summary.records.isEmpty else { continue }
             let path = candidate.sessionDirectory.path
             if var copy = copiesByPath[path] {
@@ -329,26 +347,28 @@ enum KimiUsage {
     }
 
     private static func journalCandidates(in home: URL, modifiedSince cutoff: Date)
-        -> [JournalCandidate] {
+        throws -> [JournalCandidate] {
         let sessions = home.appendingPathComponent("sessions", isDirectory: true)
         guard isDirectory(sessions) else { return [] }
 
         var result: [JournalCandidate] = []
-        for workspace in childDirectories(at: sessions) {
-            for session in childDirectories(at: workspace) {
+        for workspace in try childDirectories(at: sessions) {
+            for session in try childDirectories(at: workspace) {
                 let sessionID = session.lastPathComponent
                 guard !sessionID.isEmpty else { continue }
                 let agents = session.appendingPathComponent("agents", isDirectory: true)
-                for agent in childDirectories(at: agents) {
+                for agent in try childDirectories(at: agents) {
                     let agentID = agent.lastPathComponent
                     guard !agentID.isEmpty else { continue }
                     let file = agent.appendingPathComponent("wire.jsonl")
-                    guard let values = try? file.resourceValues(forKeys: [
+                    guard FileManager.default.fileExists(atPath: file.path) else { continue }
+                    let values = try file.resourceValues(forKeys: [
                         .isRegularFileKey,
                         .isSymbolicLinkKey,
                         .fileSizeKey,
                         .contentModificationDateKey,
-                    ]), values.isRegularFile == true,
+                    ])
+                    guard values.isRegularFile == true,
                     values.isSymbolicLink != true,
                     let mtime = values.contentModificationDate,
                     mtime >= cutoff
@@ -369,17 +389,19 @@ enum KimiUsage {
         return result
     }
 
-    private static func childDirectories(at parent: URL) -> [URL] {
+    private static func childDirectories(at parent: URL) throws -> [URL] {
+        // 未创建 agents 等可选目录是合法空态；已有目录读取失败不能当空目录。
+        guard FileManager.default.fileExists(atPath: parent.path) else { return [] }
         let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey]
-        guard let children = try? FileManager.default.contentsOfDirectory(
+        let children = try FileManager.default.contentsOfDirectory(
             at: parent,
             includingPropertiesForKeys: keys,
             options: [.skipsHiddenFiles, .skipsPackageDescendants, .skipsSubdirectoryDescendants]
-        ) else { return [] }
-        return children.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        )
+        return try children.sorted { $0.lastPathComponent < $1.lastPathComponent }
             .prefix(maximumChildrenPerDirectory)
             .filter {
-                guard let values = try? $0.resourceValues(forKeys: Set(keys)) else { return false }
+                let values = try $0.resourceValues(forKeys: Set(keys))
                 return values.isDirectory == true && values.isSymbolicLink != true
             }
     }
@@ -412,22 +434,24 @@ enum KimiUsage {
 
     // MARK: - 有界 JSONL 扫描
 
-    private static func cachedSummary(_ candidate: JournalCandidate) -> FileSummary {
+    private static func cachedSummary(_ candidate: JournalCandidate) throws -> FileSummary {
+        guard FileManager.default.isReadableFile(atPath: candidate.file.path) else {
+            throw KimiUsageError.scanFailed
+        }
         cacheLock.lock()
         let hit = cache[candidate.file.path]
         cacheLock.unlock()
         if let hit, hit.size == candidate.size, hit.mtime == candidate.mtime { return hit }
 
-        let summary = scan(candidate.file, size: candidate.size, mtime: candidate.mtime)
+        let summary = try scan(candidate.file, size: candidate.size, mtime: candidate.mtime)
         cacheLock.lock()
         cache[candidate.file.path] = summary
         cacheLock.unlock()
         return summary
     }
 
-    private static func scan(_ file: URL, size: UInt64, mtime: Date) -> FileSummary {
-        let empty = FileSummary(size: size, mtime: mtime, records: [])
-        guard let handle = try? FileHandle(forReadingFrom: file) else { return empty }
+    private static func scan(_ file: URL, size: UInt64, mtime: Date) throws -> FileSummary {
+        let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
 
         let marker = Data("usage.record".utf8)
@@ -456,7 +480,7 @@ enum KimiUsage {
         }
 
         while true {
-            let chunk = (try? handle.read(upToCount: chunkSize)) ?? Data()
+            let chunk = try handle.read(upToCount: chunkSize) ?? Data()
             if chunk.isEmpty {
                 if !droppingOversizedLine, !carry.isEmpty { consume(carry) }
                 break

@@ -232,24 +232,15 @@ struct SourceHourCard: View {
     }
 
     private func exportCSV() {
-        NSApp.activate(ignoringOtherApps: true)
-        let panel = NSSavePanel()
-        panel.title = "导出今日分时 CSV"
-        panel.nameFieldStringValue = SourceHourCSVExport.suggestedFilename(source: source)
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.allowedContentTypes = [.commaSeparatedText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try SourceHourCSVExport.makeCSV(
+        let outcome = LocalTextExportPresenter.shared.export(
+            title: "导出今日分时 CSV",
+            filename: SourceHourCSVExport.suggestedFilename(source: source)
+        ) {
+            SourceHourCSVExport.makeCSV(
                 source: source, bars: bars, note: note
-            ).write(to: url, atomically: true, encoding: .utf8)
-            exportStatus = ExportFeedback.text(fileURL: url)
-        } catch {
-            let alert = NSAlert(error: error)
-            alert.messageText = "导出今日分时 CSV 失败"
-            alert.runModal()
+            )
         }
+        if let feedback = outcome.successFeedback { exportStatus = feedback }
     }
 }
 

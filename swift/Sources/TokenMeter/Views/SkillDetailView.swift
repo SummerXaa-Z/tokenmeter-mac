@@ -176,27 +176,18 @@ struct SkillDetailView: View {
     /// 导出近 13 周走势 CSV；保存面板流程与模型榜/Skills 榜导出同款，
     /// 写盘失败弹系统错误框。来源拆解复用榜内悬停文案。
     private func exportCSV(_ weekly: [(weekOf: String, count: Int)]) {
-        NSApp.activate(ignoringOtherApps: true)
-        let panel = NSSavePanel()
-        panel.title = "导出 Skill 走势 CSV"
-        panel.nameFieldStringValue = SkillDetailCSVExport.suggestedFilename(skill: entry.name)
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.allowedContentTypes = [.commaSeparatedText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try SkillDetailCSVExport.makeCSV(
+        let outcome = LocalTextExportPresenter.shared.export(
+            title: "导出 Skill 走势 CSV",
+            filename: SkillDetailCSVExport.suggestedFilename(skill: entry.name)
+        ) {
+            SkillDetailCSVExport.makeCSV(
                 entry: entry,
                 weekly: weekly,
                 sourceNote: OverviewRankingsCard.hoverSkillText(for: entry),
                 scopeTitle: scopedRangeTitle
-            ).write(to: url, atomically: true, encoding: .utf8)
-            exportStatus = ExportFeedback.text(fileURL: url)
-        } catch {
-            let alert = NSAlert(error: error)
-            alert.messageText = "导出 Skill 走势 CSV 失败"
-            alert.runModal()
+            )
         }
+        if let feedback = outcome.successFeedback { exportStatus = feedback }
     }
 
     /// 周标签：与榜内迷你条悬停文案同一写法（mmdd + 周）

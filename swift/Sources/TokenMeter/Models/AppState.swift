@@ -96,6 +96,8 @@ final class AppState: ObservableObject {
     nonisolated static let zhipuQuotaLastGoodTTL: TimeInterval = 10 * 60
 
     private let store = ConfigStore.shared
+    // 每次来源开关改变都换代；关闭后重新开启也不能接纳旧一轮扫描结果。
+    private var localCollectionRevisions: [HistorySource: UInt] = [:]
     private var timer: Timer?
     private var balanceRefresh = ForcedRefreshCoalescer()
     private var usageRefresh = ForcedRefreshCoalescer()
@@ -111,6 +113,10 @@ final class AppState: ObservableObject {
     private var kimiQuotaExpiryTask: Task<Void, Never>?
     private var zhipuQuotaRefresh = ForcedRefreshCoalescer()
     private var zhipuQuotaExpiryTask: Task<Void, Never>?
+    private lazy var accountQuotaConnections = AccountQuotaConnections(
+        store: store,
+        onKimiChanged: { [weak self] in self?.replaceKimiQuota($0) },
+        onZhipuChanged: { [weak self] in self?.replaceZhipuQuota($0) })
     private var arkPlanQuotaRefresh = ForcedRefreshCoalescer()
     private let balanceRefreshCompletion = RefreshCompletionWaiter()
     private let usageRefreshCompletion = RefreshCompletionWaiter()
@@ -337,6 +343,60 @@ final class AppState: ObservableObject {
         return Date().timeIntervalSince(loadedAt) < Self.sourceTTL
     }
 
+    func localCollectionRevision(for source: HistorySource) -> UInt {
+        localCollectionRevisions[source] ?? 0
+    }
+
+    private func invalidateLocalCollection(_ source: HistorySource) {
+        localCollectionRevisions[source, default: 0] &+= 1
+        switch source {
+        case .claude: claude.loadedAt = nil
+        case .codex: codex.loadedAt = nil
+        case .kimi: kimi.loadedAt = nil
+        case .opencode: opencode.loadedAt = nil
+        case .gemini: gemini.loadedAt = nil
+        case .copilot: copilot.loadedAt = nil
+        case .qwen: qwen.loadedAt = nil
+        case .deepseek, .cursor: break
+        }
+    }
+
+    private func acceptsLocalCollection(_ source: HistorySource, requestRevision: UInt?) -> Bool {
+        let enabled: Bool
+        switch source {
+        case .claude: enabled = claudeEnabled
+        case .codex: enabled = codexEnabled
+        case .kimi: enabled = kimiEnabled
+        case .opencode: enabled = opencodeEnabled
+        case .gemini: enabled = geminiEnabled
+        case .copilot: enabled = copilotEnabled
+        case .qwen: enabled = qwenEnabled
+        case .deepseek, .cursor: return false
+        }
+        return enabled && (requestRevision == nil || requestRevision == localCollectionRevision(for: source))
+    }
+
+    // 失败只更新采集状态，不清最后成功快照，也不触碰任何历史。失败时同样
+    // 记下刷新时间，避免面板复查形成重扫循环；用户强制刷新仍可立即重试。
+    @discardableResult
+    func acceptLocalCollectionFailure(
+        _ source: HistorySource, message: String, requestRevision: UInt? = nil
+    ) -> Bool {
+        guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return false }
+        let now = Date()
+        switch source {
+        case .claude: claude.error = message; claude.loadedAt = now
+        case .codex: codex.error = message; codex.loadedAt = now
+        case .kimi: kimi.error = message; kimi.loadedAt = now
+        case .opencode: opencode.error = message; opencode.loadedAt = now
+        case .gemini: gemini.error = message; gemini.loadedAt = now
+        case .copilot: copilot.error = message; copilot.loadedAt = now
+        case .qwen: qwen.error = message; qwen.loadedAt = now
+        case .deepseek, .cursor: return false
+        }
+        return true
+    }
+
     func loadClaude(force: Bool = false) async {
         guard !RuntimeEnvironment.isIsolated else { return }
         guard claudeEnabled, ClaudeUsage.isAvailable else { return }
@@ -355,12 +415,13 @@ final class AppState: ObservableObject {
         while true {
             claude.proc = ProcessStatus.claude()
             let collectStarted = Date()
+            let requestRevision = localCollectionRevision(for: .claude)
             let r = await Task.detached(priority: .userInitiated) { ClaudeUsage.load() }.value
             CollectAttemptLog.record(.init(
                 source: .claude, startedAt: collectStarted,
                 finishedAt: Date(), failure: r.readError.map(CollectAttemptLog.failureSummary)))
             collectRevision &+= 1
-            if claudeEnabled { acceptClaudeCollection(r) }
+            acceptClaudeCollection(r, requestRevision: requestRevision)
 
             guard claudeRefresh.finish() else { break }
             guard claudeEnabled, ClaudeUsage.isAvailable else {
@@ -373,10 +434,11 @@ final class AppState: ObservableObject {
     // 读取失败的部分聚合不能成为权威快照。保留最后成功结果及两份历史，
     // 失败也保留刷新间隔，防止状态栏自动复查形成循环；手动刷新可立即重试。
     @discardableResult
-    func acceptClaudeCollection(_ result: ClaudeUsageResult) -> Bool {
+    func acceptClaudeCollection(_ result: ClaudeUsageResult, requestRevision: UInt? = nil) -> Bool {
+        guard acceptsLocalCollection(.claude, requestRevision: requestRevision) else { return false }
         guard result.isAuthoritative else {
-            claude.error = result.readError
-            claude.loadedAt = Date()
+            acceptLocalCollectionFailure(.claude, message: result.readError ?? "Claude 本地会话读取失败",
+                                         requestRevision: requestRevision)
             return false
         }
         claude.result = result
@@ -391,10 +453,11 @@ final class AppState: ObservableObject {
     }
 
     @discardableResult
-    func acceptCodexCollection(_ result: CodexUsageResult) -> Bool {
+    func acceptCodexCollection(_ result: CodexUsageResult, requestRevision: UInt? = nil) -> Bool {
+        guard acceptsLocalCollection(.codex, requestRevision: requestRevision) else { return false }
         guard result.isAuthoritative else {
-            codex.error = result.readError
-            codex.loadedAt = Date()
+            acceptLocalCollectionFailure(.codex, message: result.readError ?? "Codex 本地会话读取失败",
+                                         requestRevision: requestRevision)
             return false
         }
         codex.result = result
@@ -406,6 +469,82 @@ final class AppState: ObservableObject {
         recordModelHistory(.codex, windowDates: result.days.map(\.date),
                            dayModels: result.dayModels, daySkills: result.daySkills,
                            daySessions: result.daySessions, authoritative: false)
+        historyRevision &+= 1
+        return true
+    }
+
+    @discardableResult
+    func acceptKimiCollection(_ result: KimiUsageResult, requestRevision: UInt? = nil) -> Bool {
+        guard acceptsLocalCollection(.kimi, requestRevision: requestRevision) else { return false }
+        kimi.result = result
+        kimi.error = nil
+        kimi.loadedAt = Date()
+        HistoryStore.reconcile(.kimi, authoritativeDays: result.days.map {
+            (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
+        })
+        recordModelHistory(.kimi, windowDates: result.days.map(\.date),
+                           dayModels: result.dayModels, daySessions: result.daySessions, authoritative: true)
+        historyRevision &+= 1
+        return true
+    }
+
+    @discardableResult
+    func acceptOpenCodeCollection(_ result: OpenCodeUsageResult, requestRevision: UInt? = nil) -> Bool {
+        guard acceptsLocalCollection(.opencode, requestRevision: requestRevision) else { return false }
+        opencode.result = result
+        opencode.error = nil
+        opencode.loadedAt = Date()
+        HistoryStore.record(.opencode, days: result.days.map {
+            (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
+        })
+        recordModelHistory(.opencode, windowDates: result.days.map(\.date),
+                           dayModels: result.dayModels, daySessions: result.daySessions, authoritative: false)
+        historyRevision &+= 1
+        return true
+    }
+
+    @discardableResult
+    func acceptGeminiCollection(_ result: GeminiUsageResult, requestRevision: UInt? = nil) -> Bool {
+        guard acceptsLocalCollection(.gemini, requestRevision: requestRevision) else { return false }
+        gemini.result = result
+        gemini.error = nil
+        gemini.loadedAt = Date()
+        HistoryStore.record(.gemini, days: result.days.map {
+            (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
+        })
+        recordModelHistory(.gemini, windowDates: result.days.map(\.date),
+                           dayModels: result.dayModels, daySessions: result.daySessions, authoritative: false)
+        historyRevision &+= 1
+        return true
+    }
+
+    @discardableResult
+    func acceptCopilotCollection(_ result: CopilotUsageResult, requestRevision: UInt? = nil) -> Bool {
+        guard acceptsLocalCollection(.copilot, requestRevision: requestRevision) else { return false }
+        copilot.result = result
+        copilot.error = nil
+        copilot.loadedAt = Date()
+        HistoryStore.record(.copilot, days: result.days.map {
+            (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
+        })
+        recordModelHistory(.copilot, windowDates: result.days.map(\.date),
+                           dayModels: result.dayModels, daySkills: result.daySkills,
+                           daySessions: result.daySessions, authoritative: false)
+        historyRevision &+= 1
+        return true
+    }
+
+    @discardableResult
+    func acceptQwenCollection(_ result: QwenCodeUsageResult, requestRevision: UInt? = nil) -> Bool {
+        guard acceptsLocalCollection(.qwen, requestRevision: requestRevision) else { return false }
+        qwen.result = result
+        qwen.error = nil
+        qwen.loadedAt = Date()
+        HistoryStore.reconcile(.qwen, authoritativeDays: result.days.map {
+            (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
+        })
+        recordModelHistory(.qwen, windowDates: result.days.map(\.date),
+                           dayModels: result.dayModels, daySessions: result.daySessions, authoritative: true)
         historyRevision &+= 1
         return true
     }
@@ -444,81 +583,90 @@ final class AppState: ObservableObject {
             todayKey: todayKey
         ) else { return }
 
-        let span = DetailBackfill.windowDays
-        var hadReadFailure = false
-        if claudeEnabled, ClaudeUsage.isAvailable {
+        let sources: [HistorySource] = [
+            (claudeEnabled && ClaudeUsage.isAvailable, .claude),
+            (codexEnabled && CodexUsage.isAvailable, .codex),
+            (kimiEnabled && KimiUsage.isAvailable, .kimi),
+            (opencodeEnabled && OpenCodeUsage.isAvailable, .opencode),
+            (geminiEnabled && GeminiUsage.isAvailable, .gemini),
+            (copilotEnabled && CopilotUsage.isAvailable, .copilot),
+            (qwenEnabled && QwenCodeUsage.isAvailable, .qwen),
+        ].compactMap { enabled, source in enabled ? source : nil }
+        let report = await DetailBackfill.run(sources: sources) { source in
+            try await self.backfillModelDetail(source, now: now, windowDays: DetailBackfill.windowDays)
+        }
+        if report.shouldMarkCompleted { ConfigStore.shared.lastModelDetailBackfillDay = todayKey }
+        historyRevision &+= 1
+    }
+
+    private func backfillModelDetail(
+        _ source: HistorySource, now: Date, windowDays: Int
+    ) async throws -> DetailBackfill.AttemptOutcome {
+        let requestRevision = localCollectionRevision(for: source)
+        guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return .superseded }
+        switch source {
+        case .claude:
             let r = await Task.detached(priority: .utility) {
-                ClaudeUsage.load(windowDays: span)
+                ClaudeUsage.load(now: now, windowDays: windowDays)
             }.value
-            if r.isAuthoritative {
-                recordModelHistory(.claude, windowDates: r.days.map(\.date),
+            guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return .superseded }
+            guard r.isAuthoritative else { return .failed }
+            recordModelHistory(.claude, windowDates: r.days.map(\.date),
                                dayModels: r.dayModels, daySkills: r.daySkills,
                                daySessions: r.daySessions, authoritative: true)
-            } else { hadReadFailure = true }
-        }
-        if codexEnabled, CodexUsage.isAvailable {
+        case .codex:
             let r = await Task.detached(priority: .utility) {
-                CodexUsage.load(windowDays: span)
+                CodexUsage.load(now: now, windowDays: windowDays)
             }.value
-            if r.isAuthoritative {
-                recordModelHistory(.codex, windowDates: r.days.map(\.date),
+            guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return .superseded }
+            guard r.isAuthoritative else { return .failed }
+            recordModelHistory(.codex, windowDates: r.days.map(\.date),
                                dayModels: r.dayModels, daySkills: r.daySkills,
                                daySessions: r.daySessions, authoritative: false)
-            } else { hadReadFailure = true }
-        }
-        if kimiEnabled, KimiUsage.isAvailable {
-            let r = try? await Task.detached(priority: .utility) {
-                try KimiUsage.load(windowDays: span)
+        case .kimi:
+            let r = try await Task.detached(priority: .utility) {
+                try KimiUsage.load(now: now, windowDays: windowDays)
             }.value
-            if let r {
-                recordModelHistory(.kimi, windowDates: r.days.map(\.date),
+            guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return .superseded }
+            recordModelHistory(.kimi, windowDates: r.days.map(\.date),
                                    dayModels: r.dayModels,
                                    daySessions: r.daySessions, authoritative: true)
-            }
-        }
-        if opencodeEnabled, OpenCodeUsage.isAvailable {
-            let r = try? await Task.detached(priority: .utility) {
-                try OpenCodeUsage.load(windowDays: span)
+        case .opencode:
+            let r = try await Task.detached(priority: .utility) {
+                try OpenCodeUsage.load(now: now, windowDays: windowDays)
             }.value
-            if let r {
-                recordModelHistory(.opencode, windowDates: r.days.map(\.date),
+            guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return .superseded }
+            recordModelHistory(.opencode, windowDates: r.days.map(\.date),
                                    dayModels: r.dayModels,
                                    daySessions: r.daySessions, authoritative: false)
-            }
-        }
-        if geminiEnabled, GeminiUsage.isAvailable {
-            let r = try? await Task.detached(priority: .utility) {
-                try GeminiUsage.load(windowDays: span)
+        case .gemini:
+            let r = try await Task.detached(priority: .utility) {
+                try GeminiUsage.load(now: now, windowDays: windowDays)
             }.value
-            if let r {
-                recordModelHistory(.gemini, windowDates: r.days.map(\.date),
+            guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return .superseded }
+            recordModelHistory(.gemini, windowDates: r.days.map(\.date),
                                    dayModels: r.dayModels,
                                    daySessions: r.daySessions, authoritative: false)
-            }
-        }
-        if copilotEnabled, CopilotUsage.isAvailable {
-            let r = try? await Task.detached(priority: .utility) {
-                try CopilotUsage.load(windowDays: span)
+        case .copilot:
+            let r = try await Task.detached(priority: .utility) {
+                try CopilotUsage.load(now: now, windowDays: windowDays)
             }.value
-            if let r {
-                recordModelHistory(.copilot, windowDates: r.days.map(\.date),
+            guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return .superseded }
+            recordModelHistory(.copilot, windowDates: r.days.map(\.date),
                                    dayModels: r.dayModels, daySkills: r.daySkills,
                                    daySessions: r.daySessions, authoritative: false)
-            }
-        }
-        if qwenEnabled, QwenCodeUsage.isAvailable {
-            let r = try? await Task.detached(priority: .utility) {
-                try QwenCodeUsage.load(windowDays: span)
+        case .qwen:
+            let r = try await Task.detached(priority: .utility) {
+                try QwenCodeUsage.load(now: now, windowDays: windowDays)
             }.value
-            if let r {
-                recordModelHistory(.qwen, windowDates: r.days.map(\.date),
+            guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return .superseded }
+            recordModelHistory(.qwen, windowDates: r.days.map(\.date),
                                    dayModels: r.dayModels,
                                    daySessions: r.daySessions, authoritative: true)
-            }
+        case .deepseek, .cursor:
+            return .superseded
         }
-
-        if !hadReadFailure { ConfigStore.shared.lastModelDetailBackfillDay = todayKey }
-        historyRevision &+= 1
+        return .succeeded
     }
 
     nonisolated static func claudeHistoryDays(
@@ -552,6 +700,7 @@ final class AppState: ObservableObject {
             // 采集计时只覆盖本地扫描(await local),不含网络等待。
             let collectStarted = Date()
             let localAvailable = CodexUsage.isAvailable
+            let localRequestRevision = localCollectionRevision(for: .codex)
             async let local: CodexUsageResult? = Task.detached(priority: .userInitiated) {
                 localAvailable ? CodexUsage.load() : nil
             }.value
@@ -563,7 +712,7 @@ final class AppState: ObservableObject {
                     source: .codex, startedAt: collectStarted,
                     finishedAt: Date(), failure: result.readError.map(CollectAttemptLog.failureSummary)))
                 collectRevision &+= 1
-                if codexEnabled { acceptCodexCollection(result) }
+                acceptCodexCollection(result, requestRevision: localRequestRevision)
             }
             acceptCodexLiveQuota(await live, requestRevision: requestRevision, wasEnabled: requestedLiveQuota)
 
@@ -602,29 +751,20 @@ final class AppState: ObservableObject {
 
         while true {
             kimi.proc = ProcessStatus.kimi()
-            kimi.error = nil
             let collectStarted = Date()
+            let requestRevision = localCollectionRevision(for: .kimi)
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
                     try KimiUsage.load()
                 }.value
-                kimi.result = result
-                kimi.loadedAt = Date()
-                HistoryStore.reconcile(.kimi, authoritativeDays: result.days.map {
-                    (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
-                })
-                recordModelHistory(.kimi, windowDates: result.days.map(\.date),
-                                   dayModels: result.dayModels,
-                                   daySessions: result.daySessions, authoritative: true)
-                historyRevision &+= 1
+                acceptKimiCollection(result, requestRevision: requestRevision)
                 CollectAttemptLog.record(.init(
                     source: .kimi, startedAt: collectStarted,
                     finishedAt: Date(), failure: nil))
             } catch {
                 let message = (error as? KimiUsageError)?.errorDescription
                     ?? "Kimi Code 本地用量暂不可用"
-                kimi.result = nil
-                kimi.error = message
+                acceptLocalCollectionFailure(.kimi, message: message, requestRevision: requestRevision)
                 CollectAttemptLog.record(.init(
                     source: .kimi, startedAt: collectStarted, finishedAt: Date(),
                     failure: CollectAttemptLog.failureSummary(message)))
@@ -655,29 +795,20 @@ final class AppState: ObservableObject {
 
         while true {
             opencode.proc = ProcessStatus.opencode()
-            opencode.error = nil
             let collectStarted = Date()
+            let requestRevision = localCollectionRevision(for: .opencode)
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
                     try OpenCodeUsage.load()
                 }.value
-                opencode.result = result
-                opencode.loadedAt = Date()
-                HistoryStore.record(.opencode, days: result.days.map {
-                    (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
-                })
-                recordModelHistory(.opencode, windowDates: result.days.map(\.date),
-                                   dayModels: result.dayModels,
-                                   daySessions: result.daySessions, authoritative: false)
-                historyRevision &+= 1
+                acceptOpenCodeCollection(result, requestRevision: requestRevision)
                 CollectAttemptLog.record(.init(
                     source: .opencode, startedAt: collectStarted,
                     finishedAt: Date(), failure: nil))
             } catch {
                 let message = (error as? OpenCodeUsageError)?.errorDescription
                     ?? error.localizedDescription
-                opencode.result = nil
-                opencode.error = message
+                acceptLocalCollectionFailure(.opencode, message: message, requestRevision: requestRevision)
                 CollectAttemptLog.record(.init(
                     source: .opencode, startedAt: collectStarted, finishedAt: Date(),
                     failure: CollectAttemptLog.failureSummary(message)))
@@ -708,29 +839,20 @@ final class AppState: ObservableObject {
 
         while true {
             gemini.proc = ProcessStatus.gemini()
-            gemini.error = nil
             let collectStarted = Date()
+            let requestRevision = localCollectionRevision(for: .gemini)
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
                     try GeminiUsage.load()
                 }.value
-                gemini.result = result
-                gemini.loadedAt = Date()
-                HistoryStore.record(.gemini, days: result.days.map {
-                    (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
-                })
-                recordModelHistory(.gemini, windowDates: result.days.map(\.date),
-                                   dayModels: result.dayModels,
-                                   daySessions: result.daySessions, authoritative: false)
-                historyRevision &+= 1
+                acceptGeminiCollection(result, requestRevision: requestRevision)
                 CollectAttemptLog.record(.init(
                     source: .gemini, startedAt: collectStarted,
                     finishedAt: Date(), failure: nil))
             } catch {
                 let message = (error as? GeminiUsageError)?.errorDescription
                     ?? error.localizedDescription
-                gemini.result = nil
-                gemini.error = message
+                acceptLocalCollectionFailure(.gemini, message: message, requestRevision: requestRevision)
                 CollectAttemptLog.record(.init(
                     source: .gemini, startedAt: collectStarted, finishedAt: Date(),
                     failure: CollectAttemptLog.failureSummary(message)))
@@ -761,29 +883,20 @@ final class AppState: ObservableObject {
 
         while true {
             copilot.proc = ProcessStatus.copilot()
-            copilot.error = nil
             let collectStarted = Date()
+            let requestRevision = localCollectionRevision(for: .copilot)
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
                     try CopilotUsage.load()
                 }.value
-                copilot.result = result
-                copilot.loadedAt = Date()
-                HistoryStore.record(.copilot, days: result.days.map {
-                    (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
-                })
-                recordModelHistory(.copilot, windowDates: result.days.map(\.date),
-                                   dayModels: result.dayModels, daySkills: result.daySkills,
-                                   daySessions: result.daySessions, authoritative: false)
-                historyRevision &+= 1
+                acceptCopilotCollection(result, requestRevision: requestRevision)
                 CollectAttemptLog.record(.init(
                     source: .copilot, startedAt: collectStarted,
                     finishedAt: Date(), failure: nil))
             } catch {
                 let message = (error as? CopilotUsageError)?.errorDescription
                     ?? error.localizedDescription
-                copilot.result = nil
-                copilot.error = message
+                acceptLocalCollectionFailure(.copilot, message: message, requestRevision: requestRevision)
                 CollectAttemptLog.record(.init(
                     source: .copilot, startedAt: collectStarted, finishedAt: Date(),
                     failure: CollectAttemptLog.failureSummary(message)))
@@ -814,29 +927,20 @@ final class AppState: ObservableObject {
 
         while true {
             qwen.proc = ProcessStatus.qwen()
-            qwen.error = nil
             let collectStarted = Date()
+            let requestRevision = localCollectionRevision(for: .qwen)
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
                     try QwenCodeUsage.load()
                 }.value
-                qwen.result = result
-                qwen.loadedAt = Date()
-                HistoryStore.reconcile(.qwen, authoritativeDays: result.days.map {
-                    (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
-                })
-                recordModelHistory(.qwen, windowDates: result.days.map(\.date),
-                                   dayModels: result.dayModels,
-                                   daySessions: result.daySessions, authoritative: true)
-                historyRevision &+= 1
+                acceptQwenCollection(result, requestRevision: requestRevision)
                 CollectAttemptLog.record(.init(
                     source: .qwen, startedAt: collectStarted,
                     finishedAt: Date(), failure: nil))
             } catch {
                 let message = (error as? QwenCodeUsageError)?.errorDescription
                     ?? "Qwen Code 本地用量暂不可用"
-                qwen.result = nil
-                qwen.error = message
+                acceptLocalCollectionFailure(.qwen, message: message, requestRevision: requestRevision)
                 CollectAttemptLog.record(.init(
                     source: .qwen, startedAt: collectStarted, finishedAt: Date(),
                     failure: CollectAttemptLog.failureSummary(message)))
@@ -918,28 +1022,20 @@ final class AppState: ObservableObject {
         }
 
         while true {
-            let credential = normalizedKimiCodeKey()
+            let request = accountQuotaConnections.kimiRequest()
             do {
                 let service = KimiQuotaService()
                 let loaded: KimiQuotaResult
-                if let credential {
+                if let credential = request.credential {
                     loaded = try await service.load(apiKey: credential)
                 } else {
                     loaded = try await service.load()
                 }
-                if kimiQuotaRefresh.acceptsResult(
-                    inputIsCurrent: normalizedKimiCodeKey() == credential
-                ) {
-                    let now = Date()
-                    cancelKimiQuotaExpiry()
-                    kimiQuota.result = loaded
-                    kimiQuota.error = nil
-                    kimiQuota.succeededAt = now
-                    kimiQuota.loadedAt = now
-                }
+                let accepted = accountQuotaConnections.acceptKimiRefresh(loaded, request: request)
+                _ = kimiQuotaRefresh.acceptsResult(inputIsCurrent: accepted)
             } catch {
                 if kimiQuotaRefresh.acceptsResult(
-                    inputIsCurrent: normalizedKimiCodeKey() == credential
+                    inputIsCurrent: accountQuotaConnections.accepts(request)
                 ) {
                     let now = Date()
                     let quotaError = (error as? KimiQuotaError) ?? .officialRequestFailed
@@ -1011,29 +1107,18 @@ final class AppState: ObservableObject {
         }
 
         while true {
-            let credential = normalizedZhipuKey()
-            let domain = store.zhipuQuotaDomain
-            if let credential {
+            let request = accountQuotaConnections.zhipuRequest()
+            if let credential = request.credential {
                 do {
                     let loaded = try await ZhipuQuotaService().load(
                         apiKey: credential,
-                        domain: domain
+                        domain: request.domain
                     )
-                    if zhipuQuotaRefresh.acceptsResult(
-                        inputIsCurrent: normalizedZhipuKey() == credential
-                            && store.zhipuQuotaDomain == domain
-                    ) {
-                        let now = Date()
-                        cancelZhipuQuotaExpiry()
-                        zhipuQuota.result = loaded
-                        zhipuQuota.error = nil
-                        zhipuQuota.succeededAt = now
-                        zhipuQuota.loadedAt = now
-                    }
+                    let accepted = accountQuotaConnections.acceptZhipuRefresh(loaded, request: request)
+                    _ = zhipuQuotaRefresh.acceptsResult(inputIsCurrent: accepted)
                 } catch {
                     if zhipuQuotaRefresh.acceptsResult(
-                        inputIsCurrent: normalizedZhipuKey() == credential
-                            && store.zhipuQuotaDomain == domain
+                        inputIsCurrent: accountQuotaConnections.accepts(request)
                     ) {
                         let now = Date()
                         let quotaError = (error as? ZhipuQuotaError) ?? .requestFailed
@@ -1167,6 +1252,7 @@ final class AppState: ObservableObject {
     }
 
     func setClaudeEnabled(_ enabled: Bool) {
+        if claudeEnabled != enabled { invalidateLocalCollection(.claude) }
         store.claudeMonitorEnabled = enabled
         claudeEnabled = enabled
         if enabled { Task { await loadClaude(force: true) } }
@@ -1174,6 +1260,7 @@ final class AppState: ObservableObject {
     }
 
     func setCodexEnabled(_ enabled: Bool) {
+        if codexEnabled != enabled { invalidateLocalCollection(.codex) }
         store.codexMonitorEnabled = enabled
         codexEnabled = enabled
         codexLiveQuotaRevision &+= 1
@@ -1195,6 +1282,7 @@ final class AppState: ObservableObject {
     }
 
     func setKimiEnabled(_ enabled: Bool) {
+        if kimiEnabled != enabled { invalidateLocalCollection(.kimi) }
         store.kimiMonitorEnabled = enabled
         kimiEnabled = enabled
         if enabled {
@@ -1202,41 +1290,77 @@ final class AppState: ObservableObject {
         }
     }
 
-    func invalidateKimiQuota() {
+    func connectKimiCode(key: String) async throws -> AccountQuotaConnectionOutcome<KimiQuotaResult> {
+        try await accountQuotaConnections.connectKimi(key: key)
+    }
+
+    func connectZhipu(key: String) async throws -> AccountQuotaConnectionOutcome<ZhipuQuotaResult> {
+        try await accountQuotaConnections.connectZhipu(key: key)
+    }
+
+    func clearKimiCodeConnection() async throws -> AccountQuotaConnectionOutcome<String> {
+        guard try accountQuotaConnections.clearKimi() else { return .isolated }
+        let request = accountQuotaConnections.kimiRequest()
+        await loadKimiQuota(force: true)
+        guard accountQuotaConnections.accepts(request) else { return .superseded }
+        return .completed(kimiQuota.result == nil
+            ? (kimiQuota.error ?? "未获得本机 Kimi Code 配额")
+            : "已切换为本机 Kimi Code 配额接口")
+    }
+
+    func clearZhipuConnection() throws -> AccountQuotaConnectionOutcome<Void> {
+        guard try accountQuotaConnections.clearZhipu() else { return .isolated }
+        return .completed(())
+    }
+
+    func setZhipuQuotaDomain(_ domain: ZhipuQuotaDomain) {
+        guard accountQuotaConnections.setZhipuDomain(domain) else { return }
+        if accountQuotaConnections.zhipuRequest().credential != nil {
+            Task { await loadZhipuQuota(force: true) }
+        }
+    }
+
+    private func replaceKimiQuota(_ result: KimiQuotaResult?) {
         cancelKimiQuotaExpiry()
-        kimiQuota.result = nil
-        kimiQuota.loadedAt = nil
-        kimiQuota.succeededAt = nil
+        let now = result == nil ? nil : Date()
+        kimiQuota.result = result
+        kimiQuota.loadedAt = now
+        kimiQuota.succeededAt = now
         kimiQuota.error = nil
     }
 
-    func invalidateZhipuQuota() {
+    private func replaceZhipuQuota(_ result: ZhipuQuotaResult?) {
         cancelZhipuQuotaExpiry()
-        zhipuQuota.result = nil
-        zhipuQuota.loadedAt = nil
-        zhipuQuota.succeededAt = nil
+        let now = result == nil ? nil : Date()
+        zhipuQuota.result = result
+        zhipuQuota.loadedAt = now
+        zhipuQuota.succeededAt = now
         zhipuQuota.error = nil
     }
 
     func setOpenCodeEnabled(_ enabled: Bool) {
+        if opencodeEnabled != enabled { invalidateLocalCollection(.opencode) }
         store.opencodeMonitorEnabled = enabled
         opencodeEnabled = enabled
         if enabled { Task { await loadOpenCode(force: true) } }
     }
 
     func setGeminiEnabled(_ enabled: Bool) {
+        if geminiEnabled != enabled { invalidateLocalCollection(.gemini) }
         store.geminiMonitorEnabled = enabled
         geminiEnabled = enabled
         if enabled { Task { await loadGemini(force: true) } }
     }
 
     func setCopilotEnabled(_ enabled: Bool) {
+        if copilotEnabled != enabled { invalidateLocalCollection(.copilot) }
         store.copilotMonitorEnabled = enabled
         copilotEnabled = enabled
         if enabled { Task { await loadCopilot(force: true) } }
     }
 
     func setQwenEnabled(_ enabled: Bool) {
+        if qwenEnabled != enabled { invalidateLocalCollection(.qwen) }
         store.qwenMonitorEnabled = enabled
         qwenEnabled = enabled
         if enabled { Task { await loadQwen(force: true) } }
@@ -1264,21 +1388,6 @@ final class AppState: ObservableObject {
         NotificationCenter.default.post(name: .statusRefreshRequested, object: nil)
     }
 
-    private func normalizedKimiCodeKey() -> String? {
-        guard let value = store.credKimiCodeKey?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              !value.isEmpty
-        else { return nil }
-        return value
-    }
-
-    private func normalizedZhipuKey() -> String? {
-        guard let value = store.credZhipuKey?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              !value.isEmpty
-        else { return nil }
-        return value
-    }
 }
 
 // 单个本地源的缓存状态：数据 + 加载时刻（判新鲜度）+ 加载中标志 +

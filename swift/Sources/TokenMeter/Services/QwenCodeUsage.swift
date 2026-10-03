@@ -68,11 +68,14 @@ struct QwenCodeUsageResult: Equatable {
 
 enum QwenCodeUsageError: LocalizedError, Equatable {
     case dataUnavailable
+    case scanFailed
 
     var errorDescription: String? {
         switch self {
         case .dataUnavailable:
             return "未找到 Qwen Code 本地用量记录"
+        case .scanFailed:
+            return "Qwen Code 本地用量读取失败"
         }
     }
 }
@@ -112,11 +115,24 @@ enum QwenCodeUsage {
         windowDays: Int = 7,
         calendar: Calendar = .current
     ) throws -> QwenCodeUsageResult {
+        do {
+            return try loadSnapshot(usageRecordURL: usageRecordURL, now: now,
+                                    windowDays: windowDays, calendar: calendar)
+        } catch let error as QwenCodeUsageError {
+            throw error
+        } catch {
+            throw QwenCodeUsageError.scanFailed
+        }
+    }
+
+    private static func loadSnapshot(
+        usageRecordURL: URL, now: Date, windowDays: Int, calendar: Calendar
+    ) throws -> QwenCodeUsageResult {
         guard FileManager.default.fileExists(atPath: usageRecordURL.path) else {
             throw QwenCodeUsageError.dataUnavailable
         }
 
-        let records = scan(usageRecordURL)
+        let records = try scan(usageRecordURL)
         let span = max(windowDays, 1)
         let oldestDate = calendar.date(byAdding: .day, value: 1 - span, to: now) ?? now
         let oldestDay = calendar.startOfDay(for: oldestDate)
@@ -197,16 +213,19 @@ enum QwenCodeUsage {
 
     // 官方 loadUsageHistory 用 sessionId -> record 的 Map 去重，后出现的完整记录覆盖
     // 旧记录。这里保持同一语义，同时支持写入中的非换行 EOF 尾行。
-    private static func scan(_ file: URL) -> [String: SessionRecord] {
-        guard let handle = try? FileHandle(forReadingFrom: file) else { return [:] }
+    private static func scan(_ file: URL) throws -> [String: SessionRecord] {
+        guard FileManager.default.isReadableFile(atPath: file.path) else {
+            throw QwenCodeUsageError.scanFailed
+        }
+        let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
 
         let size = UInt64(max(
-            (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0,
+            (try file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0,
             0
         ))
         let startOffset = size > maximumScanBytes ? size - maximumScanBytes : 0
-        if startOffset > 0 { try? handle.seek(toOffset: startOffset) }
+        if startOffset > 0 { try handle.seek(toOffset: startOffset) }
 
         let decoder = JSONDecoder()
         let newline = UInt8(ascii: "\n")
@@ -227,7 +246,7 @@ enum QwenCodeUsage {
         }
 
         while !reachedEnd {
-            let chunk = (try? handle.read(upToCount: chunkSize)) ?? Data()
+            let chunk = try handle.read(upToCount: chunkSize) ?? Data()
             var data: Data
             if chunk.isEmpty {
                 guard !carry.isEmpty else { break }

@@ -533,11 +533,10 @@ struct SettingsView: View {
                     get: { store.zhipuQuotaDomain },
                     set: { domain in
                         guard domain != store.zhipuQuotaDomain else { return }
-                        store.zhipuQuotaDomain = domain
-                        if store.zhipuKeyConfigured {
-                            state.invalidateZhipuQuota()
-                            Task { await state.loadZhipuQuota(force: true) }
-                        }
+                        state.setZhipuQuotaDomain(domain)
+                        zhipuKeyStatus = store.zhipuKeyConfigured
+                            ? "已配置 \(store.zhipuKeyPreview() ?? "")（\(store.zhipuQuotaDomain.title)）"
+                            : "未配置（\(store.zhipuQuotaDomain.title)）"
                     }
                 )
             ) {
@@ -1033,47 +1032,32 @@ struct SettingsView: View {
 
     /// 共用的保存面板流程；返回 nil 表示用户取消，否则为结果状态文案
     private func runUsageCSVExport(range: UsageCSVExport.ExportRange) -> String? {
-        NSApp.activate(ignoringOtherApps: true)
-        let panel = NSSavePanel()
-        panel.title = "导出用量 CSV"
-        panel.nameFieldStringValue = UsageCSVExport.suggestedFilename(range: range)
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.allowedContentTypes = [.commaSeparatedText]
-
-        guard panel.runModal() == .OK, let url = panel.url else { return nil }
-        do {
+        let outcome = LocalTextExportPresenter.shared.export(
+            title: "导出用量 CSV",
+            filename: UsageCSVExport.suggestedFilename(range: range)
+        ) {
             let modelHistory = ModelUsageHistoryStore.shared.all()
             let apiValues = UsageCSVExport.apiValueByDate(modelHistory)
-            try UsageCSVExport.makeCSV(
+            return UsageCSVExport.makeCSV(
                 HistoryStore.all(),
                 apiValueByDate: apiValues,
                 modelHistory: modelHistory,
                 plans: ConfigStore.shared.subscriptionPlans,
                 range: range
-            ).write(to: url, atomically: true, encoding: .utf8)
-            return "已导出：\(url.lastPathComponent)"
-        } catch {
-            return "导出失败：\(error.localizedDescription)"
+            )
         }
+        return outcome.statusText
     }
 
     private func exportDiagnostics() {
-        NSApp.activate(ignoringOtherApps: true)
-        let panel = NSSavePanel()
-        panel.title = "导出诊断信息"
-        panel.nameFieldStringValue = DiagnosticReport.currentFilename()
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.allowedContentTypes = [.plainText]
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try DiagnosticReport.currentText().write(to: url, atomically: true, encoding: .utf8)
-            diagnosticStatus = "已导出：\(url.lastPathComponent)"
-        } catch {
-            diagnosticStatus = "导出失败：\(error.localizedDescription)"
+        let outcome = LocalTextExportPresenter.shared.export(
+            title: "导出诊断信息",
+            filename: DiagnosticReport.currentFilename(),
+            contentType: .plainText
+        ) {
+            DiagnosticReport.currentText()
         }
+        if let status = outcome.statusText { diagnosticStatus = status }
     }
 
     private var footer: some View {
@@ -1149,7 +1133,6 @@ struct SettingsView: View {
     }
 
     private func saveKimiCodeKey() {
-        guard !RuntimeEnvironment.isIsolated else { kimiCodeKeyStatus = "验证模式不连接真实账户"; return }
         let key = kimiCodeKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else {
             kimiCodeKeyStatus = CredentialStoreError.emptyCredential.errorDescription ?? "请输入 Key"
@@ -1159,18 +1142,17 @@ struct SettingsView: View {
         kimiCodeKeyStatus = "正在验证 Kimi 官方额度…"
         Task {
             do {
-                let result = try await KimiQuotaService().load(apiKey: key)
-                try store.saveKimiCodeKey(key)
-                kimiCodeKeyInput = ""
-                state.invalidateKimiQuota()
-                state.kimiQuota.result = result
-                let now = Date()
-                state.kimiQuota.loadedAt = now
-                state.kimiQuota.succeededAt = now
-                state.kimiQuota.error = nil
-                let windowCount = (result.summary == nil ? 0 : 1) + result.limits.count
-                kimiCodeKeyStatus = "验证通过，已读取 \(windowCount) 个额度窗口"
-                expandKimiKey = false
+                switch try await state.connectKimiCode(key: key) {
+                case .completed(let result):
+                    kimiCodeKeyInput = ""
+                    let windowCount = (result.summary == nil ? 0 : 1) + result.limits.count
+                    kimiCodeKeyStatus = "验证通过，已读取 \(windowCount) 个额度窗口"
+                    expandKimiKey = false
+                case .superseded:
+                    kimiCodeKeyStatus = "连接设置已改变，已忽略旧验证结果"
+                case .isolated:
+                    kimiCodeKeyStatus = "验证模式不连接真实账户"
+                }
             } catch {
                 kimiCodeKeyStatus = (error as? KimiQuotaError)?.errorDescription
                     ?? (error as? CredentialStoreError)?.errorDescription
@@ -1182,28 +1164,27 @@ struct SettingsView: View {
 
     private func clearKimiCodeKey() {
         busy = true
-        do {
-            try store.clearKimiCodeKey()
-        } catch {
-            kimiCodeKeyStatus = (error as? CredentialStoreError)?.errorDescription
-                ?? "Kimi For Coding Key 清除失败"
-            busy = false
-            return
-        }
-        kimiCodeKeyInput = ""
-        state.invalidateKimiQuota()
-        kimiCodeKeyStatus = "已清除；正在尝试本机 kimi web 额度接口…"
+        kimiCodeKeyStatus = "正在清除并尝试本机 kimi web 额度接口…"
         Task {
-            await state.loadKimiQuota(force: true)
-            kimiCodeKeyStatus = state.kimiQuota.result == nil
-                ? (state.kimiQuota.error ?? "未获得本机 Kimi Code 配额")
-                : "已切换为本机 Kimi Code 配额接口"
+            do {
+                switch try await state.clearKimiCodeConnection() {
+                case .completed(let status):
+                    kimiCodeKeyInput = ""
+                    kimiCodeKeyStatus = status
+                case .superseded:
+                    kimiCodeKeyStatus = "连接设置已改变，已忽略旧清除反馈"
+                case .isolated:
+                    kimiCodeKeyStatus = "验证模式不连接真实账户"
+                }
+            } catch {
+                kimiCodeKeyStatus = (error as? CredentialStoreError)?.errorDescription
+                    ?? "Kimi For Coding Key 清除失败"
+            }
             busy = false
         }
     }
 
     private func saveZhipuKey() {
-        guard !RuntimeEnvironment.isIsolated else { zhipuKeyStatus = "验证模式不连接真实账户"; return }
         let key = zhipuKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else {
             zhipuKeyStatus = CredentialStoreError.emptyCredential.errorDescription ?? "请输入 Key"
@@ -1213,20 +1194,16 @@ struct SettingsView: View {
         zhipuKeyStatus = "正在验证智谱官方额度…"
         Task {
             do {
-                let result = try await ZhipuQuotaService().load(
-                    apiKey: key,
-                    domain: store.zhipuQuotaDomain
-                )
-                try store.saveZhipuKey(key)
-                zhipuKeyInput = ""
-                state.invalidateZhipuQuota()
-                state.zhipuQuota.result = result
-                let now = Date()
-                state.zhipuQuota.loadedAt = now
-                state.zhipuQuota.succeededAt = now
-                state.zhipuQuota.error = nil
-                zhipuKeyStatus = "验证通过，已读取 \(result.windowCount) 个额度窗口"
-                expandZhipuKey = false
+                switch try await state.connectZhipu(key: key) {
+                case .completed(let result):
+                    zhipuKeyInput = ""
+                    zhipuKeyStatus = "验证通过，已读取 \(result.windowCount) 个额度窗口"
+                    expandZhipuKey = false
+                case .superseded:
+                    zhipuKeyStatus = "连接设置已改变，已忽略旧验证结果"
+                case .isolated:
+                    zhipuKeyStatus = "验证模式不连接真实账户"
+                }
             } catch {
                 zhipuKeyStatus = (error as? ZhipuQuotaError)?.errorDescription
                     ?? (error as? CredentialStoreError)?.errorDescription
@@ -1239,16 +1216,21 @@ struct SettingsView: View {
     private func clearZhipuKey() {
         busy = true
         do {
-            try store.clearZhipuKey()
+            switch try state.clearZhipuConnection() {
+            case .completed:
+                zhipuKeyInput = ""
+                zhipuKeyStatus = "已清除智谱 API Key"
+            case .superseded:
+                zhipuKeyStatus = "连接设置已改变，已忽略旧清除反馈"
+            case .isolated:
+                zhipuKeyStatus = "验证模式不连接真实账户"
+            }
         } catch {
             zhipuKeyStatus = (error as? CredentialStoreError)?.errorDescription
                 ?? "智谱 API Key 清除失败"
             busy = false
             return
         }
-        zhipuKeyInput = ""
-        state.invalidateZhipuQuota()
-        zhipuKeyStatus = "已清除智谱 API Key"
         busy = false
     }
 

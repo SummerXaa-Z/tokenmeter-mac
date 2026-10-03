@@ -240,37 +240,28 @@ struct CodingModelDetailView: View {
     /// 导出当前档明细 CSV；保存面板流程与模型榜/Skill 详情导出同款，
     /// 写盘失败弹系统错误框。90 天档按周聚合、短档逐日，与趋势图同桶。
     private func exportCSV(_ s: CodingModelDetail.Summary) {
-        NSApp.activate(ignoringOtherApps: true)
-        let panel = NSSavePanel()
-        panel.title = "导出模型明细 CSV"
-        panel.nameFieldStringValue = CodingModelDetailCSVExport.suggestedFilename(model: model)
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.allowedContentTypes = [.commaSeparatedText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        let rows: [CodingModelDetailCSVExport.Row]
-        if span == .quarter {
-            rows = CodingModelDetail.weeklyBuckets(from: s.days).map {
-                CodingModelDetailCSVExport.Row(
-                    bucket: $0.weekStart, tokens: $0.tokens, usd: $0.usd)
+        let outcome = LocalTextExportPresenter.shared.export(
+            title: "导出模型明细 CSV",
+            filename: CodingModelDetailCSVExport.suggestedFilename(model: model)
+        ) {
+            let rows: [CodingModelDetailCSVExport.Row]
+            if span == .quarter {
+                rows = CodingModelDetail.weeklyBuckets(from: s.days).map {
+                    CodingModelDetailCSVExport.Row(
+                        bucket: $0.weekStart, tokens: $0.tokens, usd: $0.usd)
+                }
+            } else {
+                rows = s.days.map {
+                    CodingModelDetailCSVExport.Row(
+                        bucket: $0.date, tokens: $0.tokens, usd: $0.usd)
+                }
             }
-        } else {
-            rows = s.days.map {
-                CodingModelDetailCSVExport.Row(
-                    bucket: $0.date, tokens: $0.tokens, usd: $0.usd)
-            }
-        }
-        do {
-            try CodingModelDetailCSVExport.makeCSV(
+            return CodingModelDetailCSVExport.makeCSV(
                 source: source, model: model, spanDays: span.rawValue,
                 rows: rows, coverage: s.coverage
-            ).write(to: url, atomically: true, encoding: .utf8)
-            exportStatus = ExportFeedback.text(fileURL: url)
-        } catch {
-            let alert = NSAlert(error: error)
-            alert.messageText = "导出模型明细 CSV 失败"
-            alert.runModal()
+            )
         }
+        if let feedback = outcome.successFeedback { exportStatus = feedback }
     }
 
     /// 各来源实时采集的逐日模型明细；平台账户与 Cursor 榜单天然不进此页。

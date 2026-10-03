@@ -280,26 +280,17 @@ struct OverviewRankingsCard: View {
     /// 数字同管线。保存面板流程与「设置 → 用量导出」同款，写盘失败
     /// 弹系统错误框。
     private func exportRankingsCSV() {
-        NSApp.activate(ignoringOtherApps: true)
-        let panel = NSSavePanel()
-        panel.title = "导出模型榜 CSV"
-        panel.nameFieldStringValue = ModelRankingCSVExport.suggestedFilename()
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.allowedContentTypes = [.commaSeparatedText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try ModelRankingCSVExport.makeCSV(
+        let outcome = LocalTextExportPresenter.shared.export(
+            title: "导出模型榜 CSV",
+            filename: ModelRankingCSVExport.suggestedFilename()
+        ) {
+            ModelRankingCSVExport.makeCSV(
                 rows: exportRows,
                 scopeTitle: range.scopeTitle,
                 sortTitle: activeSort.rawValue
-            ).write(to: url, atomically: true, encoding: .utf8)
-            exportStatus = ExportFeedback.text(fileURL: url)
-        } catch {
-            let alert = NSAlert(error: error)
-            alert.messageText = "导出模型榜 CSV 失败"
-            alert.runModal()
+            )
         }
+        if let feedback = outcome.successFeedback { exportStatus = feedback }
     }
 
     /// 导出行:近 7/30 天与金额走悬停数字同一条下钻管线,断流或缺价
@@ -503,25 +494,16 @@ struct OverviewRankingsCard: View {
     /// 导出当前榜单顺序下的完整 Skills 榜（不只界面前 5）为 CSV;
     /// 来源拆解与近 13 周次数和榜内悬停/迷你条同一条取数管线
     private func exportSkillsCSV() {
-        NSApp.activate(ignoringOtherApps: true)
-        let panel = NSSavePanel()
-        panel.title = "导出 Skills 榜 CSV"
-        panel.nameFieldStringValue = SkillRankingCSVExport.suggestedFilename()
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.allowedContentTypes = [.commaSeparatedText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try SkillRankingCSVExport.makeCSV(
+        let outcome = LocalTextExportPresenter.shared.export(
+            title: "导出 Skills 榜 CSV",
+            filename: SkillRankingCSVExport.suggestedFilename()
+        ) {
+            SkillRankingCSVExport.makeCSV(
                 rows: exportSkillRows,
                 scopeTitle: exportScopeTitle
-            ).write(to: url, atomically: true, encoding: .utf8)
-            exportStatus = ExportFeedback.text(fileURL: url)
-        } catch {
-            let alert = NSAlert(error: error)
-            alert.messageText = "导出 Skills 榜 CSV 失败"
-            alert.runModal()
+            )
         }
+        if let feedback = outcome.successFeedback { exportStatus = feedback }
     }
 
     private var exportSkillRows: [SkillRankingCSVExport.Row] {

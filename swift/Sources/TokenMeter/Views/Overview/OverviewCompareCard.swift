@@ -72,24 +72,15 @@ struct OverviewCompareCard: View {
     private func exportCSV(
         compare: (this: [HistorySource: Int], last: [HistorySource: Int])
     ) {
-        NSApp.activate(ignoringOtherApps: true)
-        let panel = NSSavePanel()
-        panel.title = "导出环比 CSV"
-        panel.nameFieldStringValue = PeriodCompareCSVExport.suggestedFilename(period: period)
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.allowedContentTypes = [.commaSeparatedText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try PeriodCompareCSVExport.makeCSV(
+        let outcome = LocalTextExportPresenter.shared.export(
+            title: "导出环比 CSV",
+            filename: PeriodCompareCSVExport.suggestedFilename(period: period)
+        ) {
+            PeriodCompareCSVExport.makeCSV(
                 period: period, this: compare.this, last: compare.last
-            ).write(to: url, atomically: true, encoding: .utf8)
-            exportStatus = ExportFeedback.text(fileURL: url)
-        } catch {
-            let alert = NSAlert(error: error)
-            alert.messageText = "导出环比 CSV 失败"
-            alert.runModal()
+            )
         }
+        if let feedback = outcome.successFeedback { exportStatus = feedback }
     }
 
     // 来源名列定宽让各行对齐；本期值粗体、上期值灰、行尾环比徽标

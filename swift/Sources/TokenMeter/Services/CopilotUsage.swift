@@ -165,6 +165,19 @@ enum CopilotUsage {
         windowDays: Int = 7,
         calendar: Calendar = .current
     ) throws -> CopilotUsageResult {
+        do {
+            return try loadSnapshot(sessionsRoot: sessionsRoot, now: now,
+                                    windowDays: windowDays, calendar: calendar)
+        } catch let error as CopilotUsageError {
+            throw error
+        } catch {
+            throw CopilotUsageError.scanFailed
+        }
+    }
+
+    private static func loadSnapshot(
+        sessionsRoot: URL, now: Date, windowDays: Int, calendar: Calendar
+    ) throws -> CopilotUsageResult {
         guard FileManager.default.fileExists(atPath: sessionsRoot.path) else {
             throw CopilotUsageError.dataUnavailable
         }
@@ -172,7 +185,7 @@ enum CopilotUsage {
         let span = max(windowDays, 1)
         let oldestDate = calendar.date(byAdding: .day, value: 1 - span, to: now) ?? now
         let oldestDay = calendar.startOfDay(for: oldestDate)
-        let files = sessionFiles(in: sessionsRoot, modifiedSince: oldestDay)
+        let files = try sessionFiles(in: sessionsRoot, modifiedSince: oldestDay)
 
         var days: [String: CopilotDayUsage] = [:]
         var models: [String: CopilotModelUsage] = [:]
@@ -181,7 +194,7 @@ enum CopilotUsage {
         var skills: [String: Int] = [:]
 
         for file in files {
-            let summary = cachedSummary(file)
+            let summary = try cachedSummary(file)
             guard let shutdown = summary.shutdown,
                   shutdown.timestamp >= oldestDay,
                   shutdown.timestamp <= now
@@ -258,48 +271,55 @@ enum CopilotUsage {
                                   daySkills: daySkills)
     }
 
-    private static func sessionFiles(in root: URL, modifiedSince cutoff: Date) -> [URL] {
+    private static func sessionFiles(in root: URL, modifiedSince cutoff: Date) throws -> [URL] {
+        guard FileManager.default.isReadableFile(atPath: root.path),
+              try root.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
+        else { throw CopilotUsageError.scanFailed }
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .contentModificationDateKey]
+        var enumerationFailed = false
         guard let enumerator = FileManager.default.enumerator(
             at: root,
             includingPropertiesForKeys: Array(keys),
-            options: [.skipsHiddenFiles]
-        ) else { return [] }
+            options: [.skipsHiddenFiles],
+            errorHandler: { _, _ in enumerationFailed = true; return true }
+        ) else { throw CopilotUsageError.scanFailed }
 
         var files: [URL] = []
         for case let file as URL in enumerator {
-            guard file.lastPathComponent == "events.jsonl",
-                  let values = try? file.resourceValues(forKeys: keys),
-                  values.isRegularFile == true,
+            guard file.lastPathComponent == "events.jsonl" else { continue }
+            let values = try file.resourceValues(forKeys: keys)
+            guard values.isRegularFile == true,
                   (values.contentModificationDate ?? .distantPast) >= cutoff
             else { continue }
             files.append(file)
         }
+        guard !enumerationFailed else { throw CopilotUsageError.scanFailed }
         return files
     }
 
-    private static func cachedSummary(_ file: URL) -> FileSummary {
-        let attrs = try? file.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
-        let size = UInt64(max(attrs?.fileSize ?? 0, 0))
-        let mtime = attrs?.contentModificationDate ?? .distantPast
+    private static func cachedSummary(_ file: URL) throws -> FileSummary {
+        guard FileManager.default.isReadableFile(atPath: file.path) else { throw CopilotUsageError.scanFailed }
+        let attrs = try file.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let size = UInt64(max(attrs.fileSize ?? 0, 0))
+        let mtime = attrs.contentModificationDate ?? .distantPast
 
         cacheLock.lock()
         let hit = cache[file.path]
         cacheLock.unlock()
         if let hit, hit.size == size, hit.mtime == mtime { return hit }
 
-        let summary = scan(file, size: size, mtime: mtime)
+        let summary = try scan(file, size: size, mtime: mtime)
         cacheLock.lock()
         cache[file.path] = summary
         cacheLock.unlock()
         return summary
     }
 
-    private static func scan(_ file: URL, size: UInt64, mtime: Date) -> FileSummary {
+    private static func scan(_ file: URL, size: UInt64, mtime: Date) throws -> FileSummary {
         let empty = FileSummary(
             size: size, mtime: mtime, shutdown: nil, messageCount: 0, skillNames: []
         )
-        guard let handle = try? FileHandle(forReadingFrom: file) else { return empty }
+        let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
 
         let decoder = JSONDecoder()
@@ -332,7 +352,7 @@ enum CopilotUsage {
         }
 
         while !reachedEnd {
-            let chunk = (try? handle.read(upToCount: chunkSize)) ?? Data()
+            let chunk = try handle.read(upToCount: chunkSize) ?? Data()
             var data: Data
             if chunk.isEmpty {
                 guard !carry.isEmpty else { break }

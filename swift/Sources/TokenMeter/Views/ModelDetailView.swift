@@ -123,28 +123,18 @@ struct ModelDetailView: View {
 
     /// 导出近 7 天逐日 CSV；保存面板流程与其他导出同款，写盘失败弹系统错误框
     private func exportCSV(_ m: UsageModelSummary) {
-        NSApp.activate(ignoringOtherApps: true)
-        let panel = NSSavePanel()
-        panel.title = "导出模型近 7 天 CSV"
-        panel.nameFieldStringValue = DeepSeekModelCSVExport.suggestedFilename(modelKey: modelKey)
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.allowedContentTypes = [.commaSeparatedText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        let rows = DateUtil.recentDays(state.usage?.days ?? []).map {
-            DeepSeekModelCSVExport.Row(
-                date: $0.date,
-                tokens: isFlash ? $0.flashTokens : $0.proTokens)
+        let outcome = LocalTextExportPresenter.shared.export(
+            title: "导出模型近 7 天 CSV",
+            filename: DeepSeekModelCSVExport.suggestedFilename(modelKey: modelKey),
+            failureTitle: "导出失败"
+        ) {
+            let rows = DateUtil.recentDays(state.usage?.days ?? []).map {
+                DeepSeekModelCSVExport.Row(
+                    date: $0.date,
+                    tokens: isFlash ? $0.flashTokens : $0.proTokens)
+            }
+            return DeepSeekModelCSVExport.makeCSV(model: m, rows: rows)
         }
-        let text = DeepSeekModelCSVExport.makeCSV(model: m, rows: rows)
-        do {
-            try text.write(to: url, atomically: true, encoding: .utf8)
-            exportStatus = ExportFeedback.text(fileURL: url)
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "导出失败"
-            alert.informativeText = "\(error.localizedDescription)"
-            alert.runModal()
-        }
+        if let feedback = outcome.successFeedback { exportStatus = feedback }
     }
 }

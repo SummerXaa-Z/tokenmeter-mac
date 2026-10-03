@@ -234,72 +234,63 @@ struct OverviewHeatmapCard: View {
     // 翻页跟随当前选择），日档逐日、周档逐周、月档逐月；金额与悬停同
     // 管线重算，无金额留空。保存面板流程与模型榜导出同款。
     private func exportHeatmapCSV() {
-        let granularity: HeatmapCSVExport.Granularity
-        let rows: [HeatmapCSVExport.Row]
-        let windowText: String
-        switch self.granularity {
-        case .month:
-            granularity = .month
-            let range = UsageHeatmap.monthWindow(
-                today: Date(), monthCount: monthSpan.rawValue, monthOffset: monthOffset)
-            let api = UsageHeatmap.dailyAPIValues(
-                participants: participants, dateRange: range)
-            rows = UsageHeatmap.monthlyCells(
-                history, participants: participants, apiValues: api,
-                monthCount: monthSpan.rawValue, monthOffset: monthOffset
-            ).map {
-                HeatmapCSVExport.Row(
-                    bucket: $0.monthKey, weekday: nil,
-                    tokens: $0.total, usd: $0.usd > 0 ? $0.usd : nil)
-            }
-            windowText = "\(DateUtil.key(range.start)) 至 \(DateUtil.key(range.end))"
-        case .week, .day:
-            granularity = self.granularity == .week ? .week : .day
-            let columns = UsageHeatmap.window(
-                history, participants: participants,
-                windowWeeks: span.rawValue, weekOffset: weekOffset)
-            let api = UsageHeatmap.dailyAPIValues(
-                participants: participants,
-                windowWeeks: span.rawValue, weekOffset: weekOffset)
-            if self.granularity == .week {
-                rows = UsageHeatmap.weeklyCells(from: columns, apiValues: api).map {
+        let outcome = LocalTextExportPresenter.shared.export(
+            title: "导出热力图 CSV",
+            filename: HeatmapCSVExport.suggestedFilename()
+        ) {
+            let granularity: HeatmapCSVExport.Granularity
+            let rows: [HeatmapCSVExport.Row]
+            let windowText: String
+            switch self.granularity {
+            case .month:
+                granularity = .month
+                let range = UsageHeatmap.monthWindow(
+                    today: Date(), monthCount: monthSpan.rawValue, monthOffset: monthOffset)
+                let api = UsageHeatmap.dailyAPIValues(
+                    participants: participants, dateRange: range)
+                rows = UsageHeatmap.monthlyCells(
+                    history, participants: participants, apiValues: api,
+                    monthCount: monthSpan.rawValue, monthOffset: monthOffset
+                ).map {
                     HeatmapCSVExport.Row(
-                        bucket: $0.weekOf, weekday: nil,
+                        bucket: $0.monthKey, weekday: nil,
                         tokens: $0.total, usd: $0.usd > 0 ? $0.usd : nil)
                 }
-            } else {
-                rows = columns.flatMap(\.cells).map {
-                    HeatmapCSVExport.Row(
-                        bucket: $0.date, weekday: $0.weekday,
-                        tokens: $0.total, usd: api[$0.date].flatMap { $0 > 0 ? $0 : nil })
+                windowText = "\(DateUtil.key(range.start)) 至 \(DateUtil.key(range.end))"
+            case .week, .day:
+                granularity = self.granularity == .week ? .week : .day
+                let columns = UsageHeatmap.window(
+                    history, participants: participants,
+                    windowWeeks: span.rawValue, weekOffset: weekOffset)
+                let api = UsageHeatmap.dailyAPIValues(
+                    participants: participants,
+                    windowWeeks: span.rawValue, weekOffset: weekOffset)
+                if self.granularity == .week {
+                    rows = UsageHeatmap.weeklyCells(from: columns, apiValues: api).map {
+                        HeatmapCSVExport.Row(
+                            bucket: $0.weekOf, weekday: nil,
+                            tokens: $0.total, usd: $0.usd > 0 ? $0.usd : nil)
+                    }
+                } else {
+                    rows = columns.flatMap(\.cells).map {
+                        HeatmapCSVExport.Row(
+                            bucket: $0.date, weekday: $0.weekday,
+                            tokens: $0.total, usd: api[$0.date].flatMap { $0 > 0 ? $0 : nil })
+                    }
+                }
+                if let first = columns.first?.cells.first?.date,
+                   let last = columns.last?.cells.last?.date
+                {
+                    windowText = "\(first) 至 \(last)"
+                } else {
+                    windowText = ""
                 }
             }
-            if let first = columns.first?.cells.first?.date,
-               let last = columns.last?.cells.last?.date
-            {
-                windowText = "\(first) 至 \(last)"
-            } else {
-                windowText = ""
-            }
-        }
-        NSApp.activate(ignoringOtherApps: true)
-        let panel = NSSavePanel()
-        panel.title = "导出热力图 CSV"
-        panel.nameFieldStringValue = HeatmapCSVExport.suggestedFilename()
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.allowedContentTypes = [.commaSeparatedText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try HeatmapCSVExport.makeCSV(
+            return HeatmapCSVExport.makeCSV(
                 rows: rows, granularity: granularity, windowText: windowText
-            ).write(to: url, atomically: true, encoding: .utf8)
-            exportStatus = ExportFeedback.text(fileURL: url)
-        } catch {
-            let alert = NSAlert(error: error)
-            alert.messageText = "导出热力图 CSV 失败"
-            alert.runModal()
+            )
         }
+        if let feedback = outcome.successFeedback { exportStatus = feedback }
     }
 
     private static func weekRangeText(_ columns: [UsageHeatmap.WeekColumn]) -> String {

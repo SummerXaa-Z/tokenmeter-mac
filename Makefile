@@ -5,6 +5,7 @@ XCODE_PROJECT := TokenMeter.xcodeproj
 SCHEME := TokenMeter
 CONFIGURATION ?= Debug
 DERIVED_DATA ?= build
+export DERIVED_DATA
 UI_RENDER_DIR ?= .ui-review/render
 UI_OVERVIEW_DIR ?= .ui-review/overview
 # Make's abspath splits paths on spaces. Prefix relative paths without splitting.
@@ -27,7 +28,7 @@ help:
 		'project             Regenerate the checked-in Xcode project' \
 		'price-check         Compare the price catalog with a public remote API' \
 		'package             Build/sign a DMG; see docs/release.md' \
-		'clean               Use defaults to remove swift/build; absolute/spaced DERIVED_DATA unsupported'
+		'clean               Remove only verified swift/build or swift/DerivedData artifacts'
 
 project:
 	cd $(SWIFT_DIR) && xcodegen generate
@@ -84,4 +85,4 @@ price-check:
 	cd $(SWIFT_DIR) && ./scripts/price-check.sh
 
 clean:
-	rm -rf $(SWIFT_DIR)/$(DERIVED_DATA)
+	/bin/bash $(SWIFT_DIR)/scripts/clean-build.sh
