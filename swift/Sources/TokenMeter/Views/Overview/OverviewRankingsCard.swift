@@ -820,4 +820,3 @@ private struct ModelSparkline: View {
         .accessibilityLabel("近 30 天日用量迷你趋势")
     }
 }
-

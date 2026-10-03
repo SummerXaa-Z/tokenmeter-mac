@@ -114,4 +114,3 @@ struct OverviewCompareCard: View {
         }
     }
 }
-

@@ -112,4 +112,3 @@ struct OverviewProfileCard: View {
         .frame(maxWidth: .infinity)
     }
 }
-

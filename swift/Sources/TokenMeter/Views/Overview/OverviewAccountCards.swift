@@ -419,4 +419,3 @@ struct OverviewSubscriptionQuotaCard: View {
             ?? "\(code) \(String(format: "%.2f", Double(cents) / 100))"
     }
 }
-
