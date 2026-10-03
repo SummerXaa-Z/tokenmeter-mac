@@ -942,12 +942,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static func rankingsSortUSDFixture() -> some View {
-        // 等价档:缺价的 mystery 沉底,等价高的 gpt-5.4 升到第 2
+        // 等价档:缺价的 mystery 显示未知，等价高的 gpt-5.4 排第一。
         rankingsSortFixture(sort: .usd) { model in
             switch model {
             case "opus-5-5": return 54.5
             case "gpt-5.4 (xhigh)": return 61.2
-            default: return 0
+            default: return -1
             }
         }
     }
