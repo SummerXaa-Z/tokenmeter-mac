@@ -7,7 +7,7 @@ struct OverviewSourceSelection: Equatable {
 
     init(sources: [HistorySource]) {
         let selected = Set(sources)
-        self.sources = HistorySource.codingAgents.filter(selected.contains)
+        self.sources = SourceCatalog.codingAgentSources.filter(selected.contains)
     }
 
     init(

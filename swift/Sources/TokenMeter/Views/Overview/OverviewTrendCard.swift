@@ -3,6 +3,7 @@ import Charts
 import AppKit
 
 struct OverviewTrendCard: View {
+    @EnvironmentObject private var historyReader: HistorySnapshotReader
     let snapshot: OverviewSnapshot
     let range: UsageHistoryRange
     @State private var hoverHour: Int?
@@ -64,7 +65,7 @@ struct OverviewTrendCard: View {
                             .foregroundStyle(.tertiary)
                     }
                     .buttonStyle(.plain)
-                    .disabled(isTrendEmpty)
+                    .disabled(isTrendEmpty || !historyReader.canUseSnapshot)
                     .help("导出当前范围趋势 CSV（逐桶一行、来源分列、附口径行）")
                     .accessibilityLabel("导出趋势 CSV")
                 }
@@ -141,6 +142,10 @@ struct OverviewTrendCard: View {
     /// 来源分列、列序与图例一致；图例点暗的来源不导（与所见一致）。
     /// 保存面板流程与热力图/榜单导出同款，写盘失败弹系统错误框。
     private func exportCSV() {
+        guard historyReader.canUseSnapshot else {
+            exportStatus = historyReader.unavailableMessage
+            return
+        }
         let outcome = LocalTextExportPresenter.shared.export(
             title: "导出趋势 CSV",
             filename: OverviewTrendCSVExport.suggestedFilename(range: range)

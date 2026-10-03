@@ -11,16 +11,12 @@ struct QwenCodeView: View {
         ScrollView {
             VStack(spacing: 10) {
                 header
-                if let result = state.qwen.result {
+                SourceCollectionContent(cache: state.qwen, emptyMessage: "未找到 Qwen Code 本地数据") { result in
                     todayCard(result)
                     hourlyCard(result)
                     weekCard(result)
                     modelsCard(result)
                     privacyCard
-                } else if state.qwen.loading {
-                    SourceStateView(loading: true, message: "正在读取…")
-                } else {
-                    SourceStateView(message: state.qwen.error ?? "未找到 Qwen Code 本地数据")
                 }
                 SourceAPICostCard(source: .qwen, liveDayModels: state.qwen.result?.dayModels)
                 SourceWeekCompareCard(source: .qwen)

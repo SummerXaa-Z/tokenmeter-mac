@@ -4,6 +4,7 @@ import AppKit
 
 // 余额卡：总余额 + 今日/本月消费
 struct BalanceCard: View {
+    @EnvironmentObject private var historyReader: HistorySnapshotReader
     let balance: Balance?
     let state: LoadState
     let todayCost: Double?
@@ -40,7 +41,7 @@ struct BalanceCard: View {
                     }
                 }
                 if case .ok = state, let balance,
-                   let runway = BalanceRunway.estimate(balance, history: HistoryStore.all()) {
+                   let runway = BalanceRunway.estimate(balance, history: historyReader.snapshot.daily) {
                     BalanceRunwayLine(runway: runway)
                 }
             }

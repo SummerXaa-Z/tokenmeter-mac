@@ -21,6 +21,7 @@ struct CodingModelDetailView: View {
     // 留存自算（与模型榜同源）
     var injectedFor: ((Int) -> CodingModelDetail.Summary?)? = nil
     @EnvironmentObject var state: AppState
+    @EnvironmentObject private var historyReader: HistorySnapshotReader
     @State private var span: Span
     @State private var hoverDate: String?
     // 导出完成后的行内反馈;渲染夹具注入固定文案(离屏渲染无法模拟
@@ -52,6 +53,7 @@ struct CodingModelDetailView: View {
         return CodingModelDetail.summary(
             source: source, model: model,
             liveDayModels: Self.liveDayModels(source, state: state),
+            persisted: historyReader.snapshot.models,
             windowDays: span.rawValue)
     }
 
@@ -173,6 +175,7 @@ struct CodingModelDetailView: View {
                     .buttonStyle(.plain)
                     .help("导出当前档 CSV（Token 与 API 等价，附口径行）")
                     .accessibilityLabel("导出模型明细 CSV")
+                    .disabled(!historyReader.canUseSnapshot)
                 }
                 ChartHover.caption(
                     hover: hoverDate,
@@ -240,6 +243,10 @@ struct CodingModelDetailView: View {
     /// 导出当前档明细 CSV；保存面板流程与模型榜/Skill 详情导出同款，
     /// 写盘失败弹系统错误框。90 天档按周聚合、短档逐日，与趋势图同桶。
     private func exportCSV(_ s: CodingModelDetail.Summary) {
+        guard historyReader.canUseSnapshot else {
+            exportStatus = historyReader.unavailableMessage
+            return
+        }
         let outcome = LocalTextExportPresenter.shared.export(
             title: "导出模型明细 CSV",
             filename: CodingModelDetailCSVExport.suggestedFilename(model: model)

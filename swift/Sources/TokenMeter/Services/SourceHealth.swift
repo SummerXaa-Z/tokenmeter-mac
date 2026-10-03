@@ -24,33 +24,10 @@ enum SourceHealth {
     // 展示顺序与设置页数据来源分区一致;根路径集中在这里,
     // 诊断导出与设置页健康块共用同一份映射,不会各自漂移。
     static func roots(for source: HistorySource) -> [URL] {
-        switch source {
-        case .claude:
-            return [ClaudeUsage.projectsDir]
-        case .codex:
-            return [CodexUsage.sessionsDir]
-        case .kimi:
-            return KimiUsage.defaultHomes
-        case .opencode:
-            // WAL 文件的追加写不会动主库 mtime,一并纳入
-            return [OpenCodeUsage.databaseURL,
-                    URL(fileURLWithPath: OpenCodeUsage.databaseURL.path + "-wal")]
-        case .gemini:
-            return [GeminiUsage.sessionsRoot]
-        case .copilot:
-            return [CopilotUsage.sessionsRoot]
-        case .qwen:
-            return [QwenCodeUsage.usageRecordURL]
-        case .cursor:
-            return [CursorUsage.stateDB]
-        case .deepseek:
-            return []
-        }
+        SourceCatalog.descriptor(for: source).roots()
     }
 
-    private static let codingOrder: [HistorySource] = [
-        .claude, .codex, .kimi, .opencode, .gemini, .copilot, .qwen, .cursor,
-    ]
+    private static var codingOrder: [HistorySource] { SourceCatalog.codingAgentSources }
 
     /// 展示用的短路径:家目录替换为 ~,多个根用顿号连接。
     static func shortened(_ urls: [URL]) -> String {
@@ -70,18 +47,8 @@ enum SourceHealth {
                       displayPath: "示例数据", attempt: CollectAttemptLog.attempt(for: source))
             }, checkedAt: Date())
         }
-        let enabledByKey: [HistorySource: Bool] = [
-            .claude: store.claudeMonitorEnabled,
-            .codex: store.codexMonitorEnabled,
-            .kimi: store.kimiMonitorEnabled,
-            .opencode: store.opencodeMonitorEnabled,
-            .gemini: store.geminiMonitorEnabled,
-            .copilot: store.copilotMonitorEnabled,
-            .qwen: store.qwenMonitorEnabled,
-            .cursor: store.cursorMonitorEnabled,
-        ]
         let descriptors = codingOrder.map { source in
-            (source, enabledByKey[source] ?? false, Self.roots(for: source))
+            (source, SourceCatalog.descriptor(for: source).isEnabled(in: store), Self.roots(for: source))
         }
         let checkedAt = Date()
         let entries = await withTaskGroup(of: (Int, Entry).self) { group in

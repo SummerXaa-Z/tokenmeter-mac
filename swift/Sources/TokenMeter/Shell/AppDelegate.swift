@@ -106,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var quotaTimer: Timer?
+    private var weeklyDigestLoading = false
 
 #if DEBUG
     private func showUISmokeWindow() {
@@ -195,22 +196,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 避免之后每个刷新周期重复读历史计算。
     private func maybeSendWeeklyDigest() {
         let store = ConfigStore.shared
-        guard store.weeklyDigestEnabled,
+        guard !weeklyDigestLoading, store.weeklyDigestEnabled,
               WeeklyDigest.isDue(lastSentWeek: store.lastWeeklyDigestWeek)
         else { return }
-        store.lastWeeklyDigestWeek = WeeklyDigest.weekKey(Date())
-        guard let message = WeeklyDigest.message(
-            HistoryStore.all(), participants: WeeklyDigest.participants(store),
-            plans: store.subscriptionPlans)
-        else { return }
-        Notifier.send(
-            id: Notifier.weeklyDigestID(forWeek: WeeklyDigest.summarizedWeekKey()),
-            title: message.title, body: message.body)
+        weeklyDigestLoading = true
+        let now = Date()
+        let participants = WeeklyDigest.participants(store)
+        let plans = store.subscriptionPlans
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.weeklyDigestLoading = false }
+            do {
+                let snapshot = try await Task.detached(priority: .utility) {
+                    (try HistoryStore.allChecked(now: now), try ModelUsageHistoryStore.shared.allChecked())
+                }.value
+                self.appState.reportHistoryReadOutcome(succeeded: true)
+                guard store.weeklyDigestEnabled,
+                      WeeklyDigest.isDue(lastSentWeek: store.lastWeeklyDigestWeek, today: now)
+                else { return }
+                // 确认历史成功读取后再记本周；读取失败仍允许下一轮重试。
+                store.lastWeeklyDigestWeek = WeeklyDigest.weekKey(now)
+                guard let message = WeeklyDigest.message(
+                    snapshot.0, participants: participants, modelDays: snapshot.1,
+                    plans: plans, today: now) else { return }
+                Notifier.send(
+                    id: Notifier.weeklyDigestID(forWeek: WeeklyDigest.summarizedWeekKey(today: now)),
+                    title: message.title, body: message.body)
+            } catch {
+                self.appState.reportHistoryReadOutcome(succeeded: false)
+            }
+        }
     }
 
     private func finishQuotaBadgeRefresh() {
         if statusRefreshCoalescer.finish() {
             performQuotaBadgeRefresh()
+        }
+    }
+
+    private func evaluateSubscriptionAlerts() {
+        if let kimiResult = appState.kimiQuota.result {
+            let worst = SubscriptionQuotaAlert.kimiWorstRemainingPercent(kimiResult)
+            evaluateAlert(key: "kimi.quota.low", crossed: SubscriptionQuotaAlert.shouldNotify(remainingPercent: worst),
+                          title: "Kimi Code 额度告急",
+                          body: "订阅额度仅剩 \(worst.map { Int($0).description } ?? "0")%，留意用量")
+        }
+        if let zhipuResult = appState.zhipuQuota.result {
+            let worst = SubscriptionQuotaAlert.zhipuWorstRemainingPercent(zhipuResult)
+            evaluateAlert(key: "zhipu.quota.low", crossed: SubscriptionQuotaAlert.shouldNotify(remainingPercent: worst),
+                          title: "智谱 GLM 额度告急",
+                          body: "订阅额度仅剩 \(worst.map { Int($0).description } ?? "0")%，留意用量")
+        }
+        if let arkResult = appState.arkPlanQuota.result {
+            let worst = SubscriptionQuotaAlert.arkWorstRemainingPercent(arkResult)
+            evaluateAlert(key: "ark.quota.low", crossed: SubscriptionQuotaAlert.shouldNotify(remainingPercent: worst),
+                          title: "火山方舟额度告急",
+                          body: "订阅额度仅剩 \(worst.map { Int($0).description } ?? "0")%，留意用量")
         }
     }
 
@@ -265,63 +306,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 订阅额度预警同样与 Coding 源开关无关（只依赖配额缓存），照余额预警
         // 在 guard 前评估；配额缓存的刷新在下方 task group 里，加载完成后
         // 会自动再触发一轮状态栏刷新重新评估。
-        if let kimiResult = appState.kimiQuota.result {
-            let worst = SubscriptionQuotaAlert.kimiWorstRemainingPercent(kimiResult)
-            evaluateAlert(
-                key: "kimi.quota.low",
-                crossed: SubscriptionQuotaAlert.shouldNotify(remainingPercent: worst),
-                title: "Kimi Code 额度告急",
-                body: "订阅额度仅剩 \(worst.map { Int($0).description } ?? "0")%，留意用量")
-        }
-        if let zhipuResult = appState.zhipuQuota.result {
-            let worst = SubscriptionQuotaAlert.zhipuWorstRemainingPercent(zhipuResult)
-            evaluateAlert(
-                key: "zhipu.quota.low",
-                crossed: SubscriptionQuotaAlert.shouldNotify(remainingPercent: worst),
-                title: "智谱 GLM 额度告急",
-                body: "订阅额度仅剩 \(worst.map { Int($0).description } ?? "0")%，留意用量")
-        }
-        if let arkResult = appState.arkPlanQuota.result {
-            let worst = SubscriptionQuotaAlert.arkWorstRemainingPercent(arkResult)
-            evaluateAlert(
-                key: "ark.quota.low",
-                crossed: SubscriptionQuotaAlert.shouldNotify(remainingPercent: worst),
-                title: "火山方舟额度告急",
-                body: "订阅额度仅剩 \(worst.map { Int($0).description } ?? "0")%，留意用量")
-        }
+        evaluateSubscriptionAlerts()
 
         evaluateQuotaPaceAlerts(codexOn: codexOn)
 
-        guard codexOn || claudeAlertOn || claudeInfoOn || allInfoOn else {
-            setStatusIcon(tint: nil, text: nil)
-            finishQuotaBadgeRefresh()
-            return
-        }
         Task { [weak self] in
             guard let self else { return }
-            await withTaskGroup(of: Void.self) { group in
-                if codexOn {
-                    group.addTask { await self.appState.loadCodex() }
-                }
-                if claudeAlertOn || claudeInfoOn || (allInfoOn && claudeUsable) {
-                    group.addTask { await self.appState.loadClaude() }
-                }
-                if allInfoOn {
-                    // 各 load* 自带 60s TTL 与 in-flight 门禁，缓存新鲜时早退
-                    // 且不重发刷新通知，这里多挂来源不会造成循环刷新。
-                    if kimiOn { group.addTask { await self.appState.loadKimi() } }
-                    if opencodeOn { group.addTask { await self.appState.loadOpenCode() } }
-                    if geminiOn { group.addTask { await self.appState.loadGemini() } }
-                    if copilotOn { group.addTask { await self.appState.loadCopilot() } }
-                    if qwenOn { group.addTask { await self.appState.loadQwen() } }
-                    if cursorOn { group.addTask { await self.appState.loadCursor() } }
-                }
-                // 订阅配额缓存参与额度预警：60s TTL + 无 Key/未安装早退，成本
-                // 可忽略；加载完成后自动 post 刷新通知，触发上面的预警重新评估。
-                group.addTask { await self.appState.loadKimiQuota() }
-                group.addTask { await self.appState.loadZhipuQuota() }
-                group.addTask { await self.appState.loadArkPlanQuota() }
+            var requested: Set<HistorySource> = []
+            if codexOn { requested.insert(.codex) }
+            if claudeAlertOn || claudeInfoOn || (allInfoOn && claudeUsable) { requested.insert(.claude) }
+            if allInfoOn {
+                requested.formUnion(SourceCatalog.codingAgentSources.filter {
+                    self.appState.isSourceEnabled($0) && SourceCatalog.descriptor(for: $0).isAvailable()
+                })
             }
+            // 账户配额始终属于状态刷新计划，不能被菜单栏文本模式门禁跳过。
+            await self.appState.refresh(scope: .status(usageSources: requested))
 
             var level = AlertLevel.normal
             var infoTokens = 0          // total/claude 模式累加今日 token
@@ -372,8 +372,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if allInfoOn {
                 // 「全部」档合计与总览页今日口径一致：live 优先、历史兜底。
                 // 跨天旧缓存里的"今日"其实是昨天，不算 live，交给当日历史兜底。
-                let recordedToday = HistoryStore.all()
-                    .first { $0.date == DateUtil.today() }?.bySource ?? [:]
+                let now = Date()
+                let recordedToday: [HistorySource: Int]
+                do {
+                    let history = try await Task.detached(priority: .utility) {
+                        try HistoryStore.allChecked(now: now)
+                    }.value
+                    self.appState.reportHistoryReadOutcome(succeeded: true)
+                    recordedToday = history.first { $0.date == DateUtil.key(now) }?.bySource ?? [:]
+                } catch {
+                    self.appState.reportHistoryReadOutcome(succeeded: false)
+                    recordedToday = [:]
+                    infoText = "—"
+                }
                 var participants: Set<HistorySource> = []
                 var live: [HistorySource: Int] = [:]
                 func collect(
@@ -402,7 +413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 collect(qwenOn, .qwen, self.appState.qwen.loadedAt,
                         self.appState.qwen.result?.today?.totalTokens)
                 collect(cursorOn, .cursor, self.appState.cursor.loadedAt,
-                        self.appState.cursor.result?.todayTokens)
+                        self.appState.cursor.result?.dailyTokens(on: DateUtil.today()))
                 infoTokens = MenubarTodayTotal.compute(
                     participants: participants,
                     live: live,
@@ -433,6 +444,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
 
+            self.evaluateSubscriptionAlerts()
+            self.evaluateQuotaPaceAlerts(codexOn: codexOn)
             self.setStatusIcon(tint: level.tint, text: infoText)
             if let c = codexCrossed {
                 self.evaluateAlert(
@@ -585,24 +598,29 @@ private final class NotificationRouter: NSObject, UNUserNotificationCenterDelega
     ///（上周周一到周日、含汇总与订阅回本行），只是不经保存面板，直接
     /// 写「下载」文件夹；结果回执一条系统通知（文件名或失败原因）。
     private func handleWeeklyDigestExport() {
-        let filename: String?
-        if let directory = FileManager.default.urls(
-            for: .downloadsDirectory, in: .userDomainMask).first
-        {
-            let modelHistory = ModelUsageHistoryStore.shared.all()
-            filename = UsageCSVExport.writeLastWeekCSV(
-                directory: directory,
-                days: HistoryStore.all(),
-                apiValueByDate: UsageCSVExport.apiValueByDate(modelHistory),
-                modelHistory: modelHistory,
-                plans: ConfigStore.shared.subscriptionPlans)
-        } else {
-            filename = nil
+        guard !RuntimeEnvironment.isIsolated else { return }
+        Task { @MainActor in
+            let plans = ConfigStore.shared.subscriptionPlans
+            let filename: String?
+            do {
+                filename = try await Task.detached(priority: .utility) {
+                    guard let directory = FileManager.default.urls(
+                        for: .downloadsDirectory, in: .userDomainMask).first else { return nil as String? }
+                    let days = try HistoryStore.allChecked()
+                    let models = try ModelUsageHistoryStore.shared.allChecked()
+                    return UsageCSVExport.writeLastWeekCSV(
+                        directory: directory, days: days,
+                        apiValueByDate: UsageCSVExport.apiValueByDate(models),
+                        modelHistory: models, plans: plans)
+                }.value
+            } catch {
+                filename = nil
+            }
+            Notifier.send(
+                id: "weekly.digest.export.result",
+                title: filename == nil ? "上周 CSV 导出失败" : "已导出上周 CSV",
+                body: filename.map { "已写入「下载」文件夹：\($0)" }
+                    ?? "无法确认本地历史或写入失败；可到 设置 → 用量导出 手动导出")
         }
-        Notifier.send(
-            id: "weekly.digest.export.result",
-            title: filename == nil ? "上周 CSV 导出失败" : "已导出上周 CSV",
-            body: filename.map { "已写入「下载」文件夹：\($0)" }
-                ?? "无法确定上周范围或写入失败；可到 设置 → 用量导出 手动导出")
     }
 }

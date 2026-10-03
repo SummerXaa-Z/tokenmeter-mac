@@ -109,6 +109,34 @@ struct SourceReadFailureCard: View {
     }
 }
 
+// 只共用读取状态，不合并各工具的指标、图表或统计口径。
+struct SourceCollectionContent<Value, Content: View>: View {
+    let cache: SourceCache<Value>
+    let emptyMessage: String
+    let content: (Value) -> Content
+
+    init(cache: SourceCache<Value>, emptyMessage: String, @ViewBuilder content: @escaping (Value) -> Content) {
+        self.cache = cache
+        self.emptyMessage = emptyMessage
+        self.content = content
+    }
+
+    var body: some View {
+        let presentation = SourceCollectionPresentation(
+            hasResult: cache.result != nil, loading: cache.loading, error: cache.error)
+        if let error = presentation.error {
+            SourceReadFailureCard(message: error, showingLastGood: presentation.showingLastGood)
+        }
+        if let value = cache.result {
+            content(value)
+        } else if presentation.content == .loading {
+            SourceStateView(loading: true, message: "正在读取…")
+        } else if presentation.error == nil {
+            SourceStateView(message: emptyMessage)
+        }
+    }
+}
+
 struct SourceStateView: View {
     var loading = false
     let message: String

@@ -9,6 +9,7 @@ import AppKit
 // 其余推理并入输出），最近 30 个自然日补零成完整时间轴。
 // 悬停说明行的当日金额与所选档窗口同宽（7/30 天逐日重算，缺价不计入）。
 struct SourceTrendCard: View {
+    @EnvironmentObject private var historyReader: HistorySnapshotReader
     struct Day: Identifiable {
         let date: String     // yyyy-MM-dd
         let parts: [(name: String, value: Int, color: Color)]
@@ -34,7 +35,7 @@ struct SourceTrendCard: View {
 
     var body: some View {
         let days = span == .week ? weekDays : Self.monthDays(
-            source: source, liveDayModels: liveDayModels)
+            source: source, liveDayModels: liveDayModels, persisted: historyReader.snapshot.models)
         // 扁平化成 (日期, 类型, 数值):Chart 里嵌套 ForEach 的类型推断不稳
         let marks = days.flatMap { day in
             day.parts.map { part in
@@ -65,7 +66,7 @@ struct SourceTrendCard: View {
                             .foregroundStyle(.tertiary)
                     }
                     .buttonStyle(.plain)
-                    .disabled(Self.isEmpty(days))
+                    .disabled(Self.isEmpty(days) || !historyReader.canUseSnapshot)
                     .help("导出当前档 CSV（逐日一行、分量各成一列，附口径行）")
                     .accessibilityLabel("导出趋势 CSV")
                 }
@@ -80,7 +81,8 @@ struct SourceTrendCard: View {
                         hover: hover,
                         amountFor: SourceHoverAmount.make(
                             source: source, liveDayModels: liveDayModels,
-                            days: days.map(\.date), windowDays: span.rawValue),
+                            days: days.map(\.date), windowDays: span.rawValue,
+                            persisted: historyReader.snapshot.models),
                         buckets: days.map { day in
                             (
                                 label: Fmt.mmdd(day.date),
@@ -113,6 +115,10 @@ struct SourceTrendCard: View {
     /// 照列 0，附来源与折叠口径行。保存面板流程与全库其他导出同款，
     /// 写盘失败弹系统错误框。
     private func exportCSV(_ days: [Day]) {
+        guard historyReader.canUseSnapshot else {
+            exportStatus = historyReader.unavailableMessage
+            return
+        }
         let outcome = LocalTextExportPresenter.shared.export(
             title: "导出趋势 CSV",
             filename: SourceTrendCSVExport.suggestedFilename(
@@ -158,7 +164,7 @@ struct SourceTrendCard: View {
     static func monthDays(
         source: HistorySource,
         liveDayModels: [String: [String: ModelTokenTally]]?,
-        persisted: [ModelUsageDay] = ModelUsageHistoryStore.shared.all(),
+        persisted: [ModelUsageDay] = [],
         todayKey: String = DateUtil.today(),
         calendar: Calendar = .current,
         windowDays: Int = Span.month.rawValue

@@ -9,6 +9,7 @@ import AppKit
 // 分位），一眼回看一年以上。翻页与窗口档各粒度独立成套。
 // 纯本机按天历史渲染，悬停查看当日/当周/当月数值。
 struct OverviewHeatmapCard: View {
+    @EnvironmentObject private var historyReader: HistorySnapshotReader
     // 热力图窗口档位:13 周为默认档;26 周档格宽收窄到 11pt 以容纳双倍列数
     enum Span: Int, CaseIterable {
         case quarter = 13
@@ -35,6 +36,7 @@ struct OverviewHeatmapCard: View {
 
     let history: [HistoryStore.DayPoint]
     let participants: Set<HistorySource>
+    let persisted: [ModelUsageDay]
     @State private var span: Span
     @State private var monthSpan: MonthSpan
     @State private var granularity: Granularity
@@ -49,6 +51,7 @@ struct OverviewHeatmapCard: View {
     init(
         history: [HistoryStore.DayPoint],
         participants: Set<HistorySource>,
+        persisted: [ModelUsageDay] = [],
         initialSpan: Span = .quarter,
         initialGranularity: Granularity = .day,
         initialWeekOffset: Int = 0,
@@ -58,6 +61,7 @@ struct OverviewHeatmapCard: View {
     ) {
         self.history = history
         self.participants = participants
+        self.persisted = persisted
         _span = State(initialValue: initialSpan)
         _monthSpan = State(initialValue: initialMonthSpan)
         _granularity = State(initialValue: initialGranularity)
@@ -100,7 +104,7 @@ struct OverviewHeatmapCard: View {
         let monthApiValues: [String: Double]
         if isMonth, hasUsage, let range = monthRange {
             monthApiValues = UsageHeatmap.dailyAPIValues(
-                participants: participants, dateRange: range)
+                participants: participants, persisted: persisted, dateRange: range)
         } else {
             monthApiValues = [:]
         }
@@ -111,6 +115,7 @@ struct OverviewHeatmapCard: View {
         let apiValues = hasUsage && !isMonth
             ? UsageHeatmap.dailyAPIValues(
                 participants: participants,
+                persisted: persisted,
                 windowWeeks: span.rawValue, weekOffset: weekOffset)
             : [:]
         // 单日悬停的「该周几日均」段：与周内节律同一窗口口径（日/周档
@@ -149,7 +154,7 @@ struct OverviewHeatmapCard: View {
                             .foregroundStyle(.tertiary)
                     }
                     .buttonStyle(.plain)
-                    .disabled(!hasUsage)
+                    .disabled(!hasUsage || !historyReader.canUseSnapshot)
                     .help("导出当前窗口 CSV（日/周/月粒度跟随当前选择）")
                     .accessibilityLabel("导出热力图 CSV")
                 }
@@ -234,6 +239,10 @@ struct OverviewHeatmapCard: View {
     // 翻页跟随当前选择），日档逐日、周档逐周、月档逐月；金额与悬停同
     // 管线重算，无金额留空。保存面板流程与模型榜导出同款。
     private func exportHeatmapCSV() {
+        guard historyReader.canUseSnapshot else {
+            exportStatus = historyReader.unavailableMessage
+            return
+        }
         let outcome = LocalTextExportPresenter.shared.export(
             title: "导出热力图 CSV",
             filename: HeatmapCSVExport.suggestedFilename()
@@ -247,7 +256,7 @@ struct OverviewHeatmapCard: View {
                 let range = UsageHeatmap.monthWindow(
                     today: Date(), monthCount: monthSpan.rawValue, monthOffset: monthOffset)
                 let api = UsageHeatmap.dailyAPIValues(
-                    participants: participants, dateRange: range)
+                    participants: participants, persisted: persisted, dateRange: range)
                 rows = UsageHeatmap.monthlyCells(
                     history, participants: participants, apiValues: api,
                     monthCount: monthSpan.rawValue, monthOffset: monthOffset
@@ -264,6 +273,7 @@ struct OverviewHeatmapCard: View {
                     windowWeeks: span.rawValue, weekOffset: weekOffset)
                 let api = UsageHeatmap.dailyAPIValues(
                     participants: participants,
+                    persisted: persisted,
                     windowWeeks: span.rawValue, weekOffset: weekOffset)
                 if self.granularity == .week {
                     rows = UsageHeatmap.weeklyCells(from: columns, apiValues: api).map {

@@ -2,17 +2,7 @@ import SwiftUI
 
 extension Provider {
     var historySource: HistorySource? {
-        switch self {
-        case .deepseek: return .deepseek
-        case .claude: return .claude
-        case .codex: return .codex
-        case .kimi: return .kimi
-        case .opencode: return .opencode
-        case .gemini: return .gemini
-        case .copilot: return .copilot
-        case .qwen: return .qwen
-        case .cursor: return .cursor
-        }
+        SourceCatalog.source(for: self)
     }
 
     // 平台账户与配置工具不是 Coding Agent 用量源。

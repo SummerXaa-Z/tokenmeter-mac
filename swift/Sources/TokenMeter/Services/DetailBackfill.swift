@@ -22,7 +22,7 @@ enum DetailBackfill {
         var superseded: Set<HistorySource> = []
 
         // 未启用/不可用的来源不参与本轮。已尝试的来源只有全部完成，才可
-        // 推进七天标记；失败或开关换代的扫描必须允许下一次启动重试。
+        // 推进七天标记；失败、开关换代或被较新实时结果取代都要允许重试。
         var shouldMarkCompleted: Bool { failed.isEmpty && superseded.isEmpty }
     }
 

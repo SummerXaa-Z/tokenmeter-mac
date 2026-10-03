@@ -1,47 +1,8 @@
 import SwiftUI
 
-enum AppView: Equatable {
-    case dashboard
-    case source(Provider)
-    case settings
-    case detail(String)   // model key: "flash" | "pro"
-    // 模型榜下钻：来源 + 模型名，7|30|90 天可切的明细页
-    case codingModel(HistorySource, String)
-    // Skills 榜下钻：携带所点行的 Entry（范围数字与点击时所见一致）
-    case skill(PersonalSkillRankings.Entry, HistorySource?, [HistorySource])
-}
-
-// 可从首页内容区进入的工具详情；它不再承担导航栏职责。
-enum Provider: String, CaseIterable, Identifiable {
-    case deepseek = "DeepSeek"
-    case claude = "Claude"
-    case codex = "Codex"
-    case kimi = "Kimi Code"
-    case opencode = "OpenCode"
-    case gemini = "Gemini"
-    case copilot = "Copilot"
-    case qwen = "Qwen Code"
-    case cursor = "Cursor"
-    var id: String { rawValue }
-
-    // 没装对应工具就不显示该 tab
-    var available: Bool {
-        switch self {
-        case .deepseek: return true
-        case .claude: return ClaudeUsage.isAvailable
-        case .codex: return CodexUsage.isAvailable
-        case .kimi: return KimiUsage.isAvailable
-        case .opencode: return OpenCodeUsage.isAvailable
-        case .gemini: return GeminiUsage.isAvailable
-        case .copilot: return CopilotUsage.isAvailable
-        case .qwen: return QwenCodeUsage.isAvailable
-        case .cursor: return CursorUsage.isAvailable
-        }
-    }
-}
-
 struct RootView: View {
     @EnvironmentObject var state: AppState
+    @StateObject private var historyReader = HistorySnapshotReader()
     @State private var view: AppView = .dashboard
     @State private var historyRange = UsageHistoryRange(
         rawValue: ConfigStore.shared.overviewHistoryRangeDays
@@ -50,19 +11,7 @@ struct RootView: View {
     // Coding 来源是否进入聚合只由用户开关决定；当前数据路径消失时仍保留
     // 已积累的历史。首页明细再按所选范围 Token > 0 过滤零用量来源。
     private var sources: [Provider] {
-        Provider.allCases.filter { p in
-            switch p {
-            case .deepseek: return state.deepseekEnabled
-            case .claude: return state.claudeEnabled
-            case .codex: return state.codexEnabled
-            case .kimi: return state.kimiEnabled
-            case .opencode: return state.opencodeEnabled
-            case .gemini: return state.geminiEnabled
-            case .copilot: return state.copilotEnabled
-            case .qwen: return state.qwenEnabled
-            case .cursor: return state.cursorEnabled
-            }
-        }
+        SourceCatalog.entries.filter { state.isSourceEnabled($0.source) }.map(\.provider)
     }
 
     var body: some View {
@@ -146,6 +95,15 @@ struct RootView: View {
         }
         .frame(width: Theme.panelWidth, height: Theme.panelHeight, alignment: .top)
         .background(Color(nsColor: .controlBackgroundColor))
+        .environmentObject(historyReader)
+        .task(id: state.historyRevision) {
+            await historyReader.refresh(revision: state.historyRevision)
+        }
+        .onChange(of: historyReader.completion) { _, completion in
+            historyReader.reportCurrentCompletion(completion) {
+                state.reportHistoryReadOutcome(succeeded: $0)
+            }
+        }
         // 详情对应来源被关闭时直接回首页；本地数据路径暂时消失不抹掉历史入口。
         .onChange(of: sources) { _, newSources in
             if case .source(let provider) = view, !newSources.contains(provider) {

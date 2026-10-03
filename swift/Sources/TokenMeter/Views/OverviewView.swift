@@ -4,6 +4,7 @@ import SwiftUI
 // OverviewSnapshot，具体渲染在 OverviewCards，避免继续膨胀成单体 View。
 struct OverviewView: View {
     @EnvironmentObject var state: AppState
+    @EnvironmentObject private var historyReader: HistorySnapshotReader
     let range: UsageHistoryRange
     let sources: [Provider]
     let onOpenSource: (Provider) -> Void
@@ -12,10 +13,10 @@ struct OverviewView: View {
     // Skills 榜下钻：所点行 → 近 13 周走势与来源拆解页
     var onOpenSkill: (PersonalSkillRankings.Entry, HistorySource?, [HistorySource]) -> Void = { _, _, _ in }
     var onSettings: () -> Void
-    @State private var history: [HistoryStore.DayPoint] = []
-    @State private var modelHistory: [ModelUsageDay] = []
     @State private var subscriptionPlans: [SubscriptionPlan] = []
     @State private var refreshing = false
+    private var history: [HistoryStore.DayPoint] { historyReader.snapshot.daily }
+    private var modelHistory: [ModelUsageDay] { historyReader.snapshot.models }
 
     var body: some View {
         let data = snapshot
@@ -23,6 +24,9 @@ struct OverviewView: View {
         ScrollView {
             VStack(spacing: 0) {
                 header
+                if let error = historyReader.error ?? state.historyPersistenceError {
+                    Text(error).font(Theme.detailFont).foregroundStyle(.orange)
+                }
                 OverviewUsageCard(
                     snapshot: data,
                     range: range,
@@ -58,7 +62,8 @@ struct OverviewView: View {
                         range: range,
                         coverageNote: data.modelCoverageNote,
                         onOpenModel: onOpenModel,
-                        onOpenSkill: onOpenSkill
+                        onOpenSkill: onOpenSkill,
+                        persisted: modelHistory
                     )
                     if data.apiReferenceCost.totalTokens > 0 {
                         DisclosureGroup("费用与订阅明细") {
@@ -79,7 +84,8 @@ struct OverviewView: View {
                 if !history.isEmpty {
                     OverviewHeatmapCard(
                         history: history,
-                        participants: Set(sourceSelection.sources)
+                        participants: Set(sourceSelection.sources),
+                        persisted: modelHistory
                     )
                     DisclosureGroup("周期对比") {
                         OverviewCompareCard(
@@ -97,12 +103,9 @@ struct OverviewView: View {
         .scrollIndicators(.hidden)
         .background(Color(nsColor: .controlBackgroundColor))
         .task {
-            // 先用本机留存的历史与明细出图，扫描完成后再刷新一次
-            reloadHistory()
+            subscriptionPlans = ConfigStore.shared.subscriptionPlans
             await loadSources()
-            reloadHistory()
         }
-        .onChange(of: state.historyRevision) { _, _ in reloadHistory() }
     }
 
     private var header: some View {
@@ -115,7 +118,7 @@ struct OverviewView: View {
                 refreshing = true
                 Task {
                     await loadSources(force: true)
-                    reloadHistory()
+                    await historyReader.refresh(revision: state.historyRevision, force: true)
                     refreshing = false
                 }
             },
@@ -260,24 +263,7 @@ struct OverviewView: View {
     }
 
     private func loadSources(force: Bool = false) async {
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { await state.loadClaude(force: force) }
-            group.addTask { await state.loadCodex(force: force) }
-            group.addTask { await state.loadKimi(force: force) }
-            group.addTask { await state.loadOpenCode(force: force) }
-            group.addTask { await state.loadGemini(force: force) }
-            group.addTask { await state.loadCopilot(force: force) }
-            group.addTask { await state.loadQwen(force: force) }
-            group.addTask { await state.loadCursor(force: force) }
-            group.addTask { await state.loadSubscriptionQuotas(force: force) }
-        }
-        if state.deepseekEnabled { state.refreshAll(force: force) }
-    }
-
-    private func reloadHistory() {
-        history = HistoryStore.all()
-        modelHistory = ModelUsageHistoryStore.shared.all()
-        subscriptionPlans = ConfigStore.shared.subscriptionPlans
+        await state.refreshOverview(force: force)
     }
 
     private var subscriptionQuotaSnapshot: SubscriptionQuotaSnapshot {

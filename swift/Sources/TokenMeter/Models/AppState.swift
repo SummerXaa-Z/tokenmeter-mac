@@ -10,17 +10,7 @@ extension Notification.Name {
 // 全局状态，对应原版 App 组件的 state + effect + 自动刷新定时器。
 @MainActor
 final class AppState: ObservableObject {
-    enum RefreshSource: Equatable {
-        case deepseek
-        case claude
-        case codex
-        case kimi
-        case opencode
-        case gemini
-        case copilot
-        case qwen
-        case cursor
-    }
+    typealias RefreshSource = HistorySource
 
     enum RefreshTrigger {
         case scheduled
@@ -39,6 +29,9 @@ final class AppState: ObservableObject {
     @Published var usage: UsageResult?
     @Published var usageState: LoadState = .loading
     @Published private(set) var historyRevision: UInt = 0
+    @Published private(set) var historyPersistenceError: String?
+    private var historyWriteFailures: Set<HistoryPersistenceCoordinator.Destination> = []
+    private var historyReadFailed = false
     // 最近一次采集记录(CollectAttemptLog)的版本号:loadX 每轮采集后 +1,
     // 健康面板监听它以及时刷新「最近一次采集」行。
     @Published private(set) var collectRevision: UInt = 0
@@ -96,8 +89,10 @@ final class AppState: ObservableObject {
     nonisolated static let zhipuQuotaLastGoodTTL: TimeInterval = 10 * 60
 
     private let store = ConfigStore.shared
+    private let historyPersistence: HistoryPersistenceCoordinator
     // 每次来源开关改变都换代；关闭后重新开启也不能接纳旧一轮扫描结果。
-    private var localCollectionRevisions: [HistorySource: UInt] = [:]
+    private var localCollectionVersions = LocalCollectionVersions()
+    private let scheduledRefreshBatch = ScheduledRefreshBatchGate()
     private var timer: Timer?
     private var balanceRefresh = ForcedRefreshCoalescer()
     private var usageRefresh = ForcedRefreshCoalescer()
@@ -132,7 +127,8 @@ final class AppState: ObservableObject {
     private let zhipuQuotaRefreshCompletion = RefreshCompletionWaiter()
     private let arkPlanQuotaRefreshCompletion = RefreshCompletionWaiter()
 
-    init() {
+    init(historyPersistence: HistoryPersistenceCoordinator = .live) {
+        self.historyPersistence = historyPersistence
         refreshIntervalSeconds = store.refreshIntervalSeconds
         autoRefreshEnabled = store.autoRefreshEnabled
         deepseekEnabled = store.deepseekMonitorEnabled
@@ -153,7 +149,7 @@ final class AppState: ObservableObject {
     func loadBalance(force: Bool = false) async {
         guard !RuntimeEnvironment.isIsolated else { return }
         guard balanceRefresh.request(force: force) else {
-            if force { await balanceRefreshCompletion.wait() }
+            await balanceRefreshCompletion.wait()
             return
         }
         defer {
@@ -163,8 +159,11 @@ final class AppState: ObservableObject {
 
         while true {
             balanceState = .loading
-            let key = store.credApiKey
-            if let key, !key.isEmpty {
+            let credential = store.apiKeyRead
+            let key = credential.value
+            if let error = credential.error {
+                balanceState = .error(error.errorDescription ?? "账户凭据暂不可用")
+            } else if let key, !key.isEmpty {
                 do {
                     let loaded = try await DeepSeekAPI.fetchBalance(apiKey: key)
                     if balanceRefresh.acceptsResult(inputIsCurrent: store.credApiKey == key) {
@@ -194,24 +193,26 @@ final class AppState: ObservableObject {
     func loadUsage(force: Bool = false) async {
         guard !RuntimeEnvironment.isIsolated else { return }
         guard usageRefresh.request(force: force) else {
-            if force { await usageRefreshCompletion.wait() }
+            await usageRefreshCompletion.wait()
             return
         }
         defer { usageRefreshCompletion.resumeAll() }
 
         while true {
             usageState = .loading
-            let token = store.credUsageToken
-            if let token, !token.isEmpty {
+            let credential = store.usageTokenRead
+            let token = credential.value
+            if let error = credential.error {
+                usageState = .error(error.errorDescription ?? "账户凭据暂不可用")
+            } else if let token, !token.isEmpty {
                 do {
                     let loaded = try await fetchCurrentUsage(token: token)
                     if usageRefresh.acceptsResult(inputIsCurrent: store.credUsageToken == token) {
                         usage = loaded
                         usageState = .ok
-                        HistoryStore.record(.deepseek, days: loaded.days.map {
+                        persistDailyHistory(.deepseek, days: loaded.days.map {
                             (date: $0.date, totalTokens: $0.totalTokens, cost: $0.totalCost)
-                        })
-                        historyRevision &+= 1
+                        }, authoritative: false)
                     }
                 } catch let err as APIError {
                     if usageRefresh.acceptsResult(inputIsCurrent: store.credUsageToken == token) {
@@ -258,42 +259,72 @@ final class AppState: ObservableObject {
     }
 
     func refreshAll(force: Bool = false) {
-        guard deepseekEnabled else { return }
-        Task { await loadBalance(force: force) }
-        Task { await loadUsage(force: force) }
+        Task { await refresh(scope: .platform, force: force) }
     }
 
     // 自动刷新覆盖所有已启用监控源。
-    // 各加载器都有 in-flight 门禁，慢请求不会与下一轮定时器叠加。
+    // 定时批次未完成时后续 tick 不排补跑；面板仍可复用/等待当前请求。
     func refreshEnabledSources(trigger: RefreshTrigger = .scheduled) {
-        for source in Self.enabledRefreshSources(
-            deepseek: deepseekEnabled,
-            claude: claudeEnabled,
-            codex: codexEnabled,
-            kimi: kimiEnabled,
-            opencode: opencodeEnabled,
-            gemini: geminiEnabled,
-            copilot: copilotEnabled,
-            qwen: qwenEnabled,
-            cursor: cursorEnabled
-        ) {
+        let scope: RefreshScope = switch trigger {
+        case .scheduled: .scheduled
+        case .panelOpen: .overview
+        }
+        Task { await refresh(scope: scope, force: trigger.forceLocalReload) }
+    }
+
+    func isSourceEnabled(_ source: HistorySource) -> Bool {
+        switch source {
+        case .deepseek: return deepseekEnabled
+        case .claude: return claudeEnabled
+        case .codex: return codexEnabled
+        case .kimi: return kimiEnabled
+        case .opencode: return opencodeEnabled
+        case .gemini: return geminiEnabled
+        case .copilot: return copilotEnabled
+        case .qwen: return qwenEnabled
+        case .cursor: return cursorEnabled
+        }
+    }
+
+    func refreshOverview(force: Bool = false) async {
+        await refresh(scope: .overview, force: force)
+    }
+
+    func refresh(scope: RefreshScope, force: Bool = false) async {
+        guard !RuntimeEnvironment.isIsolated else { return }
+        let enabled = Set(SourceCatalog.entries.map(\.source).filter(isSourceEnabled))
+        let plan = RefreshPlan.make(scope: scope, enabledSources: enabled)
+        let coordinator = RefreshCoordinator { [weak self] operation, force in
+            await self?.executeRefresh(operation, force: force)
+        }
+        if case .scheduled = scope {
+            await scheduledRefreshBatch.runIfIdle {
+                await coordinator.refresh(plan: plan, force: force)
+            }
+        } else {
+            await coordinator.refresh(plan: plan, force: force)
+        }
+    }
+
+    private func executeRefresh(_ operation: RefreshOperation, force: Bool) async {
+        switch operation {
+        case .deepseekBalance: await loadBalance(force: force)
+        case .kimiQuota: await loadKimiQuota(force: force)
+        case .zhipuQuota: await loadZhipuQuota(force: force)
+        case .arkPlanQuota: await loadArkPlanQuota(force: force)
+        case .usage(let source):
             switch source {
-            case .deepseek: refreshAll(force: trigger.forceLocalReload)
-            case .claude: Task { await loadClaude(force: trigger.forceLocalReload) }
-            case .codex: Task { await loadCodex(force: trigger.forceLocalReload) }
-            case .kimi:
-                Task { await loadKimi(force: trigger.forceLocalReload) }
-            case .opencode: Task { await loadOpenCode(force: trigger.forceLocalReload) }
-            case .gemini: Task { await loadGemini(force: trigger.forceLocalReload) }
-            case .copilot: Task { await loadCopilot(force: trigger.forceLocalReload) }
-            case .qwen: Task { await loadQwen(force: trigger.forceLocalReload) }
-            case .cursor: Task { await loadCursor(force: trigger.forceLocalReload) }
+            case .deepseek: await loadUsage(force: force)
+            case .claude: await loadClaude(force: force)
+            case .codex: await loadCodex(force: force)
+            case .kimi: await loadKimi(force: force)
+            case .opencode: await loadOpenCode(force: force)
+            case .gemini: await loadGemini(force: force)
+            case .copilot: await loadCopilot(force: force)
+            case .qwen: await loadQwen(force: force)
+            case .cursor: await loadCursor(force: force)
             }
         }
-        // 订阅配额与 Kimi 本地 usage journal 是独立能力；即使本地
-        // Kimi 源关闭，用户明确配置的官方 Key 仍应定时刷新。
-        Task { await loadKimiQuota(force: trigger.forceLocalReload) }
-        Task { await loadZhipuQuota(force: trigger.forceLocalReload) }
     }
 
     nonisolated static func enabledRefreshSources(
@@ -307,17 +338,11 @@ final class AppState: ObservableObject {
         qwen: Bool = false,
         cursor: Bool
     ) -> [RefreshSource] {
-        [
-            (deepseek, .deepseek),
-            (claude, .claude),
-            (codex, .codex),
-            (kimi, .kimi),
-            (opencode, .opencode),
-            (gemini, .gemini),
-            (copilot, .copilot),
-            (qwen, .qwen),
-            (cursor, .cursor),
-        ].compactMap { enabled, source in enabled ? source : nil }
+        let enabled: [HistorySource: Bool] = [
+            .deepseek: deepseek, .claude: claude, .codex: codex, .kimi: kimi,
+            .opencode: opencode, .gemini: gemini, .copilot: copilot, .qwen: qwen, .cursor: cursor,
+        ]
+        return SourceCatalog.entries.map(\.source).filter { enabled[$0] == true }
     }
 
     // 设置用量结果（token 同步成功后由外部注入）
@@ -344,11 +369,11 @@ final class AppState: ObservableObject {
     }
 
     func localCollectionRevision(for source: HistorySource) -> UInt {
-        localCollectionRevisions[source] ?? 0
+        localCollectionVersions.configurationRevision(for: source)
     }
 
     private func invalidateLocalCollection(_ source: HistorySource) {
-        localCollectionRevisions[source, default: 0] &+= 1
+        localCollectionVersions.invalidate(source)
         switch source {
         case .claude: claude.loadedAt = nil
         case .codex: codex.loadedAt = nil
@@ -374,6 +399,15 @@ final class AppState: ObservableObject {
         case .deepseek, .cursor: return false
         }
         return enabled && (requestRevision == nil || requestRevision == localCollectionRevision(for: source))
+    }
+
+    func backfillCollectionTicket(for source: HistorySource) -> LocalCollectionVersions.BackfillTicket {
+        localCollectionVersions.ticket(for: source)
+    }
+
+    func acceptsBackfillCollection(_ ticket: LocalCollectionVersions.BackfillTicket) -> Bool {
+        acceptsLocalCollection(ticket.source, requestRevision: ticket.configuration)
+            && localCollectionVersions.isCurrent(ticket)
     }
 
     // 失败只更新采集状态，不清最后成功快照，也不触碰任何历史。失败时同样
@@ -402,7 +436,7 @@ final class AppState: ObservableObject {
         guard claudeEnabled, ClaudeUsage.isAvailable else { return }
         if !force, !claudeRefresh.isRefreshing, isFresh(claude.loadedAt) { return }
         guard claudeRefresh.request(force: force) else {
-            if force { await claudeRefreshCompletion.wait() }
+            await claudeRefreshCompletion.wait()
             return
         }
         claude.loading = true
@@ -444,11 +478,10 @@ final class AppState: ObservableObject {
         claude.result = result
         claude.error = nil
         claude.loadedAt = Date()
-        HistoryStore.reconcile(.claude, authoritativeDays: Self.claudeHistoryDays(from: result))
-        recordModelHistory(.claude, windowDates: result.days.map(\.date),
+        localCollectionVersions.acceptedLive(.claude)
+        persistCollectionHistory(.claude, days: Self.claudeHistoryDays(from: result),
                            dayModels: result.dayModels, daySkills: result.daySkills,
-                           daySessions: result.daySessions, authoritative: true)
-        historyRevision &+= 1
+                           daySessions: result.daySessions)
         return true
     }
 
@@ -463,13 +496,12 @@ final class AppState: ObservableObject {
         codex.result = result
         codex.error = nil
         codex.loadedAt = Date()
-        HistoryStore.record(.codex, days: result.days.map {
+        localCollectionVersions.acceptedLive(.codex)
+        persistCollectionHistory(.codex, days: result.days.map {
             (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
-        })
-        recordModelHistory(.codex, windowDates: result.days.map(\.date),
+        },
                            dayModels: result.dayModels, daySkills: result.daySkills,
-                           daySessions: result.daySessions, authoritative: false)
-        historyRevision &+= 1
+                           daySessions: result.daySessions)
         return true
     }
 
@@ -479,12 +511,10 @@ final class AppState: ObservableObject {
         kimi.result = result
         kimi.error = nil
         kimi.loadedAt = Date()
-        HistoryStore.reconcile(.kimi, authoritativeDays: result.days.map {
+        localCollectionVersions.acceptedLive(.kimi)
+        persistCollectionHistory(.kimi, days: result.days.map {
             (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
-        })
-        recordModelHistory(.kimi, windowDates: result.days.map(\.date),
-                           dayModels: result.dayModels, daySessions: result.daySessions, authoritative: true)
-        historyRevision &+= 1
+        }, dayModels: result.dayModels, daySessions: result.daySessions)
         return true
     }
 
@@ -494,12 +524,10 @@ final class AppState: ObservableObject {
         opencode.result = result
         opencode.error = nil
         opencode.loadedAt = Date()
-        HistoryStore.record(.opencode, days: result.days.map {
+        localCollectionVersions.acceptedLive(.opencode)
+        persistCollectionHistory(.opencode, days: result.days.map {
             (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
-        })
-        recordModelHistory(.opencode, windowDates: result.days.map(\.date),
-                           dayModels: result.dayModels, daySessions: result.daySessions, authoritative: false)
-        historyRevision &+= 1
+        }, dayModels: result.dayModels, daySessions: result.daySessions)
         return true
     }
 
@@ -509,12 +537,10 @@ final class AppState: ObservableObject {
         gemini.result = result
         gemini.error = nil
         gemini.loadedAt = Date()
-        HistoryStore.record(.gemini, days: result.days.map {
+        localCollectionVersions.acceptedLive(.gemini)
+        persistCollectionHistory(.gemini, days: result.days.map {
             (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
-        })
-        recordModelHistory(.gemini, windowDates: result.days.map(\.date),
-                           dayModels: result.dayModels, daySessions: result.daySessions, authoritative: false)
-        historyRevision &+= 1
+        }, dayModels: result.dayModels, daySessions: result.daySessions)
         return true
     }
 
@@ -524,13 +550,12 @@ final class AppState: ObservableObject {
         copilot.result = result
         copilot.error = nil
         copilot.loadedAt = Date()
-        HistoryStore.record(.copilot, days: result.days.map {
+        localCollectionVersions.acceptedLive(.copilot)
+        persistCollectionHistory(.copilot, days: result.days.map {
             (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
-        })
-        recordModelHistory(.copilot, windowDates: result.days.map(\.date),
+        },
                            dayModels: result.dayModels, daySkills: result.daySkills,
-                           daySessions: result.daySessions, authoritative: false)
-        historyRevision &+= 1
+                           daySessions: result.daySessions)
         return true
     }
 
@@ -540,18 +565,84 @@ final class AppState: ObservableObject {
         qwen.result = result
         qwen.error = nil
         qwen.loadedAt = Date()
-        HistoryStore.reconcile(.qwen, authoritativeDays: result.days.map {
+        localCollectionVersions.acceptedLive(.qwen)
+        persistCollectionHistory(.qwen, days: result.days.map {
             (date: $0.date, totalTokens: $0.totalTokens, cost: nil)
-        })
-        recordModelHistory(.qwen, windowDates: result.days.map(\.date),
-                           dayModels: result.dayModels, daySessions: result.daySessions, authoritative: true)
-        historyRevision &+= 1
+        }, dayModels: result.dayModels, daySessions: result.daySessions)
         return true
     }
 
     // 按天明细与 HistoryStore 同口径落盘：模型 Token、Skill 次数与会话数
     // 合成 SourceDayDetail。权威重扫的来源（与 HistoryStore.reconcile 对应）
     // 会删除窗口内已确认无任何明细的天。
+    @discardableResult
+    private func persistCollectionHistory(
+        _ source: HistorySource,
+        days: [HistoryPersistenceCoordinator.Day],
+        dayModels: [String: [String: ModelTokenTally]],
+        daySkills: [String: [String: Int]] = [:],
+        daySessions: [String: Int] = [:]
+    ) -> Bool {
+        do {
+            _ = try historyPersistence.write(
+                source, days: days,
+                modelDays: Self.modelDays(dayModels: dayModels, daySkills: daySkills, daySessions: daySessions),
+                authoritative: SourceCatalog.descriptor(for: source).historyAuthority == .replaceConfirmedEmpty)
+            setHistoryWriteOutcome(.daily(source), succeeded: true)
+            setHistoryWriteOutcome(.models(source), succeeded: true)
+            return true
+        } catch {
+            let failure = (error as? HistoryPersistenceCoordinator.WriteFailure)?.destination ?? .daily(source)
+            setHistoryWriteOutcome(failure, succeeded: false)
+            return false
+        }
+    }
+
+    @discardableResult
+    func persistDailyHistory(
+        _ source: HistorySource, days: [HistoryPersistenceCoordinator.Day], authoritative: Bool
+    ) -> Bool {
+        do {
+            _ = try historyPersistence.writeDaily(source, days, authoritative)
+            setHistoryWriteOutcome(.daily(source), succeeded: true)
+            return true
+        } catch {
+            setHistoryWriteOutcome(.daily(source), succeeded: false)
+            return false
+        }
+    }
+
+    private func setHistoryWriteOutcome(_ destination: HistoryPersistenceCoordinator.Destination, succeeded: Bool) {
+        if succeeded { historyWriteFailures.remove(destination) }
+        else { historyWriteFailures.insert(destination) }
+        updateHistoryPersistenceError()
+        // 失败前可能已有另一份历史成功更新；观察者必须重读严格快照，不能
+        // 把部分写入当成完全没有发生，也不能把完整采集数据丢掉。
+        historyRevision &+= 1
+    }
+
+    func reportHistoryReadOutcome(succeeded: Bool) {
+        historyReadFailed = !succeeded
+        updateHistoryPersistenceError()
+    }
+
+    private func updateHistoryPersistenceError() {
+        historyPersistenceError = historyWriteFailures.isEmpty && !historyReadFailed ? nil
+            : "本地历史读写失败，当前采集结果仍然可用；下次刷新将重试"
+    }
+
+    private static func modelDays(
+        dayModels: [String: [String: ModelTokenTally]], daySkills: [String: [String: Int]],
+        daySessions: [String: Int]
+    ) -> [String: SourceDayDetail] {
+        var days: [String: SourceDayDetail] = [:]
+        for date in Set(dayModels.keys).union(daySkills.keys).union(daySessions.keys) {
+            days[date] = SourceDayDetail(models: dayModels[date] ?? [:],
+                                        skills: daySkills[date] ?? [:], sessions: daySessions[date] ?? 0)
+        }
+        return days
+    }
+
     private func recordModelHistory(
         _ source: HistorySource,
         windowDates: [String],
@@ -559,17 +650,17 @@ final class AppState: ObservableObject {
         daySkills: [String: [String: Int]] = [:],
         daySessions: [String: Int] = [:],
         authoritative: Bool
-    ) {
-        var days: [String: SourceDayDetail] = [:]
-        for date in Set(dayModels.keys).union(daySkills.keys).union(daySessions.keys) {
-            days[date] = SourceDayDetail(
-                models: dayModels[date] ?? [:],
-                skills: daySkills[date] ?? [:],
-                sessions: daySessions[date] ?? 0)
+    ) throws {
+        do {
+            _ = try historyPersistence.writeModels(
+                source, windowDates,
+                Self.modelDays(dayModels: dayModels, daySkills: daySkills, daySessions: daySessions),
+                authoritative)
+            setHistoryWriteOutcome(.models(source), succeeded: true)
+        } catch {
+            setHistoryWriteOutcome(.models(source), succeeded: false)
+            throw error
         }
-        ModelUsageHistoryStore.shared.write(
-            source, windowDates: windowDates, days: days,
-            deletesEmptyDays: authoritative)
     }
 
     // 启动后低优先级调用（见 DetailBackfill）：把实时 7 天窗之外的本地会话
@@ -583,15 +674,9 @@ final class AppState: ObservableObject {
             todayKey: todayKey
         ) else { return }
 
-        let sources: [HistorySource] = [
-            (claudeEnabled && ClaudeUsage.isAvailable, .claude),
-            (codexEnabled && CodexUsage.isAvailable, .codex),
-            (kimiEnabled && KimiUsage.isAvailable, .kimi),
-            (opencodeEnabled && OpenCodeUsage.isAvailable, .opencode),
-            (geminiEnabled && GeminiUsage.isAvailable, .gemini),
-            (copilotEnabled && CopilotUsage.isAvailable, .copilot),
-            (qwenEnabled && QwenCodeUsage.isAvailable, .qwen),
-        ].compactMap { enabled, source in enabled ? source : nil }
+        let sources = SourceCatalog.modelDetailSources.filter {
+            isSourceEnabled($0) && SourceCatalog.descriptor(for: $0).isAvailable()
+        }
         let report = await DetailBackfill.run(sources: sources) { source in
             try await self.backfillModelDetail(source, now: now, windowDays: DetailBackfill.windowDays)
         }
@@ -602,65 +687,65 @@ final class AppState: ObservableObject {
     private func backfillModelDetail(
         _ source: HistorySource, now: Date, windowDays: Int
     ) async throws -> DetailBackfill.AttemptOutcome {
-        let requestRevision = localCollectionRevision(for: source)
-        guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return .superseded }
+        let ticket = backfillCollectionTicket(for: source)
+        guard acceptsBackfillCollection(ticket) else { return .superseded }
         switch source {
         case .claude:
             let r = await Task.detached(priority: .utility) {
                 ClaudeUsage.load(now: now, windowDays: windowDays)
             }.value
-            guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return .superseded }
+            guard acceptsBackfillCollection(ticket) else { return .superseded }
             guard r.isAuthoritative else { return .failed }
-            recordModelHistory(.claude, windowDates: r.days.map(\.date),
+            try recordModelHistory(.claude, windowDates: r.days.map(\.date),
                                dayModels: r.dayModels, daySkills: r.daySkills,
                                daySessions: r.daySessions, authoritative: true)
         case .codex:
             let r = await Task.detached(priority: .utility) {
                 CodexUsage.load(now: now, windowDays: windowDays)
             }.value
-            guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return .superseded }
+            guard acceptsBackfillCollection(ticket) else { return .superseded }
             guard r.isAuthoritative else { return .failed }
-            recordModelHistory(.codex, windowDates: r.days.map(\.date),
+            try recordModelHistory(.codex, windowDates: r.days.map(\.date),
                                dayModels: r.dayModels, daySkills: r.daySkills,
                                daySessions: r.daySessions, authoritative: false)
         case .kimi:
             let r = try await Task.detached(priority: .utility) {
                 try KimiUsage.load(now: now, windowDays: windowDays)
             }.value
-            guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return .superseded }
-            recordModelHistory(.kimi, windowDates: r.days.map(\.date),
+            guard acceptsBackfillCollection(ticket) else { return .superseded }
+            try recordModelHistory(.kimi, windowDates: r.days.map(\.date),
                                    dayModels: r.dayModels,
                                    daySessions: r.daySessions, authoritative: true)
         case .opencode:
             let r = try await Task.detached(priority: .utility) {
                 try OpenCodeUsage.load(now: now, windowDays: windowDays)
             }.value
-            guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return .superseded }
-            recordModelHistory(.opencode, windowDates: r.days.map(\.date),
+            guard acceptsBackfillCollection(ticket) else { return .superseded }
+            try recordModelHistory(.opencode, windowDates: r.days.map(\.date),
                                    dayModels: r.dayModels,
                                    daySessions: r.daySessions, authoritative: false)
         case .gemini:
             let r = try await Task.detached(priority: .utility) {
                 try GeminiUsage.load(now: now, windowDays: windowDays)
             }.value
-            guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return .superseded }
-            recordModelHistory(.gemini, windowDates: r.days.map(\.date),
+            guard acceptsBackfillCollection(ticket) else { return .superseded }
+            try recordModelHistory(.gemini, windowDates: r.days.map(\.date),
                                    dayModels: r.dayModels,
                                    daySessions: r.daySessions, authoritative: false)
         case .copilot:
             let r = try await Task.detached(priority: .utility) {
                 try CopilotUsage.load(now: now, windowDays: windowDays)
             }.value
-            guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return .superseded }
-            recordModelHistory(.copilot, windowDates: r.days.map(\.date),
+            guard acceptsBackfillCollection(ticket) else { return .superseded }
+            try recordModelHistory(.copilot, windowDates: r.days.map(\.date),
                                    dayModels: r.dayModels, daySkills: r.daySkills,
                                    daySessions: r.daySessions, authoritative: false)
         case .qwen:
             let r = try await Task.detached(priority: .utility) {
                 try QwenCodeUsage.load(now: now, windowDays: windowDays)
             }.value
-            guard acceptsLocalCollection(source, requestRevision: requestRevision) else { return .superseded }
-            recordModelHistory(.qwen, windowDates: r.days.map(\.date),
+            guard acceptsBackfillCollection(ticket) else { return .superseded }
+            try recordModelHistory(.qwen, windowDates: r.days.map(\.date),
                                    dayModels: r.dayModels,
                                    daySessions: r.daySessions, authoritative: true)
         case .deepseek, .cursor:
@@ -684,7 +769,7 @@ final class AppState: ObservableObject {
            (!CodexUsage.isAvailable || isFresh(codex.loadedAt)),
            (!codexLiveQuotaEnabled || isFresh(codexLiveQuotaLoadedAt)) { return }
         guard codexRefresh.request(force: force) else {
-            if force { await codexRefreshCompletion.wait() }
+            await codexRefreshCompletion.wait()
             return
         }
         codex.loading = true
@@ -740,7 +825,7 @@ final class AppState: ObservableObject {
         guard kimiEnabled, KimiUsage.isAvailable else { return }
         if !force, !kimiRefresh.isRefreshing, isFresh(kimi.loadedAt) { return }
         guard kimiRefresh.request(force: force) else {
-            if force { await kimiRefreshCompletion.wait() }
+            await kimiRefreshCompletion.wait()
             return
         }
         kimi.loading = true
@@ -784,7 +869,7 @@ final class AppState: ObservableObject {
         guard opencodeEnabled, OpenCodeUsage.isAvailable else { return }
         if !force, !opencodeRefresh.isRefreshing, isFresh(opencode.loadedAt) { return }
         guard opencodeRefresh.request(force: force) else {
-            if force { await opencodeRefreshCompletion.wait() }
+            await opencodeRefreshCompletion.wait()
             return
         }
         opencode.loading = true
@@ -828,7 +913,7 @@ final class AppState: ObservableObject {
         guard geminiEnabled, GeminiUsage.isAvailable else { return }
         if !force, !geminiRefresh.isRefreshing, isFresh(gemini.loadedAt) { return }
         guard geminiRefresh.request(force: force) else {
-            if force { await geminiRefreshCompletion.wait() }
+            await geminiRefreshCompletion.wait()
             return
         }
         gemini.loading = true
@@ -872,7 +957,7 @@ final class AppState: ObservableObject {
         guard copilotEnabled, CopilotUsage.isAvailable else { return }
         if !force, !copilotRefresh.isRefreshing, isFresh(copilot.loadedAt) { return }
         guard copilotRefresh.request(force: force) else {
-            if force { await copilotRefreshCompletion.wait() }
+            await copilotRefreshCompletion.wait()
             return
         }
         copilot.loading = true
@@ -916,7 +1001,7 @@ final class AppState: ObservableObject {
         guard qwenEnabled, QwenCodeUsage.isAvailable else { return }
         if !force, !qwenRefresh.isRefreshing, isFresh(qwen.loadedAt) { return }
         guard qwenRefresh.request(force: force) else {
-            if force { await qwenRefreshCompletion.wait() }
+            await qwenRefreshCompletion.wait()
             return
         }
         qwen.loading = true
@@ -960,7 +1045,7 @@ final class AppState: ObservableObject {
         guard cursorEnabled, CursorUsage.isAvailable else { return }
         if !force, !cursorRefresh.isRefreshing, isFresh(cursor.loadedAt) { return }
         guard cursorRefresh.request(force: force) else {
-            if force { await cursorRefreshCompletion.wait() }
+            await cursorRefreshCompletion.wait()
             return
         }
         cursor.loading = true
@@ -977,13 +1062,12 @@ final class AppState: ObservableObject {
                 let r = try await CursorUsage.load()
                 cursor.result = r
                 cursor.loadedAt = Date()
-                // 今日用量按天累积进历史（周期接口本身无按日数据）
-                if let todayTokens = r.todayTokens {
-                    HistoryStore.reconcile(.cursor, authoritativeDays: [
-                        (date: DateUtil.today(), totalTokens: todayTokens, cost: nil)
-                    ])
+                // Use the query's day even if the network reply arrived after midnight.
+                if let todayTokens = r.todayTokens, let date = r.todayDate {
+                    persistDailyHistory(.cursor, days: [
+                        (date: date, totalTokens: todayTokens, cost: nil)
+                    ], authoritative: true)
                 }
-                historyRevision &+= 1
                 CollectAttemptLog.record(.init(
                     source: .cursor, startedAt: collectStarted,
                     finishedAt: Date(), failure: nil))
@@ -1012,7 +1096,7 @@ final class AppState: ObservableObject {
         guard !RuntimeEnvironment.isIsolated else { return }
         if !force, !kimiQuotaRefresh.isRefreshing, isFresh(kimiQuota.loadedAt) { return }
         guard kimiQuotaRefresh.request(force: force) else {
-            if force { await kimiQuotaRefreshCompletion.wait() }
+            await kimiQuotaRefreshCompletion.wait()
             return
         }
         kimiQuota.loading = true
@@ -1024,6 +1108,7 @@ final class AppState: ObservableObject {
         while true {
             let request = accountQuotaConnections.kimiRequest()
             do {
+                if let error = request.credentialError { throw error }
                 let service = KimiQuotaService()
                 let loaded: KimiQuotaResult
                 if let credential = request.credential {
@@ -1050,7 +1135,8 @@ final class AppState: ObservableObject {
                     } else if let succeededAt = kimiQuota.succeededAt {
                         scheduleKimiQuotaExpiry(succeededAt: succeededAt)
                     }
-                    kimiQuota.error = quotaError.errorDescription
+                    kimiQuota.error = (error as? CredentialStoreError)?.errorDescription
+                        ?? quotaError.errorDescription
                         ?? "Kimi Code 配额暂不可用"
                     kimiQuota.loadedAt = now
                 }
@@ -1097,7 +1183,7 @@ final class AppState: ObservableObject {
         guard !RuntimeEnvironment.isIsolated else { return }
         if !force, !zhipuQuotaRefresh.isRefreshing, isFresh(zhipuQuota.loadedAt) { return }
         guard zhipuQuotaRefresh.request(force: force) else {
-            if force { await zhipuQuotaRefreshCompletion.wait() }
+            await zhipuQuotaRefreshCompletion.wait()
             return
         }
         zhipuQuota.loading = true
@@ -1108,7 +1194,21 @@ final class AppState: ObservableObject {
 
         while true {
             let request = accountQuotaConnections.zhipuRequest()
-            if let credential = request.credential {
+            if let error = request.credentialError {
+                if zhipuQuotaRefresh.acceptsResult(inputIsCurrent: accountQuotaConnections.accepts(request)) {
+                    let now = Date()
+                    if Self.shouldKeepZhipuQuotaLastGood(error: .requestFailed, succeededAt: zhipuQuota.succeededAt, now: now),
+                       let succeededAt = zhipuQuota.succeededAt {
+                        scheduleZhipuQuotaExpiry(succeededAt: succeededAt)
+                    } else {
+                        cancelZhipuQuotaExpiry()
+                        zhipuQuota.result = nil
+                        zhipuQuota.succeededAt = nil
+                    }
+                    zhipuQuota.error = error.errorDescription
+                    zhipuQuota.loadedAt = now
+                }
+            } else if let credential = request.credential {
                 do {
                     let loaded = try await ZhipuQuotaService().load(
                         apiKey: credential,
@@ -1188,7 +1288,7 @@ final class AppState: ObservableObject {
         guard !RuntimeEnvironment.isIsolated else { return }
         if !force, !arkPlanQuotaRefresh.isRefreshing, isFresh(arkPlanQuota.loadedAt) { return }
         guard arkPlanQuotaRefresh.request(force: force) else {
-            if force { await arkPlanQuotaRefreshCompletion.wait() }
+            await arkPlanQuotaRefreshCompletion.wait()
             return
         }
         arkPlanQuota.loading = true
@@ -1213,12 +1313,7 @@ final class AppState: ObservableObject {
     }
 
     func loadSubscriptionQuotas(force: Bool = false) async {
-        guard !RuntimeEnvironment.isIsolated else { return }
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { await self.loadKimiQuota(force: force) }
-            group.addTask { await self.loadArkPlanQuota(force: force) }
-            group.addTask { await self.loadZhipuQuota(force: force) }
-        }
+        await refresh(scope: .subscriptions, force: force)
     }
 
     // 自动刷新定时器，对应原版 setInterval effect

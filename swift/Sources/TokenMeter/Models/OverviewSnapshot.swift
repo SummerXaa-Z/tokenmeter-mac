@@ -137,7 +137,7 @@ struct OverviewSnapshot: Equatable {
             case .qwen:
                 return qwen.map { $0.today?.totalTokens ?? 0 }
             case .cursor:
-                return cursor?.todayTokens
+                return cursor?.dailyTokens(on: todayKey)
             }
         }
         let sourceTotals = Dictionary(uniqueKeysWithValues: HistorySource.allCases.map { source in
@@ -170,7 +170,9 @@ struct OverviewSnapshot: Equatable {
         // 模型 / Skills / 会话三个维度（模型榜、API 等价参考、输入缓存复用、
         // Skills 榜、会话数）按天明细聚合并跟随所选范围：采集器本次扫描到的
         // 天优先，其余天取本机留存的明细。Cursor 只有订阅周期聚合，不进入。
-        let modelSources = selection.sources.filter { $0 != .cursor }
+        let modelSources = selection.sources.filter {
+            SourceCatalog.descriptor(for: $0).capabilities.contains(.modelDetail)
+        }
         var liveModels: [HistorySource: [String: [String: ModelTokenTally]]] = [:]
         var liveSkills: [HistorySource: [String: [String: Int]]] = [:]
         var liveSessions: [HistorySource: [String: Int]] = [:]

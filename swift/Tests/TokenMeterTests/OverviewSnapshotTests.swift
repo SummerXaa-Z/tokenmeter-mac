@@ -484,7 +484,7 @@ final class OverviewSnapshotTests: XCTestCase {
         let history = [HistoryStore.DayPoint(
             date: "2026-08-12", bySource: [.cursor: 77], cost: 0
         )]
-        func snapshot(todayTokens: Int?) -> OverviewSnapshot {
+        func snapshot(todayTokens: Int?, todayDate: String? = "2026-08-12") -> OverviewSnapshot {
             OverviewSnapshot(
                 selection: OverviewSourceSelection(sources: [.cursor]),
                 range: .day,
@@ -499,7 +499,8 @@ final class OverviewSnapshotTests: XCTestCase {
                 cursor: CursorUsageResult(
                     email: nil, membership: nil, startOfMonth: nil,
                     subscription: nil, models: [], totalCostCents: 0,
-                    todayTokens: todayTokens
+                    todayTokens: todayTokens,
+                    todayDate: todayDate
                 ),
                 todayKey: "2026-08-12"
             )
@@ -507,6 +508,8 @@ final class OverviewSnapshotTests: XCTestCase {
 
         XCTAssertEqual(snapshot(todayTokens: nil).periodBySource[.cursor], 77)
         XCTAssertEqual(snapshot(todayTokens: 0).periodBySource[.cursor], 0)
+        XCTAssertEqual(snapshot(todayTokens: 900, todayDate: "2026-08-11").periodBySource[.cursor], 77)
+        XCTAssertEqual(snapshot(todayTokens: 900, todayDate: nil).periodBySource[.cursor], 77)
     }
 
     func testDailyTrendKeepsAZeroDayBetweenTwoUsedDays() throws {

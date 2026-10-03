@@ -12,18 +12,12 @@ struct KimiView: View {
         ScrollView {
             VStack(spacing: 10) {
                 header
-                if let result = state.kimi.result {
+                SourceCollectionContent(cache: state.kimi, emptyMessage: "未找到 Kimi Code 本地数据") { result in
                     todayCard(result)
                     hoursCard(result)
                     weekChartCard(result)
                     modelsCard(result)
                     privacyCard
-                } else if state.kimi.loading {
-                    SourceStateView(loading: true, message: "正在读取…")
-                } else if let error = state.kimi.error {
-                    SourceStateView(message: error)
-                } else {
-                    SourceStateView(message: "未找到 Kimi Code 本地数据")
                 }
                 SourceAPICostCard(source: .kimi, liveDayModels: state.kimi.result?.dayModels)
                 SourceWeekCompareCard(source: .kimi)

@@ -5,11 +5,22 @@ import Foundation
 protocol AccountQuotaCredentialStore: AnyObject {
     var credKimiCodeKey: String? { get }
     var credZhipuKey: String? { get }
+    var kimiCodeKeyRead: CredentialReadResult { get }
+    var zhipuKeyRead: CredentialReadResult { get }
     var zhipuQuotaDomain: ZhipuQuotaDomain { get set }
     func saveKimiCodeKey(_ value: String) throws
     func clearKimiCodeKey() throws
     func saveZhipuKey(_ value: String) throws
     func clearZhipuKey() throws
+}
+
+extension AccountQuotaCredentialStore {
+    var kimiCodeKeyRead: CredentialReadResult {
+        credKimiCodeKey.map(CredentialReadResult.found) ?? .missing
+    }
+    var zhipuKeyRead: CredentialReadResult {
+        credZhipuKey.map(CredentialReadResult.found) ?? .missing
+    }
 }
 
 extension ConfigStore: AccountQuotaCredentialStore {}
@@ -24,11 +35,13 @@ enum AccountQuotaConnectionOutcome<Value> {
 final class AccountQuotaConnections {
     struct KimiRequest: Equatable {
         let credential: String?
+        var credentialError: CredentialStoreError? = nil
         let generation: UInt
     }
 
     struct ZhipuRequest: Equatable {
         let credential: String?
+        var credentialError: CredentialStoreError? = nil
         let domain: ZhipuQuotaDomain
         let generation: UInt
     }
@@ -63,12 +76,16 @@ final class AccountQuotaConnections {
     }
 
     func kimiRequest() -> KimiRequest {
-        KimiRequest(credential: normalized(store.credKimiCodeKey), generation: kimiGeneration)
+        let read = store.kimiCodeKeyRead
+        return KimiRequest(
+            credential: normalized(read.value), credentialError: read.error,
+            generation: kimiGeneration)
     }
 
     func zhipuRequest() -> ZhipuRequest {
-        ZhipuRequest(
-            credential: normalized(store.credZhipuKey), domain: store.zhipuQuotaDomain,
+        let read = store.zhipuKeyRead
+        return ZhipuRequest(
+            credential: normalized(read.value), credentialError: read.error, domain: store.zhipuQuotaDomain,
             generation: zhipuGeneration)
     }
 
@@ -78,14 +95,14 @@ final class AccountQuotaConnections {
     // 刷新与验证成功都通过同一个快照回调；这里不保存状态、也不写凭据。
     @discardableResult
     func acceptKimiRefresh(_ result: KimiQuotaResult, request: KimiRequest) -> Bool {
-        guard accepts(request) else { return false }
+        guard request.credentialError == nil, accepts(request) else { return false }
         onKimiChanged(result)
         return true
     }
 
     @discardableResult
     func acceptZhipuRefresh(_ result: ZhipuQuotaResult, request: ZhipuRequest) -> Bool {
-        guard accepts(request) else { return false }
+        guard request.credentialError == nil, accepts(request) else { return false }
         onZhipuChanged(result)
         return true
     }
@@ -95,6 +112,7 @@ final class AccountQuotaConnections {
         guard let key = normalized(input) else { throw CredentialStoreError.emptyCredential }
         kimiGeneration &+= 1
         let request = kimiRequest()
+        if let error = request.credentialError { throw error }
         do {
             let result = try await loadKimi(key)
             guard !Task.isCancelled, accepts(request) else { return .superseded }
@@ -114,6 +132,7 @@ final class AccountQuotaConnections {
         guard let key = normalized(input) else { throw CredentialStoreError.emptyCredential }
         zhipuGeneration &+= 1
         let request = zhipuRequest()
+        if let error = request.credentialError { throw error }
         do {
             let result = try await loadZhipu(key, request.domain)
             guard !Task.isCancelled, accepts(request) else { return .superseded }
