@@ -141,27 +141,18 @@ struct OverviewTrendCard: View {
     /// 来源分列、列序与图例一致；图例点暗的来源不导（与所见一致）。
     /// 保存面板流程与热力图/榜单导出同款，写盘失败弹系统错误框。
     private func exportCSV() {
-        NSApp.activate(ignoringOtherApps: true)
-        let panel = NSSavePanel()
-        panel.title = "导出趋势 CSV"
-        panel.nameFieldStringValue = OverviewTrendCSVExport.suggestedFilename(range: range)
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.allowedContentTypes = [.commaSeparatedText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try OverviewTrendCSVExport.makeCSV(
+        let outcome = LocalTextExportPresenter.shared.export(
+            title: "导出趋势 CSV",
+            filename: OverviewTrendCSVExport.suggestedFilename(range: range)
+        ) {
+            OverviewTrendCSVExport.makeCSV(
                 trend: visibleTrend,
                 granularity: snapshot.trendGranularity,
                 rangeTitle: range.scopeTitle,
                 apiValueByTrendBucket: snapshot.apiValueByTrendBucket
-            ).write(to: url, atomically: true, encoding: .utf8)
-            exportStatus = ExportFeedback.text(fileURL: url)
-        } catch {
-            let alert = NSAlert(error: error)
-            alert.messageText = "导出趋势 CSV 失败"
-            alert.runModal()
+            )
         }
+        if let feedback = outcome.successFeedback { exportStatus = feedback }
     }
 
     private var trendSummary: String {

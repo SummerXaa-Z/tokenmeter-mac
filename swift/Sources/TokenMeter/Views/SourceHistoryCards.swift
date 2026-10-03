@@ -190,26 +190,17 @@ struct SourceHistoryTrendCard: View {
     }
 
     private func exportCSV(_ days: [(date: String, label: String, value: Int)]) {
-        NSApp.activate(ignoringOtherApps: true)
-        let panel = NSSavePanel()
-        panel.title = "导出趋势 CSV"
-        panel.nameFieldStringValue = SourceTrendCSVExport.suggestedFilename(
-            source: source, spanDays: span.rawValue)
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.allowedContentTypes = [.commaSeparatedText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try SourceTrendCSVExport.makeSingleSeriesCSV(
+        let outcome = LocalTextExportPresenter.shared.export(
+            title: "导出趋势 CSV",
+            filename: SourceTrendCSVExport.suggestedFilename(
+                source: source, spanDays: span.rawValue)
+        ) {
+            SourceTrendCSVExport.makeSingleSeriesCSV(
                 source: source,
                 spanDays: span.rawValue,
                 days: days.map { (date: $0.date, tokens: $0.value) }
-            ).write(to: url, atomically: true, encoding: .utf8)
-            exportStatus = ExportFeedback.text(fileURL: url)
-        } catch {
-            let alert = NSAlert(error: error)
-            alert.messageText = "导出趋势 CSV 失败"
-            alert.runModal()
+            )
         }
+        if let feedback = outcome.successFeedback { exportStatus = feedback }
     }
 }

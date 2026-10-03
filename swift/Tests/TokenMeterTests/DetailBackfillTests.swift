@@ -26,4 +26,53 @@ final class DetailBackfillTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(DetailBackfill.windowDays, 90)
         XCTAssertGreaterThanOrEqual(DetailBackfill.repeatDays, 7)
     }
+
+    @MainActor
+    func testAnyAttemptedSourceReadFailurePreventsCompletionAndAllowsRetry() async {
+        let sources: [HistorySource] = [.claude, .codex, .kimi, .opencode, .gemini, .copilot, .qwen]
+        for failingSource in sources {
+            var attempted: [HistorySource] = []
+            let failed = await DetailBackfill.run(sources: sources) { source in
+                attempted.append(source)
+                if source == failingSource { throw SyntheticReadError.failed }
+                return .succeeded
+            }
+            XCTAssertEqual(attempted, sources, "One failure cannot prevent other sources from backfilling")
+            XCTAssertEqual(failed.failed, [failingSource])
+            XCTAssertEqual(failed.succeeded, Set(sources).subtracting([failingSource]))
+            XCTAssertFalse(failed.shouldMarkCompleted, "\(failingSource) failure must not advance the marker")
+
+            let retry = await DetailBackfill.run(sources: sources) { _ in .succeeded }
+            XCTAssertTrue(retry.shouldMarkCompleted)
+            XCTAssertEqual(retry.succeeded, Set(sources))
+        }
+    }
+
+    @MainActor
+    func testNonAuthoritativeAndSupersededResultsDoNotAdvanceCompletionMarker() async {
+        let report = await DetailBackfill.run(sources: [.claude, .kimi, .qwen]) { source in
+            switch source {
+            case .claude: return .failed
+            case .kimi: return .superseded
+            default: return .succeeded
+            }
+        }
+        XCTAssertEqual(report.failed, [.claude])
+        XCTAssertEqual(report.superseded, [.kimi])
+        XCTAssertEqual(report.succeeded, [.qwen])
+        XCTAssertFalse(report.shouldMarkCompleted)
+    }
+
+    @MainActor
+    func testUnavailableOrDisabledSourcesAreNotAttemptedAndEmptyRunCanComplete() async {
+        var attempted = false
+        let report = await DetailBackfill.run(sources: []) { _ in
+            attempted = true
+            throw SyntheticReadError.failed
+        }
+        XCTAssertFalse(attempted)
+        XCTAssertTrue(report.shouldMarkCompleted)
+    }
+
+    private enum SyntheticReadError: Error { case failed }
 }

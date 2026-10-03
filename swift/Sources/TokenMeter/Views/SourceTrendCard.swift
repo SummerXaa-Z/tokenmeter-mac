@@ -113,25 +113,16 @@ struct SourceTrendCard: View {
     /// 照列 0，附来源与折叠口径行。保存面板流程与全库其他导出同款，
     /// 写盘失败弹系统错误框。
     private func exportCSV(_ days: [Day]) {
-        NSApp.activate(ignoringOtherApps: true)
-        let panel = NSSavePanel()
-        panel.title = "导出趋势 CSV"
-        panel.nameFieldStringValue = SourceTrendCSVExport.suggestedFilename(
-            source: source, spanDays: span.rawValue)
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.allowedContentTypes = [.commaSeparatedText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try SourceTrendCSVExport.makeCSV(
+        let outcome = LocalTextExportPresenter.shared.export(
+            title: "导出趋势 CSV",
+            filename: SourceTrendCSVExport.suggestedFilename(
+                source: source, spanDays: span.rawValue)
+        ) {
+            SourceTrendCSVExport.makeCSV(
                 source: source, spanDays: span.rawValue, days: days
-            ).write(to: url, atomically: true, encoding: .utf8)
-            exportStatus = ExportFeedback.text(fileURL: url)
-        } catch {
-            let alert = NSAlert(error: error)
-            alert.messageText = "导出趋势 CSV 失败"
-            alert.runModal()
+            )
         }
+        if let feedback = outcome.successFeedback { exportStatus = feedback }
     }
 
     /// 当前档是否整窗零用量(补零的时间轴全为 0)

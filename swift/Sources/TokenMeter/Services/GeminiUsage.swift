@@ -137,6 +137,19 @@ enum GeminiUsage {
         windowDays: Int = 7,
         calendar: Calendar = .current
     ) throws -> GeminiUsageResult {
+        do {
+            return try loadSnapshot(sessionsRoot: sessionsRoot, now: now,
+                                    windowDays: windowDays, calendar: calendar)
+        } catch let error as GeminiUsageError {
+            throw error
+        } catch {
+            throw GeminiUsageError.scanFailed
+        }
+    }
+
+    private static func loadSnapshot(
+        sessionsRoot: URL, now: Date, windowDays: Int, calendar: Calendar
+    ) throws -> GeminiUsageResult {
         guard FileManager.default.fileExists(atPath: sessionsRoot.path) else {
             throw GeminiUsageError.dataUnavailable
         }
@@ -144,13 +157,13 @@ enum GeminiUsage {
         let span = max(windowDays, 1)
         let oldestDate = calendar.date(byAdding: .day, value: 1 - span, to: now) ?? now
         let oldestDay = calendar.startOfDay(for: oldestDate)
-        let files = sessionFiles(in: sessionsRoot, modifiedSince: oldestDay)
+        let files = try sessionFiles(in: sessionsRoot, modifiedSince: oldestDay)
 
         // 旧 .json 迁移到 .jsonl 后可能同时留在 chats 目录。按 sessionId 只取
         // 最新文件，mtime 相同时优先 JSONL，避免完整历史重复计算。
         var sessions: [String: (url: URL, summary: FileSummary)] = [:]
         for file in files {
-            let summary = cachedSummary(file)
+            let summary = try cachedSummary(file)
             guard !summary.messages.isEmpty else { continue }
             if let current = sessions[summary.sessionID] {
                 let isNewer = summary.mtime > current.summary.mtime
@@ -219,55 +232,63 @@ enum GeminiUsage {
                                  dayModels: dayModels.compactMapValues(ModelTokenTally.nonEmpty))
     }
 
-    private static func sessionFiles(in root: URL, modifiedSince cutoff: Date) -> [URL] {
+    private static func sessionFiles(in root: URL, modifiedSince cutoff: Date) throws -> [URL] {
+        guard FileManager.default.isReadableFile(atPath: root.path),
+              try root.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
+        else { throw GeminiUsageError.scanFailed }
         let keys: [URLResourceKey] = [
             .isRegularFileKey, .contentModificationDateKey, .fileSizeKey,
         ]
+        var enumerationFailed = false
         guard let enumerator = FileManager.default.enumerator(
             at: root,
             includingPropertiesForKeys: keys,
-            options: [.skipsHiddenFiles]
-        ) else { return [] }
+            options: [.skipsHiddenFiles],
+            errorHandler: { _, _ in enumerationFailed = true; return true }
+        ) else { throw GeminiUsageError.scanFailed }
 
         var files: [URL] = []
         for case let file as URL in enumerator {
             let ext = file.pathExtension.lowercased()
             guard ext == "jsonl" || ext == "json",
-                  file.pathComponents.contains("chats"),
-                  let values = try? file.resourceValues(forKeys: Set(keys)),
-                  values.isRegularFile == true,
+                  file.pathComponents.contains("chats") else { continue }
+            let values = try file.resourceValues(forKeys: Set(keys))
+            guard values.isRegularFile == true,
                   (values.contentModificationDate ?? .distantPast) >= cutoff
             else { continue }
             files.append(file)
         }
+        guard !enumerationFailed else { throw GeminiUsageError.scanFailed }
         return files
     }
 
-    private static func cachedSummary(_ file: URL) -> FileSummary {
-        let attrs = try? file.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
-        let size = UInt64(max(attrs?.fileSize ?? 0, 0))
-        let mtime = attrs?.contentModificationDate ?? .distantPast
+    private static func cachedSummary(_ file: URL) throws -> FileSummary {
+        guard FileManager.default.isReadableFile(atPath: file.path) else { throw GeminiUsageError.scanFailed }
+        let attrs = try file.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let size = UInt64(max(attrs.fileSize ?? 0, 0))
+        let mtime = attrs.contentModificationDate ?? .distantPast
 
         cacheLock.lock()
         let hit = cache[file.path]
         cacheLock.unlock()
         if let hit, hit.size == size, hit.mtime == mtime { return hit }
 
-        let summary = file.pathExtension.lowercased() == "json"
-            ? scanLegacyJSON(file, size: size, mtime: mtime)
-            : scanJSONL(file, size: size, mtime: mtime)
+        let summary: FileSummary
+        if file.pathExtension.lowercased() == "json" {
+            summary = try scanLegacyJSON(file, size: size, mtime: mtime)
+        } else {
+            summary = try scanJSONL(file, size: size, mtime: mtime)
+        }
         cacheLock.lock()
         cache[file.path] = summary
         cacheLock.unlock()
         return summary
     }
 
-    private static func scanJSONL(_ file: URL, size: UInt64, mtime: Date) -> FileSummary {
+    private static func scanJSONL(_ file: URL, size: UInt64, mtime: Date) throws -> FileSummary {
         var sessionID = file.path
         var messages: [String: MessageUsage] = [:]
-        guard let handle = try? FileHandle(forReadingFrom: file) else {
-            return FileSummary(size: size, mtime: mtime, sessionID: sessionID, messages: [:])
-        }
+        let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
 
         let decoder = JSONDecoder()
@@ -277,7 +298,7 @@ enum GeminiUsage {
         var reachedEnd = false
 
         while !reachedEnd {
-            let chunk = (try? handle.read(upToCount: chunkSize)) ?? Data()
+            let chunk = try handle.read(upToCount: chunkSize) ?? Data()
             var data: Data
             if chunk.isEmpty {
                 guard !carry.isEmpty else { break }
@@ -316,14 +337,14 @@ enum GeminiUsage {
         return FileSummary(size: size, mtime: mtime, sessionID: sessionID, messages: messages)
     }
 
-    private static func scanLegacyJSON(_ file: URL, size: UInt64, mtime: Date) -> FileSummary {
+    private static func scanLegacyJSON(_ file: URL, size: UInt64, mtime: Date) throws -> FileSummary {
         let fallback = FileSummary(
             size: size, mtime: mtime, sessionID: file.path, messages: [:]
         )
         // 旧版完整 JSON 含会话内容，限制单文件 32MB，避免异常文件无限占用内存。
-        guard size <= 32 * 1024 * 1024,
-              let data = try? Data(contentsOf: file, options: .mappedIfSafe),
-              let session = try? JSONDecoder().decode(LegacySession.self, from: data)
+        guard size <= 32 * 1024 * 1024 else { return fallback }
+        let data = try Data(contentsOf: file, options: .mappedIfSafe)
+        guard let session = try? JSONDecoder().decode(LegacySession.self, from: data)
         else { return fallback }
 
         var messages: [String: MessageUsage] = [:]

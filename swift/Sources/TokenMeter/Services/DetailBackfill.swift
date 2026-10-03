@@ -10,6 +10,44 @@ import Foundation
 // 叠加两份；权威标志与实时路径一致（Claude/Kimi/Qwen 重扫可删空天，
 // 其余来源保留旧值）。
 enum DetailBackfill {
+    enum AttemptOutcome {
+        case succeeded
+        case failed
+        case superseded
+    }
+
+    struct RunReport: Equatable {
+        var succeeded: Set<HistorySource> = []
+        var failed: Set<HistorySource> = []
+        var superseded: Set<HistorySource> = []
+
+        // 未启用/不可用的来源不参与本轮。已尝试的来源只有全部完成，才可
+        // 推进七天标记；失败或开关换代的扫描必须允许下一次启动重试。
+        var shouldMarkCompleted: Bool { failed.isEmpty && superseded.isEmpty }
+    }
+
+    // 只负责串行执行与完成判定，不擦除采集结果类型，也不决定历史写入
+    // 口径。AppState 的逐来源闭包继续承担具体解析和接收；测试可注入结果。
+    @MainActor
+    static func run(
+        sources: [HistorySource],
+        attempt: @MainActor (HistorySource) async throws -> AttemptOutcome
+    ) async -> RunReport {
+        var report = RunReport()
+        for source in sources {
+            do {
+                switch try await attempt(source) {
+                case .succeeded: report.succeeded.insert(source)
+                case .failed: report.failed.insert(source)
+                case .superseded: report.superseded.insert(source)
+                }
+            } catch {
+                report.failed.insert(source)
+            }
+        }
+        return report
+    }
+
     // 回填窗口：90 天覆盖 30D 档的上期基期（最深 today-59）与来源页月档
     // 的上月环比（自然月最深约 62 天），外加余量
     static let windowDays = 90

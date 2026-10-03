@@ -226,23 +226,13 @@ struct UsageChartCard: View {
     }
 
     private func exportCSV() {
-        NSApp.activate(ignoringOtherApps: true)
-        let panel = NSSavePanel()
-        panel.title = "导出缓存命中 CSV"
-        panel.nameFieldStringValue = DeepSeekCacheCSVExport.suggestedFilename()
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.allowedContentTypes = [.commaSeparatedText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try DeepSeekCacheCSVExport.makeCSV(days: days)
-                .write(to: url, atomically: true, encoding: .utf8)
-            exportStatus = ExportFeedback.text(fileURL: url)
-        } catch {
-            let alert = NSAlert(error: error)
-            alert.messageText = "导出缓存命中 CSV 失败"
-            alert.runModal()
+        let outcome = LocalTextExportPresenter.shared.export(
+            title: "导出缓存命中 CSV",
+            filename: DeepSeekCacheCSVExport.suggestedFilename()
+        ) {
+            DeepSeekCacheCSVExport.makeCSV(days: days)
         }
+        if let feedback = outcome.successFeedback { exportStatus = feedback }
     }
 
     private var placeholder: String {
