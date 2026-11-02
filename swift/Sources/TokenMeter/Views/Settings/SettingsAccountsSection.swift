@@ -58,9 +58,9 @@ struct SettingsAccountsSection: View {
             tint: Theme.brand,
             title: "余额查询",
             detail: "API Key 查询平台余额，只存本机 Keychain",
-            configured: store.apiKeyConfigured,
-            readError: store.apiKeyRead.error,
-            statusText: store.apiKeyRead.error?.errorDescription ?? interaction.apiStatus,
+            configured: interaction.balanceBadge.configured,
+            readError: interaction.balanceBadge.readError,
+            statusText: interaction.balanceBadge.readError?.errorDescription ?? interaction.apiStatus,
             expanded: $interaction.expandBalanceKey
         ) {
             SecureField("sk-...", text: $interaction.apiKeyInput)
@@ -69,7 +69,7 @@ struct SettingsAccountsSection: View {
                 Button("验证并保存") { interaction.saveApiKey() }
                     .disabled(interaction.busy || interaction.apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 Button("清除") { interaction.clearApiKey() }
-                    .disabled(interaction.busy || !store.apiKeyConfigured)
+                    .disabled(interaction.busy || !interaction.balanceBadge.configured)
                 Spacer()
             }
         }
@@ -81,9 +81,9 @@ struct SettingsAccountsSection: View {
             tint: Theme.brand,
             title: "平台消费查询",
             detail: "需网页登录授权；Token 仍只存本机",
-            configured: store.usageTokenConfigured,
-            readError: store.usageTokenRead.error,
-            statusText: store.usageTokenRead.error?.errorDescription ?? interaction.usageStatus,
+            configured: interaction.usageBadge.configured,
+            readError: interaction.usageBadge.readError,
+            statusText: interaction.usageBadge.readError?.errorDescription ?? interaction.usageStatus,
             expanded: $interaction.expandUsageToken
         ) {
             HStack(spacing: 10) {
@@ -109,7 +109,7 @@ struct SettingsAccountsSection: View {
                                 .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         )
                     Button("清除") { interaction.clearUsageToken() }
-                        .disabled(interaction.busy || !store.usageTokenConfigured)
+                        .disabled(interaction.busy || !interaction.usageBadge.configured)
                     Spacer()
                 }
             }
@@ -122,9 +122,9 @@ struct SettingsAccountsSection: View {
             tint: Theme.kimi,
             title: "Kimi Coding 订阅额度",
             detail: "官方 5 小时 / 周额度查询；本地用量无需 Key",
-            configured: store.kimiCodeKeyConfigured,
-            readError: store.kimiCodeKeyRead.error,
-            statusText: store.kimiCodeKeyRead.error?.errorDescription ?? interaction.kimiCodeKeyStatus,
+            configured: interaction.kimiBadge.configured,
+            readError: interaction.kimiBadge.readError,
+            statusText: interaction.kimiBadge.readError?.errorDescription ?? interaction.kimiCodeKeyStatus,
             expanded: $interaction.expandKimiKey
         ) {
             Text("仅用于官方 5 小时、周额度与 Extra Usage；请求只发往 Kimi 官方，不读取 Kimi.app 或 CC Switch 私有配置。")
@@ -140,7 +140,7 @@ struct SettingsAccountsSection: View {
                             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     )
                 Button("清除") { interaction.clearKimiCodeKey() }
-                    .disabled(interaction.busy || !store.kimiCodeKeyConfigured)
+                    .disabled(interaction.busy || !interaction.kimiBadge.configured)
                 Spacer()
             }
         }
@@ -152,9 +152,9 @@ struct SettingsAccountsSection: View {
             tint: Theme.zhipu,
             title: "智谱 GLM 订阅额度",
             detail: "Coding Plan 额度与工具调用次数查询",
-            configured: store.zhipuKeyConfigured,
-            readError: store.zhipuKeyRead.error,
-            statusText: store.zhipuKeyRead.error?.errorDescription ?? interaction.zhipuKeyStatus,
+            configured: interaction.zhipuBadge.configured,
+            readError: interaction.zhipuBadge.readError,
+            statusText: interaction.zhipuBadge.readError?.errorDescription ?? interaction.zhipuKeyStatus,
             expanded: $interaction.expandZhipuKey
         ) {
             Text("Key 只存本机 Keychain，只发往所选域名的官方接口。")
@@ -168,7 +168,8 @@ struct SettingsAccountsSection: View {
                     set: { domain in
                         guard domain != store.zhipuQuotaDomain else { return }
                         state.setZhipuQuotaDomain(domain)
-                        interaction.zhipuKeyStatus = store.zhipuKeyConfigured
+                        interaction.refreshCredentialBadges()
+                        interaction.zhipuKeyStatus = interaction.zhipuBadge.configured
                             ? "已配置 \(store.zhipuKeyPreview() ?? "")（\(store.zhipuQuotaDomain.title)）"
                             : "未配置（\(store.zhipuQuotaDomain.title)）"
                     }
@@ -187,7 +188,7 @@ struct SettingsAccountsSection: View {
                             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     )
                 Button("清除") { interaction.clearZhipuKey() }
-                    .disabled(interaction.busy || !store.zhipuKeyConfigured)
+                    .disabled(interaction.busy || !interaction.zhipuBadge.configured)
                 Spacer()
             }
         }

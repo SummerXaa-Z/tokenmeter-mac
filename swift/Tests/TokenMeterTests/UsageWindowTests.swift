@@ -34,6 +34,32 @@ final class UsageWindowTests: XCTestCase {
         )
     }
 
+    func testClaudeWeekCompareAnchorsIsoCalendarWeek() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // 2026-08-05 是周三:ISO 本周 = 8/3(一)..8/9(日),上周 = 7/27..8/2。
+        // 8/1(周六)在滚动 7 天窗内、但属 ISO 上周——旧口径把它算进"本周"，
+        // 与其他页周环比卡(ISO 周一锚)同一天数字矛盾
+        let now = try fixedDate("2026-08-05T12:00:00.000Z")
+        let file = directory.appendingPathComponent("week-compare.jsonl")
+        try write(
+            """
+            {"type":"assistant","timestamp":"2026-08-01T12:00:00.000Z","requestId":"sat-request","cwd":"/tmp/iso-week","message":{"id":"sat-message","model":"opus-5-5","usage":{"input_tokens":100,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}
+            {"type":"assistant","timestamp":"2026-08-04T12:00:00.000Z","requestId":"tue-request","cwd":"/tmp/iso-week","message":{"id":"tue-message","model":"opus-5-5","usage":{"input_tokens":30,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}
+            {"type":"assistant","timestamp":"2026-08-05T11:00:00.000Z","requestId":"wed-request","cwd":"/tmp/iso-week","message":{"id":"wed-message","model":"opus-5-5","usage":{"input_tokens":5,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}
+            """,
+            to: file,
+            modificationDate: now
+        )
+
+        let result = ClaudeUsage.load(projectsDirectory: directory, now: now)
+
+        XCTAssertEqual(result.weekCompare.thisTotalTokens, 35)    // 周二 30 + 周三 5
+        XCTAssertEqual(result.weekCompare.lastTotalTokens, 100)   // 周六归上周
+        XCTAssertEqual(result.weekCompare.thisMessageCount, 2)
+        XCTAssertEqual(result.weekCompare.lastMessageCount, 1)
+    }
+
     func testCodexModelRankingExcludesOldEventsInAnActiveFile() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

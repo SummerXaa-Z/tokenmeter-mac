@@ -22,6 +22,26 @@ final class WeeklyDigestTests: XCTestCase {
         return f.date(from: "\(day) \(time)")!
     }
 
+    func testShouldAttemptRequiresBothDigestAndNotificationSwitches() {
+        let mondayMorning = date("2026-09-21", "09:30")
+        // 总开关关闭:不尝试也不记"本周已发",之后打开仍会补发本周——
+        // 否则关闭的那一周被静默永久跳过
+        XCTAssertFalse(WeeklyDigest.shouldAttempt(
+            enabled: true, notificationsOn: false,
+            lastSentWeek: nil, today: mondayMorning, calendar: calendar))
+        XCTAssertFalse(WeeklyDigest.shouldAttempt(
+            enabled: false, notificationsOn: true,
+            lastSentWeek: nil, today: mondayMorning, calendar: calendar))
+        XCTAssertTrue(WeeklyDigest.shouldAttempt(
+            enabled: true, notificationsOn: true,
+            lastSentWeek: nil, today: mondayMorning, calendar: calendar))
+        // 本周已发过(含上次入队成功后留痕)不再尝试
+        XCTAssertFalse(WeeklyDigest.shouldAttempt(
+            enabled: true, notificationsOn: true,
+            lastSentWeek: WeeklyDigest.weekKey(mondayMorning, calendar: calendar),
+            today: mondayMorning, calendar: calendar))
+    }
+
     func testWeekKeyStableWithinIsoWeekAndDiffersAcross() {
         XCTAssertEqual(
             WeeklyDigest.weekKey(date("2026-09-21"), calendar: calendar),

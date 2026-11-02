@@ -20,11 +20,27 @@ struct OverviewUsageCard: View {
     var participants: Set<HistorySource> = []
     var collectionStatuses: [OverviewSourceCollectionStatus] = []
 
-    /// 近 7 天日均(滚动窗口整除 7);无历史时为 0,上下文行随之隐藏
-    private var weekDailyAverage: Int {
+    /// 近 7 天日均与样本天数:分母是滚动窗与本机留存的交集天数——新装机
+    /// 首周不足 7 天时按实际天数折日均(与配额节奏 sampleDays 同纪律),
+    /// 否则窗口没攒满就被 /7 摊薄成虚低日均,"今天 vs 日均"徽标会把
+    /// 持平的今天错标成暴涨。天数按 mergedHistory 的连续骨架计(任意
+    /// 来源的留存日都算观测日),与趋势图 7D 骨架同源。
+    static func rollingWeekAverage(
+        history: [HistoryStore.DayPoint],
+        participants: Set<HistorySource>,
+        todayKey: String = DateUtil.today()
+    ) -> (average: Int, days: Int) {
+        guard let today = DateUtil.date(from: todayKey),
+              let windowStart = Calendar.current.date(
+                byAdding: .day, value: -6, to: today)
+        else { return (0, 0) }
+        let startKey = DateUtil.key(windowStart)
         let rolling = PeriodCompare.bySource(
-            history, period: .rolling7, participants: participants)
-        return rolling.this.values.reduce(0, +) / 7
+            history, period: .rolling7, participants: participants, today: today)
+        let total = rolling.this.values.reduce(0, +)
+        let days = min(
+            history.filter { $0.date >= startKey && $0.date <= todayKey }.count, 7)
+        return (total / max(days, 1), days)
     }
 
     var body: some View {
@@ -60,15 +76,18 @@ struct OverviewUsageCard: View {
                     Text(note).font(Theme.footnoteFont).foregroundStyle(.secondary)
                         .padding(.top, 5)
                 }
-                // 1D 档下补一行参照:今天 vs 近 7 天日均,回答"今天算多吗"
-                if range == .day, weekDailyAverage > 0 {
+                // 1D 档下补一行参照:今天 vs 近 N 天日均,回答"今天算多吗"
+                // (N = 窗口与本机留存的交集天数,新装机首周 N<7,标签如实带出)
+                let weekAverage = Self.rollingWeekAverage(
+                    history: history, participants: participants)
+                if range == .day, weekAverage.average > 0 {
                     HStack(spacing: 5) {
-                        Text("近 7 天日均 \(Fmt.tokensShort(weekDailyAverage))")
+                        Text("近 \(weekAverage.days) 天日均 \(Fmt.tokensShort(weekAverage.average))")
                             .font(Theme.detailFont)
                             .foregroundStyle(.secondary)
                         ChangeBadge(
                             change: PeriodCompare.change(
-                                this: snapshot.periodTotal, last: weekDailyAverage))
+                                this: snapshot.periodTotal, last: weekAverage.average))
                     }
                     .padding(.top, 2)
                 }

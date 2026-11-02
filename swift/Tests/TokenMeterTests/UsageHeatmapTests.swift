@@ -25,6 +25,51 @@ final class UsageHeatmapTests: XCTestCase {
         )
     }
 
+    func testWeeklyThresholdsFoldDaysIntoIsoMondayBuckets() {
+        // 同周(9/21 一、9/23 三)折成一个周桶;9/19 周六属上一周(9/14 周)
+        let thresholds = UsageHeatmap.weeklyThresholds([
+            day("2026-09-21", claude: 10), day("2026-09-23", claude: 15),
+            day("2026-09-28", claude: 30),
+            day("2026-09-19", claude: 99),
+        ], participants: [.claude])
+        // 非零周合计 [25, 30, 99] → 分位 25/30/99
+        XCTAssertEqual(thresholds, [25, 30, 99])
+    }
+
+    func testWeeklyCellsWithGlobalThresholdsStayComparableAcrossWindows() {
+        // 周档颜色跨页/跨窗口档可比:分位样本用全历史周合计,不是可见窗口。
+        // 8/31 周只在 5 周窗内可见;9/14、9/21 周两个窗都可见
+        let days = [
+            day("2026-08-31", claude: 20),
+            day("2026-09-14", claude: 40),
+            day("2026-09-25", claude: 50),
+        ]
+        let thresholds = UsageHeatmap.weeklyThresholds(days, participants: [.claude, .codex])
+        XCTAssertEqual(thresholds, [20, 40, 50])
+
+        let wide = window(days, windowWeeks: 5)
+        let narrow = window(days, windowWeeks: 2)
+        let wideCells = UsageHeatmap.weeklyCells(from: wide, thresholds: thresholds)
+        let narrowCells = UsageHeatmap.weeklyCells(from: narrow, thresholds: thresholds)
+        // 两窗共有周的档位一致——同一周不因翻页变颜色
+        let wideByWeek = Dictionary(uniqueKeysWithValues: wideCells.map { ($0.weekOf, $0.level) })
+        for cell in narrowCells {
+            if let wideLevel = wideByWeek[cell.weekOf] {
+                XCTAssertEqual(wideLevel, cell.level, "周 \(cell.weekOf) 在两个窗口的档位必须一致")
+            }
+        }
+        XCTAssertEqual(wideByWeek["2026-09-14"], 2)   // 40 ≤ q2(40)
+        XCTAssertEqual(wideByWeek["2026-09-21"], 3)   // 50 ≤ q3(50)
+
+        // 回归保护:全局阈值确实改变了窗口内自算的结果(可见样本 [40,50]
+        // 自算会把 40 压到 1 档),不是恒等替换
+        let localCells = UsageHeatmap.weeklyCells(from: narrow)
+        let globalByWeek = Dictionary(uniqueKeysWithValues: narrowCells.map { ($0.weekOf, $0.level) })
+        let localByWeek = Dictionary(uniqueKeysWithValues: localCells.map { ($0.weekOf, $0.level) })
+        XCTAssertEqual(localByWeek["2026-09-14"], 1)
+        XCTAssertEqual(globalByWeek["2026-09-14"], 2)
+    }
+
     func testQuantileLevelsAcrossNonZeroDays() {
         // 8 个非零日 10...80:分位阈值 30/50/70,四档各两天,零日为 0 档
         let columns = window([

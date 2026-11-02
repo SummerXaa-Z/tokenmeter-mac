@@ -34,6 +34,20 @@ enum WeeklyDigest {
         return lastSentWeek != weekKey(today, calendar: calendar)
     }
 
+    /// 是否应尝试发送本周周报:周报开关与系统通知总开关都要开。总开关
+    /// 关着时不去尝试(也就不记"本周已发"),之后打开仍会补发本周——
+    /// 否则总开关关闭的那一周会被静默永久跳过。
+    static func shouldAttempt(
+        enabled: Bool,
+        notificationsOn: Bool,
+        lastSentWeek: String?,
+        today: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard enabled, notificationsOn else { return false }
+        return isDue(lastSentWeek: lastSentWeek, today: today, calendar: calendar)
+    }
+
     /// 周报所述周(上周)的 ISO 周键:发送方用作通知 identifier 的周段,
     /// 与 message() 内部取"上周"桶的算法一致(今天减 7 天必落在上一个
     /// ISO 周里,周一到周日皆然)。按所述周(而非发送周)留痕,同一份摘要
