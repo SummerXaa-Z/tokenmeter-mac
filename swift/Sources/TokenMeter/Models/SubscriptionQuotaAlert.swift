@@ -6,28 +6,30 @@ import Foundation
 // 方舟全部已订阅套餐的全部周期）都参与最坏值——任何一个窗口耗尽都阻断
 // 使用。无任何可用窗口时返回 nil，表示本轮不评估。
 enum SubscriptionQuotaAlert {
-    static func kimiWorstRemainingPercent(_ result: KimiQuotaResult) -> Double? {
-        ([result.summary] + result.limits)
-            .compactMap { $0?.remainingPercent }
-            .min()
+    static func codexWorstRemainingPercent(_ result: CodexRateLimits, now: Date = Date()) -> Double? {
+        worst(SubscriptionQuotaSnapshot(codex: result, now: now))
     }
 
-    static func zhipuWorstRemainingPercent(_ result: ZhipuQuotaResult) -> Double? {
-        [result.fiveHour, result.weekly, result.toolCalls]
-            .compactMap { $0 }
-            .map { min(max(100 - $0.usedPercent, 0), 100) }
-            .min()
+    static func kimiWorstRemainingPercent(_ result: KimiQuotaResult, now: Date = Date()) -> Double? {
+        worst(SubscriptionQuotaSnapshot(kimi: result, now: now))
     }
 
-    static func arkWorstRemainingPercent(_ result: ArkPlanQuotaSnapshot) -> Double? {
-        result.subscribedItems
-            .flatMap(\.periods)
+    static func zhipuWorstRemainingPercent(_ result: ZhipuQuotaResult, now: Date = Date()) -> Double? {
+        worst(SubscriptionQuotaSnapshot(zhipu: result, now: now))
+    }
+
+    static func arkWorstRemainingPercent(_ result: ArkPlanQuotaSnapshot, now: Date = Date()) -> Double? {
+        worst(SubscriptionQuotaSnapshot(ark: result, now: now))
+    }
+
+    private static func worst(_ snapshot: SubscriptionQuotaSnapshot) -> Double? {
+        snapshot.groups.flatMap(\.periods)
             .compactMap(\.remainingPercent)
             .min()
     }
 
     static func shouldNotify(remainingPercent: Double?) -> Bool {
-        guard let remainingPercent else { return false }
+        guard let remainingPercent, remainingPercent.isFinite else { return false }
         return remainingPercent <= 10
     }
 

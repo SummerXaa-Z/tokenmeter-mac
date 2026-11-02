@@ -22,7 +22,7 @@ enum SourceHourCSVExport {
 
         var notes: [String] = [
             "口径",
-            "\(source.overviewName) · 今日逐时（与分时图同口径）",
+            "\(source.overviewName) · \(todayKey) 逐时（与分时图同口径）",
         ]
         if let note, !note.isEmpty {
             notes.append(note)

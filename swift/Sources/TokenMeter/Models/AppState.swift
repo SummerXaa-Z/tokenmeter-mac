@@ -29,6 +29,7 @@ final class AppState: ObservableObject {
     @Published var usage: UsageResult?
     @Published var usageState: LoadState = .loading
     @Published private(set) var historyRevision: UInt = 0
+    @Published private(set) var historyWritesInFlight = 0
     @Published private(set) var historyPersistenceError: String?
     private var historyWriteFailures: Set<HistoryPersistenceCoordinator.Destination> = []
     private var historyReadFailed = false
@@ -90,6 +91,7 @@ final class AppState: ObservableObject {
 
     private let store = ConfigStore.shared
     private let historyPersistence: HistoryPersistenceCoordinator
+    private let historyWrites = HistoryWriteScheduler()
     // 每次来源开关改变都换代；关闭后重新开启也不能接纳旧一轮扫描结果。
     private var localCollectionVersions = LocalCollectionVersions()
     private let scheduledRefreshBatch = ScheduledRefreshBatchGate()
@@ -104,6 +106,7 @@ final class AppState: ObservableObject {
     private var copilotRefresh = ForcedRefreshCoalescer()
     private var qwenRefresh = ForcedRefreshCoalescer()
     private var cursorRefresh = ForcedRefreshCoalescer()
+    private(set) var cursorCollectionRevision: UInt = 0
     private var kimiQuotaRefresh = ForcedRefreshCoalescer()
     private var kimiQuotaExpiryTask: Task<Void, Never>?
     private var zhipuQuotaRefresh = ForcedRefreshCoalescer()
@@ -231,6 +234,7 @@ final class AppState: ObservableObject {
                 usageState = .noKey
             }
 
+            await flushHistoryWrites()
             guard usageRefresh.finish() else { break }
         }
     }
@@ -457,6 +461,7 @@ final class AppState: ObservableObject {
             collectRevision &+= 1
             acceptClaudeCollection(r, requestRevision: requestRevision)
 
+            await flushHistoryWrites()
             guard claudeRefresh.finish() else { break }
             guard claudeEnabled, ClaudeUsage.isAvailable else {
                 claudeRefresh.cancel()
@@ -575,50 +580,80 @@ final class AppState: ObservableObject {
     // 按天明细与 HistoryStore 同口径落盘：模型 Token、Skill 次数与会话数
     // 合成 SourceDayDetail。权威重扫的来源（与 HistoryStore.reconcile 对应）
     // 会删除窗口内已确认无任何明细的天。
-    @discardableResult
     private func persistCollectionHistory(
         _ source: HistorySource,
         days: [HistoryPersistenceCoordinator.Day],
         dayModels: [String: [String: ModelTokenTally]],
         daySkills: [String: [String: Int]] = [:],
         daySessions: [String: Int] = [:]
-    ) -> Bool {
-        do {
-            _ = try historyPersistence.write(
+    ) {
+        let persistence = historyPersistence
+        let models = Self.modelDays(dayModels: dayModels, daySkills: daySkills, daySessions: daySessions)
+        enqueueHistoryWrite(destinations: [.daily(source), .models(source)]) {
+            try persistence.write(
                 source, days: days,
-                modelDays: Self.modelDays(dayModels: dayModels, daySkills: daySkills, daySessions: daySessions),
+                modelDays: models,
                 authoritative: SourceCatalog.descriptor(for: source).historyAuthority == .replaceConfirmedEmpty)
-            setHistoryWriteOutcome(.daily(source), succeeded: true)
-            setHistoryWriteOutcome(.models(source), succeeded: true)
-            return true
-        } catch {
-            let failure = (error as? HistoryPersistenceCoordinator.WriteFailure)?.destination ?? .daily(source)
-            setHistoryWriteOutcome(failure, succeeded: false)
-            return false
+        }
+    }
+
+    func persistDailyHistory(
+        _ source: HistorySource, days: [HistoryPersistenceCoordinator.Day], authoritative: Bool
+    ) {
+        let persistence = historyPersistence
+        enqueueHistoryWrite(destinations: [.daily(source)]) {
+            do { return try persistence.writeDaily(source, days, authoritative) }
+            catch {
+                throw HistoryPersistenceCoordinator.WriteFailure(
+                    destination: .daily(source), historyMayHaveChanged: false)
+            }
         }
     }
 
     @discardableResult
-    func persistDailyHistory(
-        _ source: HistorySource, days: [HistoryPersistenceCoordinator.Day], authoritative: Bool
-    ) -> Bool {
-        do {
-            _ = try historyPersistence.writeDaily(source, days, authoritative)
-            setHistoryWriteOutcome(.daily(source), succeeded: true)
-            return true
-        } catch {
-            setHistoryWriteOutcome(.daily(source), succeeded: false)
-            return false
+    private func enqueueHistoryWrite(
+        destinations: [HistoryPersistenceCoordinator.Destination],
+        shouldWrite: @escaping () -> Bool = { true },
+        operation: @escaping () throws -> Bool
+    ) -> Task<Result<Bool, Error>, Never> {
+        historyWritesInFlight += 1
+        return historyWrites.enqueue(shouldWrite: shouldWrite, onSkip: { [self] in
+            historyWritesInFlight -= 1
+        }, operation: operation) { [self] result in
+            historyWritesInFlight -= 1
+            applyHistoryWriteOutcome(result, destinations: destinations)
         }
     }
 
-    private func setHistoryWriteOutcome(_ destination: HistoryPersistenceCoordinator.Destination, succeeded: Bool) {
-        if succeeded { historyWriteFailures.remove(destination) }
-        else { historyWriteFailures.insert(destination) }
+    func flushHistoryWrites() async { await historyWrites.flush() }
+
+    func readPersistedHistory() async throws -> HistorySnapshotReader.Snapshot {
+        try await historyWrites.read {
+            HistorySnapshotReader.Snapshot(
+                daily: try HistoryStore.allChecked(now: Date()),
+                models: try ModelUsageHistoryStore.shared.allChecked())
+        }
+    }
+
+    private func applyHistoryWriteOutcome(
+        _ result: Result<Bool, Error>, destinations: [HistoryPersistenceCoordinator.Destination]
+    ) {
+        let recovered = destinations.contains { historyWriteFailures.contains($0) }
+        let changed: Bool
+        switch result {
+        case .success(let didChange):
+            destinations.forEach { historyWriteFailures.remove($0) }
+            changed = didChange || recovered
+        case .failure(let error):
+            let failure = error as? HistoryPersistenceCoordinator.WriteFailure
+            if let destination = failure?.destination ?? destinations.first {
+                historyWriteFailures.insert(destination)
+            }
+            changed = failure?.historyMayHaveChanged ?? true
+        }
         updateHistoryPersistenceError()
-        // 失败前可能已有另一份历史成功更新；观察者必须重读严格快照，不能
-        // 把部分写入当成完全没有发生，也不能把完整采集数据丢掉。
-        historyRevision &+= 1
+        // 不为未变化的成功刷新重读全部历史；部分提交/错误恢复仍必须重读。
+        if changed { historyRevision &+= 1 }
     }
 
     func reportHistoryReadOutcome(succeeded: Bool) {
@@ -643,45 +678,49 @@ final class AppState: ObservableObject {
         return days
     }
 
-    private func recordModelHistory(
+    func recordBackfillHistory(
         _ source: HistorySource,
-        windowDates: [String],
+        days: [HistoryPersistenceCoordinator.Day],
         dayModels: [String: [String: ModelTokenTally]],
         daySkills: [String: [String: Int]] = [:],
         daySessions: [String: Int] = [:],
-        authoritative: Bool
-    ) throws {
-        do {
-            _ = try historyPersistence.writeModels(
-                source, windowDates,
-                Self.modelDays(dayModels: dayModels, daySkills: daySkills, daySessions: daySessions),
-                authoritative)
-            setHistoryWriteOutcome(.models(source), succeeded: true)
-        } catch {
-            setHistoryWriteOutcome(.models(source), succeeded: false)
-            throw error
+        ticket: LocalCollectionVersions.BackfillTicket
+    ) async throws -> Bool {
+        guard ticket.source == source else { return false }
+        let persistence = historyPersistence
+        let models = Self.modelDays(dayModels: dayModels, daySkills: daySkills, daySessions: daySessions)
+        let task = enqueueHistoryWrite(destinations: [.daily(source), .models(source)], shouldWrite: { [self] in
+            acceptsBackfillCollection(ticket)
+        }) {
+            try persistence.write(source, days: days, modelDays: models,
+                authoritative: SourceCatalog.descriptor(for: source).historyAuthority == .replaceConfirmedEmpty)
         }
+        _ = try await task.value.get()
+        return acceptsBackfillCollection(ticket)
     }
 
     // 启动后低优先级调用（见 DetailBackfill）：把实时 7 天窗之外的本地会话
-    // 回填进按天明细，让 30D/全部 在升级当天就有完整回溯。加载逐来源串行、
+    // 回填进日汇总与按天明细，让 30D/全部 在升级当天就有一致回溯。加载逐来源串行、
     // utility 优先级，不与实时刷新抢主线程；任一来源失败只跳过该来源。
     func backfillModelDetail(now: Date = Date()) async {
         guard !RuntimeEnvironment.isIsolated else { return }
         let todayKey = DateUtil.key(now)
         guard DetailBackfill.shouldRun(
             markerDay: ConfigStore.shared.lastModelDetailBackfillDay,
-            todayKey: todayKey
+            todayKey: todayKey, markerVersion: ConfigStore.shared.modelDetailBackfillVersion
         ) else { return }
 
         let sources = SourceCatalog.modelDetailSources.filter {
             isSourceEnabled($0) && SourceCatalog.descriptor(for: $0).isAvailable()
         }
+        guard !sources.isEmpty else { return }
         let report = await DetailBackfill.run(sources: sources) { source in
             try await self.backfillModelDetail(source, now: now, windowDays: DetailBackfill.windowDays)
         }
-        if report.shouldMarkCompleted { ConfigStore.shared.lastModelDetailBackfillDay = todayKey }
-        historyRevision &+= 1
+        if report.shouldMarkCompleted {
+            ConfigStore.shared.lastModelDetailBackfillDay = todayKey
+            ConfigStore.shared.modelDetailBackfillVersion = DetailBackfill.storageVersion
+        }
     }
 
     private func backfillModelDetail(
@@ -696,58 +735,65 @@ final class AppState: ObservableObject {
             }.value
             guard acceptsBackfillCollection(ticket) else { return .superseded }
             guard r.isAuthoritative else { return .failed }
-            try recordModelHistory(.claude, windowDates: r.days.map(\.date),
+            guard try await recordBackfillHistory(.claude, days: Self.claudeHistoryDays(from: r),
                                dayModels: r.dayModels, daySkills: r.daySkills,
-                               daySessions: r.daySessions, authoritative: true)
+                               daySessions: r.daySessions, ticket: ticket)
+            else { return .superseded }
         case .codex:
             let r = await Task.detached(priority: .utility) {
                 CodexUsage.load(now: now, windowDays: windowDays)
             }.value
             guard acceptsBackfillCollection(ticket) else { return .superseded }
             guard r.isAuthoritative else { return .failed }
-            try recordModelHistory(.codex, windowDates: r.days.map(\.date),
+            guard try await recordBackfillHistory(.codex, days: r.days.map { ($0.date, $0.totalTokens, nil) },
                                dayModels: r.dayModels, daySkills: r.daySkills,
-                               daySessions: r.daySessions, authoritative: false)
+                               daySessions: r.daySessions, ticket: ticket)
+            else { return .superseded }
         case .kimi:
             let r = try await Task.detached(priority: .utility) {
                 try KimiUsage.load(now: now, windowDays: windowDays)
             }.value
             guard acceptsBackfillCollection(ticket) else { return .superseded }
-            try recordModelHistory(.kimi, windowDates: r.days.map(\.date),
+            guard try await recordBackfillHistory(.kimi, days: r.days.map { ($0.date, $0.totalTokens, nil) },
                                    dayModels: r.dayModels,
-                                   daySessions: r.daySessions, authoritative: true)
+                                   daySessions: r.daySessions, ticket: ticket)
+            else { return .superseded }
         case .opencode:
             let r = try await Task.detached(priority: .utility) {
                 try OpenCodeUsage.load(now: now, windowDays: windowDays)
             }.value
             guard acceptsBackfillCollection(ticket) else { return .superseded }
-            try recordModelHistory(.opencode, windowDates: r.days.map(\.date),
+            guard try await recordBackfillHistory(.opencode, days: r.days.map { ($0.date, $0.totalTokens, nil) },
                                    dayModels: r.dayModels,
-                                   daySessions: r.daySessions, authoritative: false)
+                                   daySessions: r.daySessions, ticket: ticket)
+            else { return .superseded }
         case .gemini:
             let r = try await Task.detached(priority: .utility) {
                 try GeminiUsage.load(now: now, windowDays: windowDays)
             }.value
             guard acceptsBackfillCollection(ticket) else { return .superseded }
-            try recordModelHistory(.gemini, windowDates: r.days.map(\.date),
+            guard try await recordBackfillHistory(.gemini, days: r.days.map { ($0.date, $0.totalTokens, nil) },
                                    dayModels: r.dayModels,
-                                   daySessions: r.daySessions, authoritative: false)
+                                   daySessions: r.daySessions, ticket: ticket)
+            else { return .superseded }
         case .copilot:
             let r = try await Task.detached(priority: .utility) {
                 try CopilotUsage.load(now: now, windowDays: windowDays)
             }.value
             guard acceptsBackfillCollection(ticket) else { return .superseded }
-            try recordModelHistory(.copilot, windowDates: r.days.map(\.date),
+            guard try await recordBackfillHistory(.copilot, days: r.days.map { ($0.date, $0.totalTokens, nil) },
                                    dayModels: r.dayModels, daySkills: r.daySkills,
-                                   daySessions: r.daySessions, authoritative: false)
+                                   daySessions: r.daySessions, ticket: ticket)
+            else { return .superseded }
         case .qwen:
             let r = try await Task.detached(priority: .utility) {
                 try QwenCodeUsage.load(now: now, windowDays: windowDays)
             }.value
             guard acceptsBackfillCollection(ticket) else { return .superseded }
-            try recordModelHistory(.qwen, windowDates: r.days.map(\.date),
+            guard try await recordBackfillHistory(.qwen, days: r.days.map { ($0.date, $0.totalTokens, nil) },
                                    dayModels: r.dayModels,
-                                   daySessions: r.daySessions, authoritative: true)
+                                   daySessions: r.daySessions, ticket: ticket)
+            else { return .superseded }
         case .deepseek, .cursor:
             return .superseded
         }
@@ -801,6 +847,7 @@ final class AppState: ObservableObject {
             }
             acceptCodexLiveQuota(await live, requestRevision: requestRevision, wasEnabled: requestedLiveQuota)
 
+            await flushHistoryWrites()
             guard codexRefresh.finish() else { break }
             guard codexEnabled, CodexUsage.isAvailable || codexLiveQuotaEnabled else {
                 codexRefresh.cancel()
@@ -856,6 +903,7 @@ final class AppState: ObservableObject {
             }
             collectRevision &+= 1
 
+            await flushHistoryWrites()
             guard kimiRefresh.finish() else { break }
             guard kimiEnabled, KimiUsage.isAvailable else {
                 kimiRefresh.cancel()
@@ -900,6 +948,7 @@ final class AppState: ObservableObject {
             }
             collectRevision &+= 1
 
+            await flushHistoryWrites()
             guard opencodeRefresh.finish() else { break }
             guard opencodeEnabled, OpenCodeUsage.isAvailable else {
                 opencodeRefresh.cancel()
@@ -944,6 +993,7 @@ final class AppState: ObservableObject {
             }
             collectRevision &+= 1
 
+            await flushHistoryWrites()
             guard geminiRefresh.finish() else { break }
             guard geminiEnabled, GeminiUsage.isAvailable else {
                 geminiRefresh.cancel()
@@ -988,6 +1038,7 @@ final class AppState: ObservableObject {
             }
             collectRevision &+= 1
 
+            await flushHistoryWrites()
             guard copilotRefresh.finish() else { break }
             guard copilotEnabled, CopilotUsage.isAvailable else {
                 copilotRefresh.cancel()
@@ -1032,6 +1083,7 @@ final class AppState: ObservableObject {
             }
             collectRevision &+= 1
 
+            await flushHistoryWrites()
             guard qwenRefresh.finish() else { break }
             guard qwenEnabled, QwenCodeUsage.isAvailable else {
                 qwenRefresh.cancel()
@@ -1042,7 +1094,15 @@ final class AppState: ObservableObject {
 
     func loadCursor(force: Bool = false) async {
         guard !RuntimeEnvironment.isIsolated else { return }
-        guard cursorEnabled, CursorUsage.isAvailable else { return }
+        await refreshCursor(force: force, available: { CursorUsage.isAvailable }, load: { try await CursorUsage.load() })
+    }
+
+    // 可注入的异步边界用于验证延迟响应；生产入口仍先执行隔离/权限门禁。
+    func refreshCursor(
+        force: Bool = false, available: @escaping () -> Bool,
+        load: @escaping () async throws -> CursorUsageResult
+    ) async {
+        guard cursorEnabled, available() else { return }
         if !force, !cursorRefresh.isRefreshing, isFresh(cursor.loadedAt) { return }
         guard cursorRefresh.request(force: force) else {
             await cursorRefreshCompletion.wait()
@@ -1058,36 +1118,50 @@ final class AppState: ObservableObject {
             cursor.proc = ProcessStatus.cursor()
             cursor.error = nil
             let collectStarted = Date()
+            let requestRevision = cursorCollectionRevision
             do {
-                let r = try await CursorUsage.load()
-                cursor.result = r
-                cursor.loadedAt = Date()
-                // Use the query's day even if the network reply arrived after midnight.
-                if let todayTokens = r.todayTokens, let date = r.todayDate {
-                    persistDailyHistory(.cursor, days: [
-                        (date: date, totalTokens: todayTokens, cost: nil)
-                    ], authoritative: true)
-                }
+                let r = try await load()
+                acceptCursorCollection(r, requestRevision: requestRevision)
                 CollectAttemptLog.record(.init(
                     source: .cursor, startedAt: collectStarted,
                     finishedAt: Date(), failure: nil))
             } catch {
                 let message = (error as? CursorUsageError)?.errorDescription
-                    ?? error.localizedDescription
-                cursor.result = nil
-                cursor.error = message
+                    ?? "Cursor 用量读取失败，请稍后重试"
+                acceptCursorCollectionFailure(message: message, requestRevision: requestRevision)
                 CollectAttemptLog.record(.init(
                     source: .cursor, startedAt: collectStarted, finishedAt: Date(),
                     failure: CollectAttemptLog.failureSummary(message)))
             }
             collectRevision &+= 1
 
+            await flushHistoryWrites()
             guard cursorRefresh.finish() else { break }
-            guard cursorEnabled, CursorUsage.isAvailable else {
+            guard cursorEnabled, available() else {
                 cursorRefresh.cancel()
                 break
             }
         }
+    }
+
+    @discardableResult
+    func acceptCursorCollection(_ result: CursorUsageResult, requestRevision: UInt) -> Bool {
+        guard cursorEnabled, requestRevision == cursorCollectionRevision else { return false }
+        cursor.result = result
+        cursor.error = nil
+        cursor.loadedAt = Date()
+        if let tokens = result.todayTokens, let date = result.todayDate {
+            persistDailyHistory(.cursor, days: [(date, tokens, nil)], authoritative: true)
+        }
+        return true
+    }
+
+    @discardableResult
+    func acceptCursorCollectionFailure(message: String, requestRevision: UInt) -> Bool {
+        guard cursorEnabled, requestRevision == cursorCollectionRevision else { return false }
+        cursor.error = message
+        cursor.loadedAt = Date()
+        return true
     }
 
     // MARK: - 订阅剩余量（只读快照，不写历史）
@@ -1380,6 +1454,7 @@ final class AppState: ObservableObject {
         if kimiEnabled != enabled { invalidateLocalCollection(.kimi) }
         store.kimiMonitorEnabled = enabled
         kimiEnabled = enabled
+        requestStatusRefresh()
         if enabled {
             Task { await loadKimi(force: true) }
         }
@@ -1437,6 +1512,7 @@ final class AppState: ObservableObject {
         if opencodeEnabled != enabled { invalidateLocalCollection(.opencode) }
         store.opencodeMonitorEnabled = enabled
         opencodeEnabled = enabled
+        requestStatusRefresh()
         if enabled { Task { await loadOpenCode(force: true) } }
     }
 
@@ -1444,6 +1520,7 @@ final class AppState: ObservableObject {
         if geminiEnabled != enabled { invalidateLocalCollection(.gemini) }
         store.geminiMonitorEnabled = enabled
         geminiEnabled = enabled
+        requestStatusRefresh()
         if enabled { Task { await loadGemini(force: true) } }
     }
 
@@ -1451,6 +1528,7 @@ final class AppState: ObservableObject {
         if copilotEnabled != enabled { invalidateLocalCollection(.copilot) }
         store.copilotMonitorEnabled = enabled
         copilotEnabled = enabled
+        requestStatusRefresh()
         if enabled { Task { await loadCopilot(force: true) } }
     }
 
@@ -1458,12 +1536,16 @@ final class AppState: ObservableObject {
         if qwenEnabled != enabled { invalidateLocalCollection(.qwen) }
         store.qwenMonitorEnabled = enabled
         qwenEnabled = enabled
+        requestStatusRefresh()
         if enabled { Task { await loadQwen(force: true) } }
     }
 
     func setCursorEnabled(_ enabled: Bool) {
+        cursorCollectionRevision &+= 1
+        cursor.loadedAt = nil
         store.cursorMonitorEnabled = enabled
         cursorEnabled = enabled
+        requestStatusRefresh()
         if enabled { Task { await loadCursor(force: true) } }
     }
 

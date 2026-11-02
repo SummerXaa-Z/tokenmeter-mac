@@ -117,6 +117,8 @@ enum CodexUsage {
         let timestamp: String?
         let payload: Payload?
         struct Payload: Decodable {
+            let id: String?         // session_meta 的稳定会话标识
+            let forkedFromID: String?
             let type: String?
             let info: Info?
             let rateLimits: RateLimits?
@@ -128,7 +130,8 @@ enum CodexUsage {
             let arguments: LossyString?
             let input: LossyString?
             enum CodingKeys: String, CodingKey {
-                case type, info, model, effort, cwd, name, arguments, input
+                case id, type, info, model, effort, cwd, name, arguments, input
+                case forkedFromID = "forked_from_id"
                 case callId = "call_id"
                 case rateLimits = "rate_limits"
             }
@@ -150,7 +153,7 @@ enum CodexUsage {
                 case lastTokenUsage = "last_token_usage"
             }
         }
-        struct TokenUsage: Decodable {
+        struct TokenUsage: Decodable, Hashable {
             let inputTokens: Int?
             let cachedInputTokens: Int?
             let outputTokens: Int?
@@ -199,23 +202,56 @@ enum CodexUsage {
         let size: UInt64
         let mtime: Date
         let calendar: Calendar
-        let perDay: [String: Tally]
-        let perDayModel: [String: [String: Tally]] // day → 模型 → token 明细
-        let perDayHour: [String: [Int: Int]] // day → hour → totalTokens
+        let sessionID: String?
+        let parentSessionID: String?
+        let forkedAt: Date?
+        let events: [TokenEvent]
         let project: String?                 // session cwd 末段（每文件一个）
         let rateLimitsByChannel: [String: CodexRateLimits]  // 通道 → 该文件内最新快照
-        let perDaySkill: [String: [String: Int]] // day → Skill 名 → 调用次数
+        let skills: [SkillEvent]
+    }
+
+    // 只缓存用量/工具标识，不缓存命令、会话正文或 cwd 原文。累计事件要在
+    // 同一 session 的全部副本合并后再差分，才能正确处理仅含后半段的续写文件。
+    private struct TokenEvent {
+        let key: TokenEventKey
+        let model: String
+        let last: Event.TokenUsage?
+    }
+    private struct TokenEventKey: Hashable {
+        let timestamp: Date
+        let total: Event.TokenUsage
+    }
+    private struct SkillEvent {
+        let timestamp: Date
+        let key: String
+        let name: String
+    }
+    private struct SessionSummary {
+        var events: [TokenEvent] = []
+        var eventIndices: [TokenEventKey: Int] = [:]
+        var skills: [SkillEvent] = []
+        var parentID: String?
+        var forkedAt: Date?
+        var project: String?
+    }
+    private struct SessionMetadata {
+        let size: UInt64
+        let mtime: Date
+        let id: String?
+        let parentID: String?
     }
 
     // 内存级缓存：app 存续期内，未变的文件不重扫
     private static var cache: [String: FileSummary] = [:]
+    private static var metadataCache: [String: SessionMetadata] = [:]
     private static let cacheLock = NSLock()
 
     // MARK: - 入口
 
     // 全树扫描，按 mtime 过滤：长期复用的 session（Codex Desktop 可挂数周）
     // 落在很老的日期目录里，但只要还在写 mtime 就是新的，按目录日期扫会漏掉。
-    // mtime 早于 7 天窗起点的文件不可能含窗内事件，直接跳过。
+    // mtime 早于窗口的文件只为相同 session/显式父链补读累计基线。
     static func load(
         sessionsDirectory: URL = sessionsDir,
         now: Date = Date(),
@@ -238,6 +274,8 @@ enum CodexUsage {
         var skillMap: [String: Int] = [:]
         var hourMap: [Int: Int] = [:]
         let todayKey = DateUtil.key(now)
+        var files: [(path: String, summary: FileSummary)] = []
+        var olderFiles: [(file: URL, size: UInt64, mtime: Date)] = []
 
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
         guard let walker = fm.enumerator(
@@ -271,7 +309,10 @@ enum CodexUsage {
                 readError = readError ?? "本地会话属性读取失败"
                 continue
             }
-            guard mtime >= windowStart else { continue }
+            if mtime < windowStart {
+                olderFiles.append((file, UInt64(size), mtime))
+                continue
+            }
             let summary: FileSummary
             do {
                 summary = try summarize(file, size: UInt64(size), mtime: mtime, calendar: calendar)
@@ -280,56 +321,197 @@ enum CodexUsage {
                 readError = readError ?? "本地会话文件读取失败"
                 continue
             }
-            var counted = false
-            var fileTokens = 0
-            for (date, t) in summary.perDay where window.contains(date) {
-                var d = dayMap[date] ?? CodexDayUsage(date: date)
-                d.inputTokens += t.input
-                d.cachedInputTokens += t.cached
-                d.outputTokens += t.output
-                d.reasoningTokens += t.reasoning
-                d.totalTokens += t.total
-                d.sessionCount += 1
-                dayMap[date] = d
-                counted = true
-                fileTokens += t.total
+            files.append((file.path, summary))
+        }
+
+        // 仅含后半段的续写文件需要旧副本的累计基线。旧文件先读有界元数据，
+        // 只为当前 session 或显式父链补读内容；无关历史不做完整扫描。
+        var wantedIDs = Set(files.compactMap { $0.summary.sessionID })
+        wantedIDs.formUnion(files.compactMap { $0.summary.parentSessionID })
+        if !wantedIDs.isEmpty {
+            var older: [(file: URL, size: UInt64, mtime: Date, meta: SessionMetadata)] = []
+            for candidate in olderFiles {
+                do {
+                    let meta = try metadata(candidate.file, size: candidate.size, mtime: candidate.mtime)
+                    older.append((candidate.file, candidate.size, candidate.mtime, meta))
+                } catch {
+                    readError = readError ?? "本地会话基线读取失败"
+                }
             }
+            var included = Set<String>()
+            var added = true
+            while added {
+                added = false
+                for candidate in older {
+                    guard let id = candidate.meta.id, wantedIDs.contains(id),
+                          included.insert(candidate.file.path).inserted else { continue }
+                    do {
+                        let summary = try summarize(candidate.file, size: candidate.size,
+                                                    mtime: candidate.mtime, calendar: calendar)
+                        files.append((candidate.file.path, summary))
+                        if let parent = summary.parentSessionID, wantedIDs.insert(parent).inserted { added = true }
+                    } catch {
+                        readError = readError ?? "本地会话基线读取失败"
+                    }
+                }
+            }
+        }
+
+        var sessions: [String: SessionSummary] = [:]
+        // 路径仅作缺元数据时的保守身份和稳定择优顺序，不输出或持久化。
+        for file in files.sorted(by: { $0.path < $1.path }) {
+            let summary = file.summary
+            let id = summary.sessionID.map { "session:\($0)" } ?? "file:\(file.path)"
+            var session = sessions[id] ?? SessionSummary()
+            for event in summary.events {
+                if let index = session.eventIndices[event.key] {
+                    if session.events[index].model == "unknown", event.model != "unknown" {
+                        session.events[index] = event
+                    }
+                } else {
+                    session.eventIndices[event.key] = session.events.count
+                    session.events.append(event)
+                }
+            }
+            session.skills += summary.skills
+            session.parentID = summary.parentSessionID.map { "session:\($0)" } ?? session.parentID
+            session.forkedAt = summary.forkedAt ?? session.forkedAt
+            session.project = session.project ?? summary.project
+            sessions[id] = session
             for (channel, rl) in summary.rateLimitsByChannel {
                 if let prev = limitsByChannel[channel], prev.asOf >= rl.asOf { continue }
                 limitsByChannel[channel] = rl
             }
-            for (date, skills) in summary.perDaySkill where window.contains(date) {
-                for (name, count) in skills {
-                    skillMap[name, default: 0] += count
-                    daySkills[date, default: [:]][name, default: 0] += count
+        }
+
+        func family(of id: String) -> String {
+            var current = id
+            var visited: Set<String> = []
+            while let parent = sessions[current]?.parentID {
+                guard visited.insert(current).inserted else { return visited.min() ?? id }
+                current = parent
+            }
+            // 异常循环元数据不能使扫描卡住，也不能凭猜测合并独立会话。
+            return current
+        }
+        func depth(of id: String) -> Int {
+            var current = id
+            var visited: Set<String> = []
+            while visited.insert(current).inserted, let parent = sessions[current]?.parentID {
+                current = parent
+            }
+            return visited.count
+        }
+        func counter(in id: String, before cutoff: Date, visited: Set<String> = []) -> TokenEvent? {
+            guard !visited.contains(id), let session = sessions[id] else { return nil }
+            let current = session.events.enumerated().filter { $0.element.key.timestamp <= cutoff }
+                .max(by: {
+                    if $0.element.key.timestamp != $1.element.key.timestamp {
+                        return $0.element.key.timestamp < $1.element.key.timestamp
+                    }
+                    return $0.offset < $1.offset
+                })?.element
+            guard let parentID = session.parentID, let forkedAt = session.forkedAt,
+                  let inherited = counter(in: parentID, before: min(cutoff, forkedAt),
+                                          visited: visited.union([id])) else { return current }
+            // 父分支也可能只有续写片段，或复制的前缀早于其真正继承基线。
+            guard let current else { return inherited }
+            if current.key.timestamp < inherited.key.timestamp { return inherited }
+            if current.key.timestamp == inherited.key.timestamp,
+               current.key.timestamp < forkedAt
+                || sessions[parentID]?.eventIndices[current.key] != nil { return inherited }
+            return current
+        }
+
+        var seenFamilyEvents: [String: Set<TokenEventKey>] = [:]
+        var seenFamilySkills: [String: Set<String>] = [:]
+        var daySessions: [String: Set<String>] = [:]
+        // 先接受父会话，再去掉 fork 中拷贝的前缀；每个分支先独立差分，
+        // 不能把不同分支的累计值串成一条序列，否则会吞掉真正的分支增量。
+        let orderedIDs = sessions.keys.sorted {
+            let left = depth(of: $0), right = depth(of: $1)
+            return left == right ? $0 < $1 : left < right
+        }
+        for id in orderedIDs {
+            guard let session = sessions[id] else { continue }
+            let familyID = family(of: id)
+            // fork 续写文件可能只保留新分支的后半段，没有复制的累计前缀。
+            // 用父会话在分叉时的最后一个累计值作基线，不能把继承的用量
+            // 当成该分支的首个新请求。父会话后续增长不属于这个基线。
+            let inheritedBaseline: TokenEvent? = {
+                guard let parentID = session.parentID, let forkedAt = session.forkedAt else { return nil }
+                return counter(in: parentID, before: forkedAt)
+            }()
+            var prevTotal = inheritedBaseline?.key.total
+            var sessionTokens = 0
+            var counted = false
+            let events = session.events.enumerated().sorted {
+                if $0.element.key.timestamp != $1.element.key.timestamp {
+                    return $0.element.key.timestamp < $1.element.key.timestamp
+                }
+                return $0.offset < $1.offset
+            }
+            for entry in events {
+                let event = entry.element
+                if let inheritedBaseline, let forkedAt = session.forkedAt,
+                   event.key.timestamp <= forkedAt,
+                   event.key.timestamp < inheritedBaseline.key.timestamp
+                    || event.key == inheritedBaseline.key
+                    || session.parentID.flatMap({ sessions[$0]?.eventIndices[event.key] }) != nil {
+                    // 即使复制的前缀不完整，也不能把基线倒退回更早的累计值。
+                    seenFamilyEvents[familyID, default: []].insert(event.key)
+                    continue
+                }
+                let tokens = delta(event.key.total, prevTotal, fallback: event.last)
+                prevTotal = event.key.total
+                let isNew = seenFamilyEvents[familyID, default: []].insert(event.key).inserted
+                let isInherited = session.parentID == nil
+                    || (session.forkedAt.map { event.key.timestamp <= $0 } ?? true)
+                guard isNew || !isInherited else { continue }
+                let date = DateUtil.key(event.key.timestamp)
+                guard window.contains(date) else { continue }
+                var d = dayMap[date] ?? CodexDayUsage(date: date)
+                d.inputTokens += tokens.input
+                d.cachedInputTokens += tokens.cached
+                d.outputTokens += tokens.output
+                d.reasoningTokens += tokens.reasoning
+                d.totalTokens += tokens.total
+                dayMap[date] = d
+                daySessions[date, default: []].insert(id)
+                counted = true
+                sessionTokens += tokens.total
+                let model = event.model
+                var m = modelMap[model] ?? CodexModelUsage(model: model)
+                m.totalTokens += tokens.total
+                m.inputTokens += tokens.input
+                m.cachedInputTokens += tokens.cached
+                m.outputTokens += tokens.output
+                m.reasoningTokens += tokens.reasoning
+                modelMap[model] = m
+                dayModels[date, default: [:]][model, default: .init()] += ModelTokenTally(
+                    input: max(tokens.input - tokens.cached, 0), cached: tokens.cached,
+                    output: max(tokens.output - tokens.reasoning, 0), reasoning: tokens.reasoning)
+                if date == todayKey {
+                    let hour = calendar.component(.hour, from: event.key.timestamp)
+                    hourMap[hour, default: 0] += tokens.total
                 }
             }
-            guard counted else { continue }
-            for (date, models) in summary.perDayModel where window.contains(date) {
-                for (model, tokens) in models {
-                    var m = modelMap[model] ?? CodexModelUsage(model: model)
-                    m.totalTokens += tokens.total
-                    m.inputTokens += tokens.input
-                    m.cachedInputTokens += tokens.cached
-                    m.outputTokens += tokens.output
-                    m.reasoningTokens += tokens.reasoning
-                    modelMap[model] = m
-                    // Codex 的 input 含缓存、output 含 reasoning，换成互斥口径
-                    dayModels[date, default: [:]][model, default: .init()] += ModelTokenTally(
-                        input: max(tokens.input - tokens.cached, 0), cached: tokens.cached,
-                        output: max(tokens.output - tokens.reasoning, 0),
-                        reasoning: tokens.reasoning)
-                }
+            for skill in session.skills.sorted(by: { $0.timestamp < $1.timestamp }) {
+                guard seenFamilySkills[familyID, default: []].insert(skill.key).inserted else { continue }
+                let date = DateUtil.key(skill.timestamp)
+                guard window.contains(date) else { continue }
+                skillMap[skill.name, default: 0] += 1
+                daySkills[date, default: [:]][skill.name, default: 0] += 1
             }
-            let proj = summary.project ?? "(其他)"
-            var pj = projectMap[proj] ?? CodexProjectUsage(project: proj)
-            pj.totalTokens += fileTokens
-            pj.sessionCount += 1
-            projectMap[proj] = pj
-            if let hours = summary.perDayHour[todayKey] {
-                for (h, tokens) in hours { hourMap[h, default: 0] += tokens }
+            if counted {
+                let project = session.project ?? "(其他)"
+                var row = projectMap[project] ?? CodexProjectUsage(project: project)
+                row.totalTokens += sessionTokens
+                row.sessionCount += 1
+                projectMap[project] = row
             }
         }
+        for (date, ids) in daySessions { dayMap[date]?.sessionCount = ids.count }
 
         let days = dayMap.values.sorted { $0.date < $1.date }
         let models = modelMap.values.sorted { $0.totalTokens > $1.totalTokens }
@@ -355,6 +537,37 @@ enum CodexUsage {
     }
 
     // MARK: - 单文件流式扫描（带缓存）
+
+    private static func metadata(_ file: URL, size: UInt64, mtime: Date) throws -> SessionMetadata {
+        cacheLock.lock()
+        let hit = metadataCache[file.path]
+        let complete = cache[file.path]
+        cacheLock.unlock()
+        if let hit, hit.size == size, hit.mtime == mtime { return hit }
+        let result: SessionMetadata
+        if let complete, complete.size == size, complete.mtime == mtime {
+            result = SessionMetadata(size: size, mtime: mtime,
+                                     id: complete.sessionID, parentID: complete.parentSessionID)
+        } else {
+            // 官方 session_meta 位于文件首行。只解码有界首段，不能为了判断
+            // 亲缘把无关历史正文加载进内存；未识别到 ID 的文件保持独立。
+            let handle = try FileHandle(forReadingFrom: file)
+            defer { try? handle.close() }
+            let head = try handle.read(upToCount: 64 * 1024) ?? Data()
+            let marker = Data("\"session_meta\"".utf8)
+            let row = head.split(separator: 0x0A).first { $0.range(of: marker) != nil }
+                .flatMap { try? JSONDecoder().decode(Event.self, from: Data($0)) }
+            let payload = (row?.type == "session_meta" || row?.payload?.type == "session_meta")
+                ? row?.payload : nil
+            let id = payload?.id.flatMap { $0.isEmpty ? nil : $0 }
+            let parent = payload?.forkedFromID.flatMap { $0.isEmpty ? nil : $0 }
+            result = SessionMetadata(size: size, mtime: mtime, id: id, parentID: parent)
+        }
+        cacheLock.lock()
+        metadataCache[file.path] = result
+        cacheLock.unlock()
+        return result
+    }
 
     private static func summarize(
         _ file: URL, size: UInt64, mtime: Date, calendar: Calendar
@@ -390,15 +603,15 @@ enum CodexUsage {
         let chunkSize = 8 * 1024 * 1024
         let decoder = JSONDecoder()
 
-        var perDay: [String: Tally] = [:]
-        var perDayModel: [String: [String: Tally]] = [:]
-        var perDayHour: [String: [Int: Int]] = [:]
+        var sessionID: String?
+        var parentSessionID: String?
+        var forkedAt: Date?
+        var events: [TokenEvent] = []
         var project: String?
         var currentModel = "unknown"     // turn_context 声明后续 turn 的模型
         var rlByChannel: [String: CodexRateLimits] = [:]
-        var perDaySkill: [String: [String: Int]] = [:]
+        var skills: [SkillEvent] = []
         var seenSkillCalls = Set<String>()
-        var prevTotal: Event.TokenUsage?
         var carry = Data()   // chunk 边界上的半行
 
         var reachedEnd = false
@@ -440,17 +653,23 @@ enum CodexUsage {
                    let ts = event.timestamp.flatMap({ ISO8601DateFormatter.codex.date(from: $0) }) {
                     let texts = [payload.arguments?.value, payload.input?.value].compactMap { $0 }
                     let names = Set(texts.flatMap(skillNames(in:)))
-                    let day = DateUtil.key(ts)
                     for name in names {
                         let key = "\(payload.callId ?? event.timestamp ?? "")|\(name.lowercased())"
                         guard seenSkillCalls.insert(key).inserted else { continue }
-                        perDaySkill[day, default: [:]][name, default: 0] += 1
+                        skills.append(SkillEvent(timestamp: ts, key: key, name: name))
                     }
                 }
 
                 // 轻量行:turn_context 行更新当前模型,session_meta 行取项目
-                if line.range(of: ctxMarker) != nil || (project == nil && line.range(of: metaMarker) != nil) {
+                if line.range(of: ctxMarker) != nil || line.range(of: metaMarker) != nil {
                     if let event = try? decoder.decode(Event.self, from: line) {
+                        if event.type == "session_meta" || event.payload?.type == "session_meta" {
+                            if let id = event.payload?.id, !id.isEmpty { sessionID = id }
+                            if let parent = event.payload?.forkedFromID, !parent.isEmpty {
+                                parentSessionID = parent
+                                forkedAt = event.timestamp.flatMap { ISO8601DateFormatter.codex.date(from: $0) }
+                            }
+                        }
                         if let m = event.payload?.model {
                             let effort = event.payload?.effort
                             currentModel = effort.map { "\(m) (\($0))" } ?? m
@@ -469,25 +688,9 @@ enum CodexUsage {
                 let ts = event.timestamp.flatMap { ISO8601DateFormatter.codex.date(from: $0) }
 
                 if let cur = event.payload?.info?.totalTokenUsage, let ts {
-                    let day = DateUtil.key(ts)
-                    var t = perDay[day] ?? Tally()
-                    // 累计值差分；累计变小说明 session 内部重置，退回单轮值
-                    let d = delta(cur, prevTotal, fallback: event.payload?.info?.lastTokenUsage)
-                    t.input += d.input; t.cached += d.cached
-                    t.output += d.output; t.reasoning += d.reasoning; t.total += d.total
-                    perDay[day] = t
-                    prevTotal = cur
-                    var models = perDayModel[day] ?? [:]
-                    var model = models[currentModel] ?? Tally()
-                    model.input += d.input
-                    model.cached += d.cached
-                    model.output += d.output
-                    model.reasoning += d.reasoning
-                    model.total += d.total
-                    models[currentModel] = model
-                    perDayModel[day] = models
-                    let hour = Calendar.current.component(.hour, from: ts)
-                    perDayHour[day, default: [:]][hour, default: 0] += d.total
+                    events.append(TokenEvent(
+                        key: TokenEventKey(timestamp: ts, total: cur), model: currentModel,
+                        last: event.payload?.info?.lastTokenUsage))
                 }
 
                 if let rl = event.payload?.rateLimits, let ts {
@@ -507,9 +710,9 @@ enum CodexUsage {
             }
         }
         return FileSummary(size: size, mtime: mtime, calendar: calendar,
-                           perDay: perDay, perDayModel: perDayModel,
-                           perDayHour: perDayHour, project: project,
-                           rateLimitsByChannel: rlByChannel, perDaySkill: perDaySkill)
+                           sessionID: sessionID, parentSessionID: parentSessionID,
+                           forkedAt: forkedAt, events: events, project: project,
+                           rateLimitsByChannel: rlByChannel, skills: skills)
     }
 
     private static func isReadLikeSkillCall(name: String?, payload: Event.Payload) -> Bool {

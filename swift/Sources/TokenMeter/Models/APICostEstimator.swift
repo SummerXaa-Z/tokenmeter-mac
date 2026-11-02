@@ -107,6 +107,48 @@ struct APICostSample: Equatable {
     var source: HistorySource? = nil
 }
 
+// Missing model detail is measured per day and source. Surplus detail from a
+// different tool/day cannot fill that gap, and sources without model-detail
+// capability (such as Cursor) are not silently treated as missing models.
+enum ModelUsageCoverage {
+    static func unmodelledTokens(
+        dailyHistory: [HistoryStore.DayPoint],
+        modelHistory: [ModelUsageDay],
+        participants: some Sequence<HistorySource>,
+        through todayKey: String
+    ) -> Int {
+        let sources = Set(participants).filter {
+            SourceCatalog.descriptor(for: $0).capabilities.contains(.modelDetail)
+        }
+        guard !sources.isEmpty else { return 0 }
+        let valid: (String) -> Bool = {
+            $0 <= todayKey && ModelUsageHistoryStore.isDateKey($0)
+        }
+        // 同一天可以按来源分行传入；仅替换同日同来源，不能让另一来源的
+        // 行抹掉已经看到的模型。显式空 detail 仍会替换该来源的旧 detail。
+        var daily: [String: [HistorySource: Int]] = [:]
+        for day in dailyHistory where valid(day.date) {
+            daily[day.date, default: [:]].merge(day.bySource, uniquingKeysWith: { _, newer in newer })
+        }
+        var models: [String: [HistorySource: SourceDayDetail]] = [:]
+        for day in modelHistory where valid(day.date) {
+            models[day.date, default: [:]].merge(day.bySource, uniquingKeysWith: { _, newer in newer })
+        }
+        var missing = 0
+        for (date, totals) in daily {
+            for source in sources {
+                let observed = max(totals[source] ?? 0, 0)
+                let detailed = (models[date]?[source]?.models ?? [:]).values
+                    .reduce(ModelTokenTally()) { $0 + $1 }.total
+                let gap = max(observed - detailed, 0)
+                let (sum, overflow) = missing.addingReportingOverflow(gap)
+                missing = overflow ? Int.max : sum
+            }
+        }
+        return missing
+    }
+}
+
 struct APIReferenceCostSummary: Equatable {
     struct Amount: Equatable, Identifiable {
         let currency: String
@@ -133,11 +175,29 @@ struct APIReferenceCostSummary: Equatable {
     let sourceLabels: [String]
     let matchedTokens: Int
     let totalTokens: Int
+    let unmodelledTokens: Int
     let unpricedModels: [String]
 
     var coverage: Double? {
-        guard totalTokens > 0 else { return nil }
-        return Double(matchedTokens) / Double(totalTokens)
+        let denominator = Double(totalTokens) + Double(unmodelledTokens)
+        guard denominator > 0 else { return nil }
+        return Double(matchedTokens) / denominator
+    }
+
+    // A successfully priced free model is known zero; missing prices (or a
+    // missing currency conversion) are not. No token samples mean zero usage.
+    var pricedTotal: Double? {
+        totalTokens == 0 && unmodelledTokens == 0 || !modelAmounts.isEmpty ? total : nil
+    }
+
+    var isFullyPriced: Bool {
+        unmodelledTokens == 0 && (totalTokens == 0 || matchedTokens == totalTokens && pricedTotal != nil)
+    }
+
+    func changeCompared(to prior: APIReferenceCostSummary?) -> Double? {
+        guard isFullyPriced, let prior, prior.isFullyPriced,
+              let current = pricedTotal, let previous = prior.pricedTotal else { return nil }
+        return PeriodCompare.change(this: current, last: previous)
     }
 
     init(
@@ -145,7 +205,8 @@ struct APIReferenceCostSummary: Equatable {
         estimator: APICostEstimator,
         referenceDate: String,
         currency: String = "USD",
-        conversionRates: [String: Double] = [:]
+        conversionRates: [String: Double] = [:],
+        unmodelledTokens: Int = 0
     ) {
         var totalsByCurrency: [String: Double] = [:]
         var modelTotals: [String: ModelAmount] = [:]
@@ -167,11 +228,13 @@ struct APIReferenceCostSummary: Equatable {
             }
             totalsByCurrency[estimate.currency, default: 0] += estimate.total
             sources.insert(estimate.priceSource.label)
-            matched += sample.tokens.totalTokens
-
             guard let converted = Self.convert(
                 estimate.total, from: estimate.currency, to: currency, rates: conversionRates
-            ) else { continue }
+            ) else {
+                missing[canonical] = missing[canonical] ?? APICostEstimator.baseModel(sample.model)
+                continue
+            }
+            matched += sample.tokens.totalTokens
             let key = "\(sample.source?.rawValue ?? "")|\(canonical)"
             let previous = modelTotals[key]
             modelTotals[key] = ModelAmount(
@@ -207,6 +270,7 @@ struct APIReferenceCostSummary: Equatable {
         }
         matchedTokens = matched
         totalTokens = all
+        self.unmodelledTokens = max(unmodelledTokens, 0)
         unpricedModels = missing.values.sorted {
             $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
         }

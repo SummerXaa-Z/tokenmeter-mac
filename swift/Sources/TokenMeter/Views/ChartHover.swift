@@ -2,7 +2,7 @@ import SwiftUI
 import Charts
 
 // 图表悬停查值的共用原语：说明行 + 虚线参考线。
-// 说明行固定高度、放在图表上方：未悬停显示最新一桶，悬停时切换到指针下的桶，版面不跳动。
+// 说明行放在图表上方，允许窄窗口换行：未悬停显示最新桶，选择时切换到对应桶。
 
 /// 图表悬停说明行：桶标签 + 合计 + 主要分量（色点 + 数值）。
 /// parts 传入未排序未过滤，内部按值取前几个非零分量。
@@ -15,30 +15,31 @@ struct ChartHoverCaption: View {
 
     var body: some View {
         let top = ChartHover.topParts(parts)
-        return HStack(spacing: 6) {
-            Text(label)
-                .font(Theme.rowTitleFont).foregroundStyle(.secondary)
-            Text(Fmt.tokensShort(total))
-                .font(Theme.rowTitleFont)
-            ForEach(Array(top.visible.enumerated()), id: \.offset) { _, part in
-                HStack(spacing: 3) {
-                    Circle().fill(part.color).frame(width: 4, height: 4)
-                    Text("\(part.name) \(Fmt.tokensShort(part.value))")
+        return VStack(alignment: .leading, spacing: 4) {
+            WrappingHStack {
+                Text(label).font(Theme.rowTitleFont).foregroundStyle(.secondary)
+                Text(Fmt.tokensShort(total)).font(Theme.rowTitleFont)
+                if let amountText {
+                    Text(amountText).font(Theme.detailFont).foregroundStyle(.secondary)
                 }
-                .font(Theme.detailFont).foregroundStyle(.secondary)
             }
-            if top.overflowCount > 0 {
-                Text("+\(top.overflowCount) 项")
-                    .font(Theme.detailFont).foregroundStyle(.tertiary)
+            if !top.visible.isEmpty {
+                WrappingHStack {
+                    ForEach(Array(top.visible.enumerated()), id: \.offset) { _, part in
+                        HStack(spacing: 3) {
+                            Circle().fill(part.color).frame(width: 4, height: 4)
+                            Text("\(part.name) \(Fmt.tokensShort(part.value))")
+                        }
+                        .font(Theme.detailFont).foregroundStyle(.secondary)
+                    }
+                    if top.overflowCount > 0 {
+                        Text("+\(top.overflowCount) 项").font(Theme.detailFont).foregroundStyle(.secondary)
+                    }
+                }
             }
-            if let amountText {
-                Text(amountText)
-                    .font(Theme.detailFont).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
         }
-        .lineLimit(1)
-        .frame(height: 14, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, minHeight: 14, alignment: .leading)
     }
 }
 
@@ -74,7 +75,7 @@ enum ChartHover {
             if let hint {
                 Text(hint)
                     .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity, minHeight: minHeight)

@@ -64,12 +64,14 @@ enum CursorUsageError: LocalizedError {
     case noToken
     case tokenExpired
     case http(Int)
+    case accountChanged
 
     var errorDescription: String? {
         switch self {
         case .noToken: return "未找到 Cursor 登录信息（请先在 Cursor 中登录）"
         case .tokenExpired: return "Cursor 登录已过期，请在 Cursor 中重新登录后刷新"
         case .http(let code): return "Cursor 接口请求失败（HTTP \(code)）"
+        case .accountChanged: return "Cursor 登录信息已变化，旧查询结果已丢弃，请刷新"
         }
     }
 }
@@ -269,6 +271,9 @@ enum CursorUsage {
             todayTokens = confirmedTodayTokens
         }
 
+        // 网络查询期间退出或切换账户，旧账户响应不能被当成当前账户快照。
+        guard let current = try? readCredential(), current.token == cred.token,
+              current.userId == cred.userId else { throw CursorUsageError.accountChanged }
         return CursorUsageResult(email: cred.email, membership: cred.membership,
                                  startOfMonth: windowStart, subscription: subscription,
                                  models: models,

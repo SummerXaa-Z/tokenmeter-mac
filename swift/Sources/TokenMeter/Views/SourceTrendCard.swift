@@ -2,13 +2,16 @@ import SwiftUI
 import Charts
 import AppKit
 
-// 来源页共用的 7|30 天 Token 堆叠柱图。7 天档由各页从自己的采集结果
+// 来源页共用的 Token 堆叠柱图，进入时精确保留 1D/7D/30D/全部范围。
+// 未指定入口范围的独立夹具兼容 7|30 天切换，7 天档从采集结果
 // 拼装分量（与各自原有口径一致，实时重扫）；30 天档取本机按天留存，
 // 实时 dayModels 覆盖同一天（与 API 等价卡同合并口径，不叠加），
 // 分量按各来源的展示习惯折叠（Codex 无缓存写入、Gemini/Qwen 推理单列、
 // 其余推理并入输出），最近 30 个自然日补零成完整时间轴。
 // 悬停说明行的当日金额与所选档窗口同宽（7/30 天逐日重算，缺价不计入）。
 struct SourceTrendCard: View {
+    @EnvironmentObject private var state: AppState
+    @Environment(\.usageNow) private var now
     @EnvironmentObject private var historyReader: HistorySnapshotReader
     struct Day: Identifiable {
         let date: String     // yyyy-MM-dd
@@ -26,29 +29,46 @@ struct SourceTrendCard: View {
     let source: HistorySource
     let weekDays: [Day]
     let liveDayModels: [String: [String: ModelTokenTally]]?
+    var initialRange: UsageHistoryRange? = nil
     // 渲染夹具:注入固定的导出反馈文案(保存面板无法离屏模拟)
     var previewExportStatus: String? = nil
     @State private var span: Span = .week
     @State private var hover: String?
     // 导出完成后的行内反馈(「已导出 <文件名> · 时刻」)
     @State private var exportStatus: String?
+    private var activeRange: UsageHistoryRange { initialRange ?? (span == .week ? .week : .month) }
 
     var body: some View {
-        let days = span == .week ? weekDays : Self.monthDays(
-            source: source, liveDayModels: liveDayModels, persisted: historyReader.snapshot.models)
+        let history = historyReader.dashboardHistory(state: state, todayKey: DateUtil.key(now))
+        let range = activeRange
+        let today = DateUtil.key(now)
+        let daily = initialRange == nil
+            ? (span == .week ? weekDays : Self.monthDays(source: source, liveDayModels: liveDayModels,
+                                                       persisted: history.models, todayKey: today))
+            : Self.rangeDays(source: source, range: range, persisted: history.models,
+                             dailyHistory: history.daily, todayKey: today)
+        let granularity = range.trendGranularity(historyDayCount: daily.count)
+        let days = Self.chartBuckets(daily, granularity: granularity)
+        let hours = hourlyValues(on: today)
+        let amounts = SourceAPICost.dailyValues(source: source, liveDayModels: initialRange == nil ? liveDayModels : nil, persisted: history.models,
+                                               todayKey: today, windowDays: max(daily.count, 1))
+        let bucketAmounts = amounts.reduce(into: [String: Double]()) { result, entry in
+            result[Self.bucketKey(entry.key, granularity: granularity), default: 0] += entry.value
+        }
         // 扁平化成 (日期, 类型, 数值):Chart 里嵌套 ForEach 的类型推断不稳
         let marks = days.flatMap { day in
             day.parts.map { part in
-                (label: Fmt.mmdd(day.date), name: part.name, value: part.value)
+                (date: day.date, name: part.name, value: part.value)
             }
         }
         return Card {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Label("最近 \(span.rawValue) 天 Token", systemImage: "chart.bar.fill")
+                    Label("\(range.scopeTitle) Token · \(granularity.rawValue)", systemImage: "chart.bar.fill")
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
-                    Picker("范围", selection: $span) {
+                    if initialRange == nil {
+                      Picker("范围", selection: $span) {
                         ForEach(SourceTrendCard.Span.allCases, id: \.self) { item in
                             Text(item.title).tag(item)
                         }
@@ -56,44 +76,40 @@ struct SourceTrendCard: View {
                     .pickerStyle(.segmented)
                     .controlSize(.mini)
                     .frame(width: 104)
+                    }
                     // 导出当前档逐日分量 CSV(与图例同列,附口径行);
                     // 七页共用此卡,一处加上全部来源页受益
-                    Button {
-                        exportCSV(days)
-                    } label: {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.tertiary)
+                    DashboardExportButton(help: "导出当前范围趋势 CSV（与图同桶，附范围和粒度）",
+                                          disabled: !historyReader.canUseSnapshot || (range == .day ? hours == nil : Self.isEmpty(days))) {
+                        exportCSV(days, hours: hours, granularity: granularity)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(Self.isEmpty(days) || !historyReader.canUseSnapshot)
-                    .help("导出当前档 CSV（逐日一行、分量各成一列，附口径行）")
-                    .accessibilityLabel("导出趋势 CSV")
                 }
-                if Self.isEmpty(days) {
+                if range == .day {
+                    if let amount = amounts[today] {
+                        Text("今日等价合计 \(Fmt.usd(amount))（已计价部分，不是逐时金额）")
+                            .font(Theme.detailFont).foregroundStyle(.secondary)
+                    }
+                    if let hours {
+                        SourceHourChart(bars: (0..<24).map { .init(hour: $0, tokens: hours[$0] ?? 0) }, color: source.overviewColor)
+                    } else {
+                        ChartHover.emptyState(message: "今日分时尚不可确认", hint: "没有可验证的小时明细，不把日汇总平均摊分", minHeight: 114)
+                    }
+                } else if Self.isEmpty(days) {
                     // 零数据不画全零柱:统一空态占住图高,切 7|30 天档可恢复
                     ChartHover.emptyState(
-                        message: "近 \(span.rawValue) 天暂无 Token 记录",
+                        message: "\(range.scopeTitle)暂无 Token 记录",
                         hint: "该工具产生用量后自动累积",
                         minHeight: 150)
                 } else {
-                    ChartHover.caption(
-                        hover: hover,
-                        amountFor: SourceHoverAmount.make(
-                            source: source, liveDayModels: liveDayModels,
-                            days: days.map(\.date), windowDays: span.rawValue,
-                            persisted: historyReader.snapshot.models),
-                        buckets: days.map { day in
-                            (
-                                label: Fmt.mmdd(day.date),
-                                total: day.parts.reduce(0) { $0 + $1.value },
-                                parts: day.parts
-                            )
-                        })
+                    if let active = days.first(where: { $0.date == hover }) ?? days.last {
+                        ChartHoverCaption(label: Self.bucketLabel(active.date, granularity: granularity),
+                                          total: active.parts.reduce(0) { $0 + $1.value }, parts: active.parts,
+                                          amountText: bucketAmounts[active.date].map { "已计价等价 \(Fmt.usd($0))" })
+                    }
                     Chart {
                         ForEach(Array(marks.enumerated()), id: \.offset) { _, mark in
                             BarMark(
-                                x: .value("日期", mark.label),
+                                x: .value("日期", mark.date),
                                 y: .value("Token", mark.value))
                                 .foregroundStyle(by: .value("类型", mark.name))
                         }
@@ -103,7 +119,12 @@ struct SourceTrendCard: View {
                     .chartForegroundStyleScale(Self.scale(for: source))
                     .chartLegend(position: .bottom, spacing: 4)
                     .tokenYAxis()
+                    .dateXAxis(labels: Dictionary(uniqueKeysWithValues: days.map { ($0.date, Self.bucketLabel($0.date, granularity: granularity)) }))
                     .frame(height: 150)
+                }
+                if initialRange != nil, range == .all {
+                    Text("全部指本机已留存历史；较长历史按周或月汇总。未归因部分只有总量，不推测缓存或输出分量。")
+                        .font(Theme.footnoteFont).foregroundStyle(.secondary)
                 }
                 // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
                 ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
@@ -114,21 +135,89 @@ struct SourceTrendCard: View {
     /// 导出当前档（7|30 天）逐日分量 CSV：分量列与图例同名同序、补零日
     /// 照列 0，附来源与折叠口径行。保存面板流程与全库其他导出同款，
     /// 写盘失败弹系统错误框。
-    private func exportCSV(_ days: [Day]) {
+    private func exportCSV(_ days: [Day], hours: [Int: Int]?, granularity: UsageTrendGranularity) {
         guard historyReader.canUseSnapshot else {
             exportStatus = historyReader.unavailableMessage
             return
         }
+        let today = DateUtil.key(now)
+        let range = activeRange
         let outcome = LocalTextExportPresenter.shared.export(
             title: "导出趋势 CSV",
             filename: SourceTrendCSVExport.suggestedFilename(
-                source: source, spanDays: span.rawValue)
+                source: source, spanDays: range.rawValue, todayKey: today, scopeTitle: initialRange.map(\.tabTitle))
         ) {
-            SourceTrendCSVExport.makeCSV(
-                source: source, spanDays: span.rawValue, days: days
+            if range == .day {
+                return SourceTrendCSVExport.makeSingleSeriesCSV(
+                    source: source, spanDays: 1,
+                    days: (0..<24).map { (date: String(format: "%@T%02d", today, $0), tokens: hours?[$0] ?? 0) },
+                    todayKey: today, scopeTitle: range.scopeTitle, granularity: .hour)
+            }
+            return SourceTrendCSVExport.makeCSV(
+                source: source, spanDays: range.rawValue, days: days,
+                todayKey: today, scopeTitle: initialRange.map(\.scopeTitle), granularity: granularity
             )
         }
         if let feedback = outcome.successFeedback { exportStatus = feedback }
+    }
+
+    private func hourlyValues(on date: String) -> [Int: Int]? {
+        switch source {
+        case .claude: return state.claude.result?.hourlyTokens(on: date)
+        case .codex: return state.codex.result?.hourlyTokens(on: date)
+        case .kimi: return state.kimi.result?.hourlyTokens(on: date)
+        case .opencode: return state.opencode.result?.hourlyTokens(on: date)
+        case .gemini: return state.gemini.result?.hourlyTokens(on: date)
+        case .qwen: return state.qwen.result?.hourlyTokens(on: date)
+        case .copilot, .cursor, .deepseek: return nil
+        }
+    }
+
+    static func rangeDays(source: HistorySource, range: UsageHistoryRange, persisted: [ModelUsageDay],
+                          dailyHistory: [HistoryStore.DayPoint], todayKey: String, calendar: Calendar = .current) -> [Day] {
+        guard let today = DateUtil.date(from: todayKey) else { return [] }
+        let detailDates = persisted.filter { $0.date <= todayKey && ModelUsageHistoryStore.isDateKey($0.date) && $0.bySource[source] != nil }.map(\.date)
+        let totalDates = dailyHistory.filter { $0.date <= todayKey && ModelUsageHistoryStore.isDateKey($0.date) && ($0.bySource[source] ?? 0) > 0 }.map(\.date)
+        guard let first = range.fixedDayCount.flatMap({ calendar.date(byAdding: .day, value: 1 - $0, to: today) })
+            ?? (detailDates + totalDates).min().flatMap(DateUtil.date(from:)) else { return [] }
+        let count = (calendar.dateComponents([.day], from: first, to: today).day ?? 0) + 1
+        var days = monthDays(source: source, liveDayModels: nil, persisted: persisted, todayKey: todayKey,
+                             calendar: calendar, windowDays: count)
+        let totals = dailyHistory.reduce(into: [String: Int]()) { $0[$1.date] = max($1.bySource[source] ?? 0, 0) }
+        for index in days.indices {
+            let known = days[index].parts.reduce(0) { $0 + $1.value }
+            let missing = max((totals[days[index].date] ?? 0) - known, 0)
+            days[index] = Day(date: days[index].date, parts: days[index].parts + [("未归因", missing, Color.secondary)])
+        }
+        return days
+    }
+
+    static func chartBuckets(_ days: [Day], granularity: UsageTrendGranularity) -> [Day] {
+        guard granularity == .week || granularity == .month else { return days }
+        var buckets: [String: [String: (value: Int, color: Color)]] = [:]
+        var order: [String] = []
+        for day in days {
+            let key = bucketKey(day.date, granularity: granularity)
+            for part in day.parts {
+                if !order.contains(part.name) { order.append(part.name) }
+                let old = buckets[key, default: [:]][part.name]?.value ?? 0
+                buckets[key, default: [:]][part.name] = (old + part.value, part.color)
+            }
+        }
+        return buckets.keys.sorted().map { key in
+            Day(date: key, parts: order.map { ($0, buckets[key]?[$0]?.value ?? 0, buckets[key]?[$0]?.color ?? .secondary) })
+        }
+    }
+
+    static func bucketLabel(_ key: String, granularity: UsageTrendGranularity) -> String {
+        granularity == .month ? Fmt.ym(key) : (granularity == .week ? "\(Fmt.mmdd(key))周" : Fmt.mmdd(key))
+    }
+
+    static func bucketKey(_ key: String, granularity: UsageTrendGranularity) -> String {
+        guard granularity == .week || granularity == .month, let date = DateUtil.date(from: key) else { return key }
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = Calendar.current.timeZone
+        return DateUtil.key(calendar.dateInterval(of: granularity == .week ? .weekOfYear : .month, for: date)?.start ?? date)
     }
 
     /// 当前档是否整窗零用量(补零的时间轴全为 0)
@@ -141,17 +230,17 @@ struct SourceTrendCard: View {
         switch source {
         case .codex:
             return [
-                "缓存输入": Theme.hit, "新输入": Theme.input, "输出": Theme.response,
+                "缓存输入": Theme.hit, "新输入": Theme.input, "输出": Theme.response, "未归因": .secondary,
             ]
         case .gemini, .qwen:
             return [
                 "缓存读取": Theme.hit, "新输入": Theme.input,
-                "输出": Theme.response, "推理": Theme.miss,
+                "输出": Theme.response, "推理": Theme.miss, "未归因": .secondary,
             ]
         case .claude, .kimi, .opencode, .copilot:
             return [
                 "缓存读取": Theme.hit, "缓存写入": Theme.miss,
-                "新输入": Theme.input, "输出": Theme.response,
+                "新输入": Theme.input, "输出": Theme.response, "未归因": .secondary,
             ]
         case .deepseek, .cursor:
             return [:]

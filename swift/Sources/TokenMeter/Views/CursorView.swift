@@ -4,6 +4,7 @@ import SwiftUI
 // 数据来自 cursor.com 官方用量接口（本地 token 鉴权），刷新即重查。
 struct CursorView: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.sourceUsageRange) private var usageRange
     var onBack: () -> Void
     var onSettings: () -> Void
 
@@ -11,21 +12,16 @@ struct CursorView: View {
         ScrollView {
             VStack(spacing: 10) {
                 header
-                if let r = state.cursor.result {
+                ScopedSourceUsageCard(source: .cursor)
+                SourceCollectionContent(cache: state.cursor, emptyMessage: "未读取到 Cursor 账户用量") { r in
                     accountCard(r)
                     if let sub = r.subscription {
                         subscriptionCard(r, sub)
                     }
                     summaryCard(r)
                     modelsCard(r)
-                } else if state.cursor.loading {
-                    SourceStateView(loading: true, message: "正在读取…")
-                } else if let errorText = state.cursor.error {
-                    SourceStateView(message: errorText)
-                } else {
-                    SourceStateView(message: "未读取到 Cursor 账户用量")
                 }
-                SourceHistoryTrendCard(source: .cursor, color: Theme.cursor)
+                SourceHistoryTrendCard(source: .cursor, color: Theme.cursor, initialRange: usageRange)
                 SourceWeekCompareCard(source: .cursor)
                 Spacer(minLength: 0)
             }
@@ -121,7 +117,7 @@ struct CursorView: View {
                                 text: "按当前速度\(QuotaPace.countdown(from: Date(), to: exhaustAt))触及上限，早于续订")
                         } else {
                             Text("按当前速度，续订时约花掉上限的 \(QuotaPace.percent(1 - pace.projectedRemainingAtReset))")
-                                .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                                .font(Theme.footnoteFont).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -142,7 +138,7 @@ struct CursorView: View {
                     stat("平台费用", Fmt.usd(r.totalCostCents / 100))
                 }
                 Text("平台返回的用量费用，不等同于固定订阅费。")
-                    .font(.system(size: 10)).foregroundStyle(.tertiary)
+                    .font(Theme.footnoteFont).foregroundStyle(.secondary)
             }
         }
     }

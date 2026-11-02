@@ -139,25 +139,21 @@ struct OverviewHeatmapCard: View {
                         .font(.system(size: 12, weight: .semibold))
                         .fixedSize(horizontal: true, vertical: false)
                     Spacer(minLength: 8)
-                    pageNavigator(
-                        range: rangeText,
-                        offset: isMonth ? $monthOffset : $weekOffset,
-                        maxOffset: maxOffset,
-                        unit: isMonth ? "1 个月" : "\(span.rawValue) 周")
-                        .fixedSize(horizontal: true, vertical: false)
                     // 导出当前窗口热力图数据（粒度/窗口/翻页与界面一致）为 CSV
-                    Button {
+                    DashboardExportButton(
+                        help: "导出当前窗口 CSV（日/周/月粒度跟随当前选择）",
+                        disabled: !hasUsage || !historyReader.canUseSnapshot
+                    ) {
                         exportHeatmapCSV()
-                    } label: {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.tertiary)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(!hasUsage || !historyReader.canUseSnapshot)
-                    .help("导出当前窗口 CSV（日/周/月粒度跟随当前选择）")
                     .accessibilityLabel("导出热力图 CSV")
                 }
+                pageNavigator(
+                    range: rangeText,
+                    offset: isMonth ? $monthOffset : $weekOffset,
+                    maxOffset: maxOffset,
+                    unit: isMonth ? "1 个月" : "\(span.rawValue) 周")
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 HStack(spacing: 8) {
                     Picker("粒度", selection: $granularity) {
                         ForEach(Granularity.allCases, id: \.self) { item in
@@ -167,8 +163,8 @@ struct OverviewHeatmapCard: View {
                     .labelsHidden()
                     .accessibilityLabel("粒度")
                     .pickerStyle(.segmented)
-                    .controlSize(.mini)
-                    .frame(width: 90)
+                    .controlSize(.small)
+                    .frame(width: 120)
                     Spacer(minLength: 8)
                     if isMonth {
                         Picker("热力图窗口", selection: $monthSpan) {
@@ -179,8 +175,8 @@ struct OverviewHeatmapCard: View {
                         .labelsHidden()
                         .accessibilityLabel("热力图窗口")
                         .pickerStyle(.segmented)
-                        .controlSize(.mini)
-                        .frame(width: 64)
+                        .controlSize(.small)
+                        .frame(width: 96)
                     } else {
                         Picker("热力图窗口", selection: $span) {
                             ForEach(OverviewHeatmapCard.Span.allCases, id: \.self) { item in
@@ -190,8 +186,8 @@ struct OverviewHeatmapCard: View {
                         .labelsHidden()
                         .accessibilityLabel("热力图窗口")
                         .pickerStyle(.segmented)
-                        .controlSize(.mini)
-                        .frame(width: 104)
+                        .controlSize(.small)
+                        .frame(width: 128)
                     }
                 }
                 if !hasUsage {
@@ -210,22 +206,22 @@ struct OverviewHeatmapCard: View {
                     rhythmChart
                     HStack(spacing: 4) {
                         Text("少")
-                            .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                            .font(Theme.footnoteFont).foregroundStyle(.secondary)
                         ForEach(1...4, id: \.self) { level in
                             RoundedRectangle(cornerRadius: 1.5)
                                 .fill(Self.levelFills[level])
                                 .frame(width: 7, height: 7)
                         }
                         Text("多")
-                            .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                            .font(Theme.footnoteFont).foregroundStyle(.secondary)
                         if (isMonth ? monthOffset : weekOffset) == 0, streak >= 2 {
                             Text("· 当前连续 \(streak) 天")
-                                .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                                .font(Theme.footnoteFont).foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)
                     }
                     Text(footnoteText)
-                        .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                        .font(Theme.footnoteFont).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
@@ -260,10 +256,10 @@ struct OverviewHeatmapCard: View {
                 rows = UsageHeatmap.monthlyCells(
                     history, participants: participants, apiValues: api,
                     monthCount: monthSpan.rawValue, monthOffset: monthOffset
-                ).map {
+                ).map { cell in
                     HeatmapCSVExport.Row(
-                        bucket: $0.monthKey, weekday: nil,
-                        tokens: $0.total, usd: $0.usd > 0 ? $0.usd : nil)
+                        bucket: cell.monthKey, weekday: nil,
+                        tokens: cell.total, usd: api.keys.contains { $0.hasPrefix(cell.monthKey) } ? cell.usd : nil)
                 }
                 windowText = "\(DateUtil.key(range.start)) 至 \(DateUtil.key(range.end))"
             case .week, .day:
@@ -276,16 +272,17 @@ struct OverviewHeatmapCard: View {
                     persisted: persisted,
                     windowWeeks: span.rawValue, weekOffset: weekOffset)
                 if self.granularity == .week {
-                    rows = UsageHeatmap.weeklyCells(from: columns, apiValues: api).map {
-                        HeatmapCSVExport.Row(
-                            bucket: $0.weekOf, weekday: nil,
-                            tokens: $0.total, usd: $0.usd > 0 ? $0.usd : nil)
+                    rows = UsageHeatmap.weeklyCells(from: columns, apiValues: api).map { cell in
+                        let end = DateUtil.date(from: cell.weekOf).map { DateUtil.key(DateUtil.addDays($0, 6)) } ?? cell.weekOf
+                        return HeatmapCSVExport.Row(
+                            bucket: cell.weekOf, weekday: nil,
+                            tokens: cell.total, usd: api.keys.contains { $0 >= cell.weekOf && $0 <= end } ? cell.usd : nil)
                     }
                 } else {
                     rows = columns.flatMap(\.cells).map {
                         HeatmapCSVExport.Row(
                             bucket: $0.date, weekday: $0.weekday,
-                            tokens: $0.total, usd: api[$0.date].flatMap { $0 > 0 ? $0 : nil })
+                            tokens: $0.total, usd: api[$0.date])
                     }
                 }
                 if let first = columns.first?.cells.first?.date,
@@ -318,45 +315,29 @@ struct OverviewHeatmapCard: View {
         unit: String
     ) -> some View {
         return HStack(spacing: 2) {
-            Button {
+            SourceDashboardIconButton(name: "chevron.left", help: "更早 \(unit)") {
                 offset.wrappedValue = min(offset.wrappedValue + 1, max(1, maxOffset))
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.tertiary)
             }
-            .buttonStyle(.plain)
             .disabled(offset.wrappedValue >= maxOffset)
-            .accessibilityLabel("更早 \(unit)")
             Group {
                 if offset.wrappedValue > 0 {
                     Button(range) { offset.wrappedValue = 0 }
-                        .foregroundStyle(.tertiary)
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.secondary)
+                        .frame(minHeight: Theme.minimumControlSize)
                         .help("回到最近")
+                        .accessibilityLabel("当前范围 \(range)，回到最近")
                 } else {
-                    Text(range).foregroundStyle(.tertiary)
+                    Text(range)
+                        .foregroundStyle(.secondary)
+                        .frame(minHeight: Theme.minimumControlSize)
                 }
             }
-            .font(.system(size: 9, design: .monospaced))
+            .font(.system(size: 10, design: .monospaced))
             .frame(minWidth: 74)
             .lineLimit(1)
-            Group {
-                if offset.wrappedValue > 0 {
-                    Button {
-                        offset.wrappedValue = max(offset.wrappedValue - 1, 0)
-                    } label: {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("更近 \(unit)")
-                } else {
-                    // 最近一页时右箭头淡出但占位,导航簇宽度不跳动
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Color.primary.opacity(0.15))
-                }
+            SourceDashboardIconButton(name: "chevron.right", help: "更近 \(unit)") {
+                offset.wrappedValue = max(offset.wrappedValue - 1, 0)
             }
             .disabled(offset.wrappedValue == 0)
         }
@@ -392,9 +373,9 @@ struct OverviewHeatmapCard: View {
                     ForEach(cells, id: \.monthKey) { cell in
                         let visible = monthSpan == .year || cell.month == 1 || cell.month == 7
                         Text(visible ? "\(cell.month)月" : " ")
-                            .font(.system(size: 9)).foregroundStyle(.tertiary)
+                            .font(Theme.chartAxisFont).foregroundStyle(.secondary)
                             .fixedSize(horizontal: true, vertical: false)
-                            .frame(width: monthBarWidth, height: 10, alignment: .leading)
+                            .frame(width: monthBarWidth, height: 14, alignment: .leading)
                     }
                 }
                 HStack(spacing: monthGap) {
@@ -443,9 +424,9 @@ struct OverviewHeatmapCard: View {
                 HStack(spacing: 2) {
                     ForEach(cells, id: \.weekOf) { cell in
                         Text(cell.monthLabel ?? " ")
-                            .font(.system(size: 9)).foregroundStyle(.tertiary)
+                            .font(Theme.chartAxisFont).foregroundStyle(.secondary)
                             .fixedSize(horizontal: true, vertical: false)
-                            .frame(width: cellWidth, height: 10, alignment: .leading)
+                            .frame(width: cellWidth, height: 14, alignment: .leading)
                     }
                 }
                 HStack(spacing: 2) {
@@ -502,9 +483,9 @@ struct OverviewHeatmapCard: View {
                         // fixedSize 必须在 Text 上:先 frame 后 fixedSize 时
                         // 文字仍按 11/13pt 宽度截断,月份标签会碎成残笔
                         Text(column.monthLabel ?? " ")
-                            .font(.system(size: 9)).foregroundStyle(.tertiary)
+                            .font(Theme.chartAxisFont).foregroundStyle(.secondary)
                             .fixedSize(horizontal: true, vertical: false)
-                            .frame(width: cellWidth, height: 10, alignment: .leading)
+                            .frame(width: cellWidth, height: 14, alignment: .leading)
                     }
                 }
                 HStack(spacing: 2) {
@@ -555,11 +536,11 @@ struct OverviewHeatmapCard: View {
             .chartXAxis {
                 AxisMarks { _ in
                     AxisValueLabel()
-                        .font(.system(size: 9))
-                        .foregroundStyle(.tertiary)
+                        .font(Theme.chartAxisFont)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .frame(height: 38)
+            .frame(height: 50)
         }
         .accessibilityLabel("周内节律")
     }
@@ -579,7 +560,7 @@ struct OverviewHeatmapCard: View {
     // 行标签只标周一与周四，其余留空保持与格子同节拍
     private var weekdayLabels: some View {
         VStack(alignment: .trailing, spacing: 2) {
-            Color.clear.frame(width: 1, height: 12)
+            Color.clear.frame(width: 1, height: 14)
             ForEach(0..<7, id: \.self) { row in
                 Group {
                     switch row {
@@ -588,7 +569,7 @@ struct OverviewHeatmapCard: View {
                     default: Text(" ")
                     }
                 }
-                .font(.system(size: 9)).foregroundStyle(.tertiary)
+                .font(Theme.chartAxisFont).foregroundStyle(.secondary)
                 .frame(width: 12, height: Self.cellHeight, alignment: .trailing)
             }
         }

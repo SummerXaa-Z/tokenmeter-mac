@@ -5,6 +5,8 @@ import Charts
 // 用量来自本地 ~/.codex/sessions；官方实时配额由独立开关控制。
 struct CodexView: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.usageNow) private var now
+    @Environment(\.sourceUsageRange) private var usageRange
     var onBack: () -> Void
     var onSettings: () -> Void
 
@@ -12,6 +14,7 @@ struct CodexView: View {
         ScrollView {
             VStack(spacing: 10) {
                 header
+                ScopedSourceUsageCard(source: .codex)
                 if let error = state.codex.error {
                     SourceReadFailureCard(message: error, showingLastGood: state.codex.result != nil)
                 }
@@ -21,10 +24,10 @@ struct CodexView: View {
                     rateLimitCard(nil)
                 }
                 if let r = state.codex.result {
-                    todayCard(r)
-                    hoursCard(r)
+                    if usageRange == nil { todayCard(r) }
+                    if usageRange != .day { hoursCard(r) }
                     weekChartCard(r)
-                    modelCard(r)
+                    if usageRange == nil { modelCard(r) }
                     projectCard(r)
                 } else if state.codex.loading {
                     SourceStateView(loading: true, message: "正在读取…")
@@ -57,6 +60,12 @@ struct CodexView: View {
 
     // MARK: - 配额窗口
     private func rateLimitCard(_ limits: CodexRateLimits?) -> some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            rateLimitContent(limits, now: context.date)
+        }
+    }
+
+    private func rateLimitContent(_ limits: CodexRateLimits?, now: Date) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -76,13 +85,13 @@ struct CodexView: View {
                 }
                 if let limits {
                     if let p = limits.primary {
-                        gaugeRow(Self.windowTitle(p.windowMinutes), p)
+                        gaugeRow(Self.windowTitle(p.windowMinutes), p, now: now)
                     }
                     if let s = limits.secondary {
-                        gaugeRow(Self.windowTitle(s.windowMinutes), s)
+                        gaugeRow(Self.windowTitle(s.windowMinutes), s, now: now)
                     }
-                    Text("数据截至 \(Self.relative(limits.asOf))")
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                    Text("数据截至 \(Self.relative(limits.asOf, now: now))")
+                        .font(Theme.footnoteFont).foregroundStyle(.secondary)
                         .help(state.codexLiveQuotaEnabled
                             ? "优先显示官方实时配额；查询失败时使用本地快照"
                             : "实时查询已关闭；快照来自最近一次 Codex 请求")
@@ -97,34 +106,42 @@ struct CodexView: View {
     }
 
     // 与官方面板口径一致：展示「剩余」百分比，进度条表示剩余量
-    private func gaugeRow(_ title: String, _ w: CodexRateWindow) -> some View {
-        let remaining = max(100 - w.usedPercent, 0)
+    private func gaugeRow(_ title: String, _ w: CodexRateWindow, now: Date) -> some View {
+        let remaining = QuotaWindowFreshness.remainingPercent(w, now: now)
+        let expired = QuotaWindowFreshness.isExpired(resetAt: w.resetsAt, now: now)
         return VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(title).font(.system(size: 11))
                 Spacer()
-                Text("剩余 \(Int(remaining))%")
+                Text(remaining.map { "剩余 \(Int($0))%" } ?? "剩余未知")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Self.remainingColor(remaining))
-                Text("· \(Fmt.countdown(to: w.resetsAt))重置")
-                    .font(.system(size: 10)).foregroundStyle(.tertiary)
+                    .foregroundStyle(remaining.map(Self.remainingColor) ?? .secondary)
+                if !expired, w.resetsAt.timeIntervalSince1970 > 0 {
+                    Text("· \(QuotaPace.countdown(from: now, to: w.resetsAt))重置")
+                        .font(Theme.footnoteFont).foregroundStyle(.secondary)
+                }
             }
             let pace = QuotaPace.compute(
                 remainingPercent: remaining,
                 windowStart: QuotaPace.windowStart(
                     resetAt: w.resetsAt.timeIntervalSince1970 > 0 ? w.resetsAt : nil,
                     seconds: TimeInterval(w.windowMinutes) * 60),
-                resetAt: w.resetsAt)
-            QuotaBar(
-                progress: remaining / 100,
-                tint: Self.remainingColor(remaining),
-                marker: pace?.evenPaceRemaining)
+                resetAt: w.resetsAt, now: now)
+            if let remaining {
+                QuotaBar(
+                    progress: remaining / 100,
+                    tint: Self.remainingColor(remaining),
+                    marker: pace?.evenPaceRemaining)
+            } else {
+                Text(expired ? "窗口已结束，请刷新配额快照" : "缺少可验证的窗口数据，请刷新")
+                    .font(Theme.footnoteFont).foregroundStyle(.secondary)
+            }
             if let pace {
                 if pace.isAhead {
-                    QuotaPaceLine(pace: pace)
+                    QuotaPaceLine(pace: pace, text: pace.summary(now: now))
                 } else {
-                    Text(pace.summary())
-                        .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                    Text(pace.summary(now: now))
+                        .font(Theme.footnoteFont).foregroundStyle(.secondary)
                 }
             }
         }
@@ -136,15 +153,15 @@ struct CodexView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("今日用量", systemImage: "sun.max")
                     .font(.system(size: 12, weight: .semibold))
-                let t = r.today
+                let t = r.day(on: DateUtil.key(now))
                 HStack(spacing: 0) {
-                    SourceMetric(title: "Token", value: Fmt.tokensShort(t?.totalTokens ?? 0))
-                    SourceMetric(title: "会话", value: Fmt.int(t?.sessionCount ?? 0))
+                    SourceMetric(title: "Token", value: (t?.totalTokens).map(Fmt.tokensShort) ?? "—")
+                    SourceMetric(title: "会话", value: (t?.sessionCount).map(Fmt.int) ?? "—")
                     SourceMetric(
                         title: "缓存命中",
                         value: t?.cacheHitRate.map { Fmt.percent($0) } ?? "—"
                     )
-                    SourceMetric(title: "输出", value: Fmt.tokensShort(t?.outputTokens ?? 0))
+                    SourceMetric(title: "输出", value: (t?.outputTokens).map(Fmt.tokensShort) ?? "—")
                 }
                 Divider()
                 HStack {
@@ -167,14 +184,15 @@ struct CodexView: View {
                     ("输出", day.outputTokens, Theme.response),
                 ])
             },
-            liveDayModels: r.dayModels)
+            liveDayModels: r.dayModels, initialRange: usageRange)
     }
 
     // MARK: - 今日分时
     private func hoursCard(_ r: CodexUsageResult) -> some View {
         SourceHourCard(
             source: .codex,
-            bars: r.todayHours.map { .init(hour: $0.hour, tokens: $0.totalTokens) },
+            bars: (r.hourlyTokens(on: DateUtil.key(now)) ?? [:]).sorted { $0.key < $1.key }.map { .init(hour: $0.key, tokens: $0.value) },
+            observedDate: r.days.last?.date,
             color: Theme.codex
         )
     }
@@ -248,9 +266,9 @@ struct CodexView: View {
         return Theme.codex
     }
 
-    private static func relative(_ date: Date) -> String {
+    private static func relative(_ date: Date, now: Date = Date()) -> String {
         let f = RelativeDateTimeFormatter()
         f.locale = Locale(identifier: "zh_CN")
-        return f.localizedString(for: date, relativeTo: Date())
+        return f.localizedString(for: date, relativeTo: now)
     }
 }

@@ -6,6 +6,8 @@ import SwiftUI
 // 成功——工具没跑、本地路径暂时缺失时依然可见，从未有过明细时整卡隐藏
 // （同 SourceWeekCompareCard 的承诺）。
 struct SourceAPICostCard: View {
+    @EnvironmentObject private var state: AppState
+    @Environment(\.usageNow) private var now
     @EnvironmentObject private var historyReader: HistorySnapshotReader
     let source: HistorySource
     let liveDayModels: [String: [String: ModelTokenTally]]?
@@ -16,32 +18,36 @@ struct SourceAPICostCard: View {
     @State private var period: PeriodCompare.Period = .week
 
     var body: some View {
+        let history = historyReader.dashboardHistory(state: state, todayKey: DateUtil.key(now))
         let used = SourceAPICost.everUsed(source: source, liveDayModels: liveDayModels,
-                                          persisted: historyReader.snapshot.models)
+                                          persisted: history.models)
         return Group {
             if used {
-                content
+                content(history)
             }
         }
     }
 
-    private var content: some View {
+    private func content(_ history: LiveUsageHistory) -> some View {
         let summary = SourceAPICost.summary(
             source: source, liveDayModels: liveDayModels, period: period,
-            persisted: historyReader.snapshot.models)
+            persisted: history.models, dailyHistory: history.daily, todayKey: DateUtil.key(now))
         let prior = SourceAPICost.priorSummary(
             source: source, liveDayModels: liveDayModels, period: period,
-            persisted: historyReader.snapshot.models)
+            persisted: history.models, dailyHistory: history.daily, todayKey: DateUtil.key(now))
         let plans = subscriptionPlans ?? ConfigStore.shared.subscriptionPlans
         let subscription = SourceAPICost.subscriptionValue(
             source: source, liveDayModels: liveDayModels,
-            period: period, plans: plans, persisted: historyReader.snapshot.models)
+            period: period, plans: plans, persisted: history.models,
+            dailyHistory: history.daily,
+            todayKey: DateUtil.key(now))
         let curve = roiCurve ?? Self.roiCurve(
-            source: source, plans: plans, persisted: historyReader.snapshot.models)
+            source: source, plans: plans, persisted: history.models,
+            dailyHistory: history.daily, today: now)
         return Card {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Label("API 等价参考（\(period.shortTitle)）", systemImage: "dollarsign.circle")
+                    Label("周期 API 等价（\(period.shortTitle)）", systemImage: "dollarsign.circle")
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
                     Picker("周期", selection: $period) {
@@ -53,6 +59,8 @@ struct SourceAPICostCard: View {
                     .controlSize(.mini)
                     .frame(width: 104)
                 }
+                Text("补充周期参考；此卡按自然周、近7天或自然月计算，不替代上方所选范围。")
+                    .font(Theme.footnoteFont).foregroundStyle(.secondary)
                 if let summary {
                     detail(summary, prior: prior, subscription: subscription,
                            roiCurve: curve)
@@ -74,13 +82,14 @@ struct SourceAPICostCard: View {
         source: HistorySource,
         plans: [SubscriptionPlan],
         persisted: [ModelUsageDay] = [],
+        dailyHistory: [HistoryStore.DayPoint] = [],
         today: Date = Date()
     ) -> [SubscriptionROICurve.WeekPoint] {
         let monthlyFee = SubscriptionPlan.monthlyTotalUSD(plans, tagged: source)
         guard monthlyFee > 0 else { return [] }
         return SubscriptionROICurve.weeklyPoints(
             participants: [source], monthlyFeeUSD: monthlyFee,
-            persisted: persisted, today: today)
+            persisted: persisted, dailyHistory: dailyHistory, today: today)
     }
 
     private func detail(
@@ -91,19 +100,18 @@ struct SourceAPICostCard: View {
     ) -> some View {
         let coverage = summary.coverage ?? 0
         let priorText: String = {
-            if let prior { return "上期 \(Fmt.usd(prior.total))" }
+            if let amount = prior?.pricedTotal { return "上期 \(Fmt.usd(amount))" }
             return "上期 —"
         }()
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Text(summary.amounts.isEmpty ? "暂无参考价" : Fmt.usd(summary.total))
+                Text(summary.pricedTotal.map { Fmt.usd($0) } ?? "暂无参考价")
                     .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.brand)
                 Text(priorText)
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
-                ChangeBadge(change: PeriodCompare.change(
-                    this: summary.total, last: prior?.total ?? 0))
+                ChangeBadge(change: summary.changeCompared(to: prior))
             }
             HStack {
                 Text("价格覆盖").font(.system(size: 11)).foregroundStyle(.secondary)
@@ -130,7 +138,7 @@ struct SourceAPICostCard: View {
                 HStack {
                     Text("订阅回本").font(.system(size: 11, weight: .semibold))
                     Spacer()
-                    Text(subscription.multiple.map(SubscriptionValueSummary.multipleText) ?? "—")
+                    Text(subscription.multipleLabel)
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundStyle(Theme.brand)
                 }
@@ -142,7 +150,7 @@ struct SourceAPICostCard: View {
                 }
             }
             Text(policyText(summary))
-                .font(.system(size: 10)).foregroundStyle(.tertiary)
+                .font(Theme.footnoteFont).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

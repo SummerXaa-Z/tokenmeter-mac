@@ -2,16 +2,28 @@ import SwiftUI
 import Charts
 import AppKit
 
-// Coding 模型下钻页：从总览模型榜点入。页面自成固定窗口口径（榜单行的
-// Token 随总览所选范围变化），7|30|90 天切换；Token 构成、逐日 API 等价
-// 金额与覆盖率全部同窗，数字之间可直接对照。
+// Coding 模型下钻页：保留总览入口范围，并允许切换 1D/7D/30D/90D/全部。
+// 范围控件在空态也可用；Token 构成、金额、导出全部同窗。
 struct CodingModelDetailView: View {
     enum Span: Int, CaseIterable {
+        case day = 1
         case week = 7
         case month = 30
         case quarter = 90
+        case all = 0
 
-        var title: String { "\(rawValue)天" }
+        var title: String { self == .all ? "全部" : "\(rawValue)D" }
+        var scopeTitle: String {
+            self == .all ? "全部本机历史" : self == .day ? "今日" : "近 \(rawValue) 天"
+        }
+        init(range: UsageHistoryRange) {
+            switch range {
+            case .day: self = .day
+            case .week: self = .week
+            case .month: self = .month
+            case .all: self = .all
+            }
+        }
     }
 
     let source: HistorySource
@@ -21,6 +33,7 @@ struct CodingModelDetailView: View {
     // 留存自算（与模型榜同源）
     var injectedFor: ((Int) -> CodingModelDetail.Summary?)? = nil
     @EnvironmentObject var state: AppState
+    @Environment(\.usageNow) private var now
     @EnvironmentObject private var historyReader: HistorySnapshotReader
     @State private var span: Span
     @State private var hoverDate: String?
@@ -35,13 +48,14 @@ struct CodingModelDetailView: View {
         onBack: @escaping () -> Void,
         injectedFor: ((Int) -> CodingModelDetail.Summary?)? = nil,
         initialSpan: Span = .month,
+        initialRange: UsageHistoryRange? = nil,
         previewExportStatus: String? = nil
     ) {
         self.source = source
         self.model = model
         self.onBack = onBack
         self.injectedFor = injectedFor
-        _span = State(initialValue: initialSpan)
+        _span = State(initialValue: initialRange.map { Span(range: $0) } ?? initialSpan)
         _exportStatus = State(initialValue: previewExportStatus)
         self.previewExportStatus = previewExportStatus
     }
@@ -53,23 +67,30 @@ struct CodingModelDetailView: View {
         return CodingModelDetail.summary(
             source: source, model: model,
             liveDayModels: Self.liveDayModels(source, state: state),
-            persisted: historyReader.snapshot.models,
-            windowDays: span.rawValue)
+            persisted: historyReader.dashboardHistory(state: state, todayKey: DateUtil.key(now)).models,
+            todayKey: DateUtil.key(now), windowDays: max(span.rawValue, 1), allHistory: span == .all)
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            header
-            if let s = summary(for: span) {
+        let s = summary(for: span)
+        return ScrollView {
+            VStack(spacing: 12) {
+                header
                 statsCard(s)
-                breakdownCard(s)
-                trendCard(s)
-            } else {
-                SourceStateView(message: "近 \(span.rawValue) 天暂无该模型明细，可切到更长范围")
+                if let s {
+                    breakdownCard(s)
+                    trendCard(s)
+                } else {
+                    ChartHover.emptyState(
+                        message: "\(span.scopeTitle)暂无该模型明细",
+                        hint: span == .all ? "尚无本机留存；返回总览刷新来源数据" : "可切换上方范围查看更早记录")
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .padding(14)
         }
-        .padding(14)
+        .scrollIndicators(.hidden)
+        .onChange(of: span) { _, _ in hoverDate = nil; exportStatus = nil }
     }
 
     private var header: some View {
@@ -80,7 +101,7 @@ struct CodingModelDetailView: View {
             onBack: onBack)
     }
 
-    private func statsCard(_ s: CodingModelDetail.Summary) -> some View {
+    private func statsCard(_ s: CodingModelDetail.Summary?) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -94,19 +115,25 @@ struct CodingModelDetailView: View {
                     }
                     .pickerStyle(.segmented)
                     .controlSize(.mini)
-                    .frame(width: 130)
+                    .frame(width: 230)
+                    .accessibilityIdentifier("TokenMeter.Model.Range")
                 }
                 HStack(spacing: 16) {
-                    stat("近 \(span.rawValue) 天 Token", Fmt.tokensShort(s.tally.total))
-                    stat("活跃天数", "\(s.activeDays)")
-                    stat("API 等价", Fmt.usd(s.totalUSD))
+                    stat("\(span.scopeTitle) Token", s.map { Fmt.tokensShort($0.tally.total) } ?? "—")
+                    stat("活跃天数", s.map { "\($0.activeDays)" } ?? "—")
+                    stat("API 等价", s.map { summary in
+                        guard let amount = summary.pricedTotalUSD else { return "未知" }
+                        return (summary.coverage.map { $0 < 0.999 } == true ? "至少 " : "") + Fmt.usd(amount)
+                    } ?? "无明细")
                 }
-                if let price = ModelPriceCheatSheet.caption(model: model) {
+                Text(source.overviewName + " · " + span.scopeTitle)
+                    .font(Theme.footnoteFont).foregroundStyle(.secondary)
+                if let price = ModelPriceCheatSheet.caption(model: model, on: DateUtil.key(now)) {
                     Text("当前生效参考单价（输入 / 输出，每百万 tokens）：\(price)")
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        .font(Theme.footnoteFont).foregroundStyle(.secondary)
                 } else {
-                    Text("当前价格目录未收录该模型，金额栏不计入。")
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                    Text("当前目录没有该模型的生效参考价；历史金额仍按用量当日价格判断。")
+                        .font(Theme.footnoteFont).foregroundStyle(.secondary)
                 }
             }
         }
@@ -115,7 +142,7 @@ struct CodingModelDetailView: View {
     private func breakdownCard(_ s: CodingModelDetail.Summary) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Token 构成（近 \(span.rawValue) 天）")
+                Text("Token 构成（\(span.scopeTitle)）")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                 let parts = SourceTrendCard.parts(source, of: s.tally).filter { $0.value > 0 }
@@ -139,92 +166,65 @@ struct CodingModelDetailView: View {
     }
 
     private func trendCard(_ s: CodingModelDetail.Summary) -> some View {
-        // 90 天档按自然周聚合（与总览「全部」的周粒度同口径），短档逐日
-        let weekly = span == .quarter
-        let points: [(label: String, usd: Double, tally: ModelTokenTally)]
-        if weekly {
-            points = CodingModelDetail.weeklyBuckets(from: s.days).map {
-                (label: "\(Fmt.mmdd($0.weekStart))周", usd: $0.usd, tally: $0.tally)
-            }
-        } else {
-            points = s.days.map {
-                (label: Fmt.mmdd($0.date), usd: $0.usd, tally: $0.tally)
-            }
-        }
-        let byLabel = Dictionary(
-            uniqueKeysWithValues: points.map { ($0.label, $0) })
-        let usdFor: (String) -> String? = { label in
-            guard let point = byLabel[label], point.usd > 0 else { return nil }
-            return Fmt.usd(point.usd)
-        }
+        let granularity = Self.granularity(span: span, days: s.days.count)
+        let points = CodingModelDetail.trendValues(from: s.days, granularity: granularity)
+        let labels = Dictionary(uniqueKeysWithValues: points.map { ($0.key, $0.label) })
+        let active = points.first { $0.key == hoverDate } ?? points.last(where: { $0.tokens > 0 }) ?? points.last
         return Card {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Label("近 \(span.rawValue) 天 API 等价（USD）", systemImage: "dollarsign.circle")
+                    Label("\(span.scopeTitle) API 等价 · \(granularity.rawValue)", systemImage: "dollarsign.circle")
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
-                    // 导出当前档走势（7/30 天逐日、90 天按周聚合），与
-                    // Skill 详情页导出同款入口
-                    Button {
+                    DashboardExportButton(
+                        help: "导出当前档 CSV（Token 与 API 等价，附口径行）",
+                        disabled: !historyReader.canUseSnapshot
+                    ) {
                         exportCSV(s)
-                    } label: {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.tertiary)
                     }
-                    .buttonStyle(.plain)
-                    .help("导出当前档 CSV（Token 与 API 等价，附口径行）")
                     .accessibilityLabel("导出模型明细 CSV")
-                    .disabled(!historyReader.canUseSnapshot)
                 }
-                ChartHover.caption(
-                    hover: hoverDate,
-                    amountFor: usdFor,
-                    buckets: points.map { point in
-                        (
-                            label: point.label,
-                            total: point.tally.total,
-                            parts: SourceTrendCard.parts(source, of: point.tally)
-                                .filter { $0.value > 0 }
-                        )
-                    })
+                if let active {
+                    ChartHoverCaption(
+                        label: Self.bucketCaption(active.key, granularity: granularity),
+                        total: active.tokens,
+                        parts: SourceTrendCard.parts(source, of: active.tally).filter { $0.value > 0 },
+                        amountText: Self.amountCaption(active))
+                }
                 Chart {
-                    ForEach(Array(points.enumerated()), id: \.offset) { _, point in
-                        BarMark(
-                            x: .value(weekly ? "周" : "日期", point.label),
-                            y: .value("金额", point.usd))
-                            .foregroundStyle(source.overviewColor.opacity(0.85))
-                            .cornerRadius(2)
+                    ForEach(points, id: \.key) { point in
+                        if let amount = point.pricedUSD {
+                            BarMark(x: .value("日期", point.key), y: .value("金额", amount))
+                                .foregroundStyle(source.overviewColor.opacity(0.85))
+                                .cornerRadius(2)
+                        } else {
+                            // A missing price is an unpriced gap, not a zero-cost bar.
+                            RuleMark(x: .value("未计价日期", point.key))
+                                .foregroundStyle(Color.secondary.opacity(0.25))
+                                .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 3]))
+                        }
                     }
                     HoverDateRule(date: hoverDate)
                 }
                 .chartXSelection(value: $hoverDate)
-                .chartYAxis {
-                    AxisMarks { _ in
-                        AxisGridLine().foregroundStyle(Color.primary.opacity(0.06))
-                        AxisValueLabel()
-                            .font(.system(size: 9))
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                .chartXAxis {
-                    AxisMarks { _ in
-                        AxisValueLabel()
-                            .font(.system(size: 9))
-                            .foregroundStyle(.tertiary)
-                    }
-                }
+                .numericYAxis()
+                .dateXAxis(labels: labels)
                 .frame(height: 140)
-                if weekly {
-                    Text("该档按自然周聚合（周一为界，首尾周可能不足整周），柱形与悬停均为周合计。")
-                        .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                if span == .day {
+                    Text("模型明细仅按天留存；1D 展示今日合计，不推算逐小时费用。")
+                        .font(Theme.footnoteFont).foregroundStyle(.secondary)
+                } else if granularity == .week || granularity == .month {
+                    Text(granularity == .week
+                         ? "按自然周聚合（周一为界，首尾周可能不足整周），柱形与查值均为周合计。"
+                         : "按自然月聚合（首尾月可能不足整月），柱形与查值均为月合计。")
+                        .font(Theme.footnoteFont).foregroundStyle(.secondary)
                 }
                 if let coverage = s.coverage, coverage < 0.999 {
-                    Text("价格覆盖 \(Int((coverage * 100).rounded()))%，缺价或价格未生效的用量不计入金额。")
-                        .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                    Text("价格覆盖 \(Int((coverage * 100).rounded()))%；虚线为未计价桶，不代表零费用。部分计价桶的金额为下限。")
+                        .font(Theme.footnoteFont).foregroundStyle(.secondary)
                 }
                 Text("按用量当日生效的价格快照重算（最近核对 \(APIReferencePricingCatalog.observedAt)）。仅表示该模型的 API 等价成本，不是订阅费或平台账单；运行时不联网。")
-                    .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                    .font(Theme.footnoteFont).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
                 ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
@@ -240,6 +240,24 @@ struct CodingModelDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    static func granularity(span: Span, days: Int) -> UsageTrendGranularity {
+        if span == .quarter { return .week }
+        if span == .all { return UsageHistoryRange.all.trendGranularity(historyDayCount: days) }
+        return .day
+    }
+
+    static func amountCaption(_ point: CodingModelDetail.TrendValue) -> String {
+        guard let amount = point.pricedUSD else { return "API 等价未知（缺价）" }
+        if point.tokens == 0 { return "API 等价 \(Fmt.usd(0)) · 无 Token" }
+        if point.isPartial { return "API 等价至少 \(Fmt.usd(amount))" }
+        return "API 等价 \(Fmt.usd(amount))" + (amount == 0 ? "（已知零价）" : "")
+    }
+
+    private static func bucketCaption(_ key: String, granularity: UsageTrendGranularity) -> String {
+        if granularity == .month { return Fmt.ym(key) }
+        return Fmt.ymd(key) + (granularity == .week ? "周" : "")
+    }
+
     /// 导出当前档明细 CSV；保存面板流程与模型榜/Skill 详情导出同款，
     /// 写盘失败弹系统错误框。90 天档按周聚合、短档逐日，与趋势图同桶。
     private func exportCSV(_ s: CodingModelDetail.Summary) {
@@ -251,21 +269,14 @@ struct CodingModelDetailView: View {
             title: "导出模型明细 CSV",
             filename: CodingModelDetailCSVExport.suggestedFilename(model: model)
         ) {
-            let rows: [CodingModelDetailCSVExport.Row]
-            if span == .quarter {
-                rows = CodingModelDetail.weeklyBuckets(from: s.days).map {
-                    CodingModelDetailCSVExport.Row(
-                        bucket: $0.weekStart, tokens: $0.tokens, usd: $0.usd)
-                }
-            } else {
-                rows = s.days.map {
-                    CodingModelDetailCSVExport.Row(
-                        bucket: $0.date, tokens: $0.tokens, usd: $0.usd)
-                }
+            let granularity = Self.granularity(span: span, days: s.days.count)
+            let rows = CodingModelDetail.trendValues(from: s.days, granularity: granularity).map {
+                CodingModelDetailCSVExport.Row(bucket: $0.key, tokens: $0.tokens, usd: $0.pricedUSD)
             }
             return CodingModelDetailCSVExport.makeCSV(
                 source: source, model: model, spanDays: span.rawValue,
-                rows: rows, coverage: s.coverage
+                rows: rows, coverage: s.coverage, todayKey: DateUtil.key(now),
+                scopeTitle: span.scopeTitle, granularity: granularity
             )
         }
         if let feedback = outcome.successFeedback { exportStatus = feedback }

@@ -179,6 +179,7 @@ final class ConfigStore {
         static let overviewHistoryRange = "overviewHistoryRangeDays"
         static let subscriptionPlans = "subscriptionPlans"
         static let modelDetailBackfillDay = "modelDetailBackfillDay"
+        static let modelDetailBackfillVersion = "modelDetailBackfillVersion"
     }
 
     // 用户手填的订阅月费（见 SubscriptionPlan），JSON 存 UserDefaults；
@@ -204,6 +205,12 @@ final class ConfigStore {
     var lastModelDetailBackfillDay: String? {
         get { defaults.string(forKey: DKey.modelDetailBackfillDay) }
         set { defaults.set(newValue, forKey: DKey.modelDetailBackfillDay) }
+    }
+
+    // 旧版本只回填模型明细；版本 1 同时补日汇总，不删除旧历史或标记。
+    var modelDetailBackfillVersion: Int {
+        get { defaults.integer(forKey: DKey.modelDetailBackfillVersion) }
+        set { defaults.set(newValue, forKey: DKey.modelDetailBackfillVersion) }
     }
 
     var overviewHistoryRangeDays: Int {

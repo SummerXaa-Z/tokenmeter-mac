@@ -21,19 +21,23 @@ enum CodingModelDetailCSVExport {
         rows: [Row],
         coverage: Double?,
         todayKey: String = DateUtil.today(),
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        scopeTitle: String? = nil,
+        granularity: UsageTrendGranularity? = nil
     ) -> String {
         // 90 天档按自然周聚合，与页内趋势图同一分桶
-        let weekly = spanDays > 30
+        let selectedGranularity = granularity ?? (spanDays > 30 ? .week : .day)
+        let weekly = selectedGranularity == .week
+        let monthly = selectedGranularity == .month
         var lines = [[String]]()
-        if weekly {
-            lines.append(["周(周一)", "Token", "API等价(USD)"])
+        if weekly || monthly {
+            lines.append([weekly ? "周(周一)" : "月(月首)", "Token", "API等价(USD)"])
         } else {
             lines.append(["日期", "星期", "Token", "API等价(USD)"])
         }
         for row in rows {
-            let usd = row.usd.flatMap { $0 > 0 ? String(format: "%.2f", $0) : nil } ?? ""
-            if weekly {
+            let usd = row.usd.map { String(format: "%.2f", $0) } ?? ""
+            if weekly || monthly {
                 lines.append([row.bucket, String(row.tokens), usd])
             } else {
                 let weekday = DateUtil.date(from: row.bucket)
@@ -48,12 +52,15 @@ enum CodingModelDetailCSVExport {
         }
         var footer = [
             "口径",
-            escaped("\(source.overviewName) \(model) · 近 \(spanDays) 天"),
-            escaped(weekly
-                ? "90 天档按自然周聚合（周一为界，首尾周可能不足整周）"
-                : "逐日一行（滚动窗口含今天，无用量日照列 0）"),
+            escaped("\(source.overviewName) \(model) · \(scopeTitle ?? "近 \(spanDays) 天")"),
+            escaped(monthly ? "按自然月聚合（月首为键，首尾月可能不足整月）"
+                : weekly ? (scopeTitle == nil
+                    ? "90 天档按自然周聚合（周一为界，首尾周可能不足整周）"
+                    : "按自然周聚合（周一为界，首尾周可能不足整周）")
+                : scopeTitle == nil ? "逐日一行（滚动窗口含今天，无用量日照列 0）"
+                : "逐日一行（窗口含今天，无用量日照列 0）"),
             "Token为该模型五类合计",
-            "API等价按用量当日生效价重算（缺价不计、无金额留空）",
+            "API等价按用量当日生效价重算（缺价不计、无金额留空）；未知留空，已知零价与无用量为0，部分计价金额为下限",
         ]
         if let coverage, coverage < 0.999 {
             footer.append(escaped(

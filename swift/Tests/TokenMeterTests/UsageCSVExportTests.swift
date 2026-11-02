@@ -13,7 +13,7 @@ final class UsageCSVExportTests: XCTestCase {
     private func parseRows(_ csv: String) -> [[String]] {
         csv.split(separator: "\n").map {
             $0.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
-        }
+        }.filter { $0.first != "数据范围" }
     }
 
     func testHeaderListsCodingSourcesThenPlatformColumns() {
@@ -56,7 +56,7 @@ final class UsageCSVExportTests: XCTestCase {
         XCTAssertEqual(rows[3][9], "110")
         XCTAssertEqual(rows[3][10], "40")
         XCTAssertEqual(rows[3][11], "1.50")
-        XCTAssertEqual(rows[3][12], "0.00")     // 无金额明细
+        XCTAssertEqual(rows[3][12], "")     // 无金额明细不冒充零费用
     }
 
     func testAPIValueColumnFillsOnlyDaysWithPricedModelDetail() {

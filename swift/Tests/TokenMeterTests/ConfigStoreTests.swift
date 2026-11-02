@@ -283,9 +283,12 @@ final class ConfigStoreTests: XCTestCase {
 
         let store = ConfigStore(defaults: defaults)
         XCTAssertNil(store.lastModelDetailBackfillDay)
+        XCTAssertEqual(store.modelDetailBackfillVersion, 0)
 
         store.lastModelDetailBackfillDay = "2026-09-27"
         XCTAssertEqual(ConfigStore(defaults: defaults).lastModelDetailBackfillDay, "2026-09-27")
+        store.modelDetailBackfillVersion = DetailBackfill.storageVersion
+        XCTAssertEqual(ConfigStore(defaults: defaults).modelDetailBackfillVersion, DetailBackfill.storageVersion)
     }
 
     private func makeCredentialStore(

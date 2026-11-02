@@ -16,8 +16,12 @@ struct OverviewSnapshot: Equatable {
     let selection: OverviewSourceSelection
     let todayBySource: [HistorySource: Int]
     let todayTotal: Int
+    let confirmedTodaySources: Set<HistorySource>
     let periodBySource: [HistorySource: Int]
     let periodTotal: Int
+    // Shared live + saved aggregate inputs for every history card on this page.
+    let mergedHistory: [HistoryStore.DayPoint]
+    let mergedModelHistory: [ModelUsageDay]
     let historyStartDate: String?
     let availableHistoryDays: Int
     let profile: PersonalUsageProfile
@@ -31,6 +35,7 @@ struct OverviewSnapshot: Equatable {
     let modelCoverageStartDate: String?
     // 所选范围内的工具用量早于模型明细起点：模型维度只覆盖后一段
     let modelCoverageIsPartial: Bool
+    let unmodelledTokens: Int
     // 用户在设置里填写了订阅月费时的回本倍数；未填写为 nil
     let subscriptionValue: SubscriptionValueSummary?
     // 回本走势：近 13 个完整周逐周倍数(与所选范围无关的固定上下文)；
@@ -56,6 +61,9 @@ struct OverviewSnapshot: Equatable {
 
     /// 范围早于模型明细起点时，模型榜 / Skills 榜 / 会话数 / API 等价共用的口径说明。
     var modelCoverageNote: String? {
+        if unmodelledTokens > 0 {
+            return "部分用量没有模型明细，只计入工具合计；API 等价和模型榜仅覆盖已知部分。"
+        }
         guard modelCoverageIsPartial, let modelCoverageStartDate else { return nil }
         return Self.modelCoverageNote(since: modelCoverageStartDate)
     }
@@ -114,44 +122,28 @@ struct OverviewSnapshot: Equatable {
             deepSeekPlatformAvailableHistoryDays = 0
         }
 
-        let claudeToday = selection.value(claude?.today?.totalTokens ?? 0, for: .claude)
-        let recordedToday = history.first { $0.date == todayKey }?.bySource ?? [:]
-        func liveToday(_ source: HistorySource) -> Int? {
-            guard selection.contains(source) else { return 0 }
-            switch source {
-            case .deepseek:
-                return 0
-            case .claude:
-                guard claude != nil else { return nil }
-                return claudeToday
-            case .codex:
-                return codex.map { $0.today?.totalTokens ?? 0 }
-            case .kimi:
-                return kimi.map { $0.today?.totalTokens ?? 0 }
-            case .opencode:
-                return openCode.map { $0.today?.totalTokens ?? 0 }
-            case .gemini:
-                return gemini.map { $0.today?.totalTokens ?? 0 }
-            case .copilot:
-                return copilot.map { $0.today?.totalTokens ?? 0 }
-            case .qwen:
-                return qwen.map { $0.today?.totalTokens ?? 0 }
-            case .cursor:
-                return cursor?.dailyTokens(on: todayKey)
-            }
+        let liveHistory = LiveUsageHistory(
+            daily: streakHistory + history, models: modelHistory,
+            claude: claude, codex: codex, kimi: kimi, openCode: openCode,
+            gemini: gemini, copilot: copilot, qwen: qwen, cursor: cursor,
+            todayKey: todayKey)
+        mergedHistory = liveHistory.daily
+        mergedModelHistory = liveHistory.models
+        let streakHistory = liveHistory.daily
+        let rangeStartKey = Self.rangeStartKey(range, todayKey: todayKey)
+        let history = liveHistory.daily.filter { point in
+            point.date <= todayKey && (rangeStartKey.map { point.date >= $0 } ?? true)
         }
+        let recordedToday = liveHistory.daily.first { $0.date == todayKey }?.bySource ?? [:]
+        confirmedTodaySources = Set(recordedToday.keys).intersection(selection.sources)
         let sourceTotals = Dictionary(uniqueKeysWithValues: HistorySource.allCases.map { source in
-            let fallback = selection.value(recordedToday[source] ?? 0, for: source)
-            return (source, liveToday(source) ?? fallback)
+            (source, selection.value(recordedToday[source] ?? 0, for: source))
         })
         todayBySource = sourceTotals
         todayTotal = selection.sources.reduce(0) { $0 + (sourceTotals[$1] ?? 0) }
         let computedPeriodBySource = Dictionary(uniqueKeysWithValues: selection.sources.map { source in
             let recorded = history.reduce(0) { $0 + ($1.bySource[source] ?? 0) }
-            // 单日视图只要真源已成功加载，就采用精确实时值（允许从旧毛值
-            // 下降到较小值或 0）；真源缺席/今日子查询失败才回退历史。
-            let tokens = range == .day ? (sourceTotals[source] ?? recorded) : recorded
-            return (source, tokens)
+            return (source, recorded)
         })
         periodBySource = computedPeriodBySource
         periodTotal = computedPeriodBySource.values.reduce(0, +)
@@ -173,35 +165,9 @@ struct OverviewSnapshot: Equatable {
         let modelSources = selection.sources.filter {
             SourceCatalog.descriptor(for: $0).capabilities.contains(.modelDetail)
         }
-        var liveModels: [HistorySource: [String: [String: ModelTokenTally]]] = [:]
-        var liveSkills: [HistorySource: [String: [String: Int]]] = [:]
-        var liveSessions: [HistorySource: [String: Int]] = [:]
-        liveModels[.claude] = claude?.dayModels
-        liveModels[.codex] = codex?.dayModels
-        liveModels[.kimi] = kimi?.dayModels
-        liveModels[.opencode] = openCode?.dayModels
-        liveModels[.gemini] = gemini?.dayModels
-        liveModels[.copilot] = copilot?.dayModels
-        liveModels[.qwen] = qwen?.dayModels
-        liveSkills[.claude] = claude?.daySkills
-        liveSkills[.codex] = codex?.daySkills
-        liveSkills[.copilot] = copilot?.daySkills
-        liveSessions[.claude] = claude?.daySessions
-        liveSessions[.codex] = codex?.daySessions
-        liveSessions[.kimi] = kimi?.daySessions
-        liveSessions[.opencode] = openCode?.daySessions
-        liveSessions[.gemini] = gemini?.daySessions
-        liveSessions[.copilot] = copilot?.daySessions
-        liveSessions[.qwen] = qwen?.daySessions
-        let modelDays = Self.mergedDetailDays(
-            sources: modelSources,
-            liveModels: liveModels,
-            liveSkills: liveSkills,
-            liveSessions: liveSessions,
-            persisted: modelHistory,
-            todayKey: todayKey
-        )
-        let rangeStartKey = Self.rangeStartKey(range, todayKey: todayKey)
+        let modelDays = Dictionary(uniqueKeysWithValues: liveHistory.models.map {
+            ($0.date, $0.bySource.filter { modelSources.contains($0.key) })
+        }).filter { !$0.value.isEmpty }
         let rangeDates = modelDays.keys.filter { date in
             rangeStartKey.map { date >= $0 } ?? true
         }.sorted()
@@ -259,11 +225,18 @@ struct OverviewSnapshot: Equatable {
             enabledSources: selection.sources
         )
 
+        let missingModelTokens = ModelUsageCoverage.unmodelledTokens(
+            dailyHistory: history,
+            modelHistory: liveHistory.models.filter { day in
+                rangeStartKey.map { day.date >= $0 } ?? true
+            },
+            participants: modelSources, through: todayKey)
         apiReferenceCost = APIReferenceCostSummary(
             samples: costSamples,
             estimator: APIReferencePricingCatalog.estimator,
             referenceDate: APIReferencePricingCatalog.observedAt,
-            conversionRates: APIReferencePricingCatalog.conversionRatesToUSD
+            conversionRates: APIReferencePricingCatalog.conversionRatesToUSD,
+            unmodelledTokens: missingModelTokens
         )
 
         // 上期基期:同长度的上一个滚动窗口(今日→昨日、7 天→前 7 天、
@@ -277,6 +250,10 @@ struct OverviewSnapshot: Equatable {
         {
             let startKey = DateUtil.key(priorStart)
             let endKey = DateUtil.key(priorEnd)
+            let priorDays = liveHistory.models.filter { $0.date >= startKey && $0.date <= endKey }
+            let priorMissing = ModelUsageCoverage.unmodelledTokens(
+                dailyHistory: liveHistory.daily.filter { $0.date >= startKey && $0.date <= endKey },
+                modelHistory: priorDays, participants: modelSources, through: todayKey)
             var priorSamples: [APICostSample] = []
             for date in modelDays.keys.sorted() where date >= startKey && date <= endKey {
                 let pricingDate = max(date, APIReferencePricingCatalog.firstObservedAt)
@@ -295,7 +272,8 @@ struct OverviewSnapshot: Equatable {
                 samples: priorSamples,
                 estimator: APIReferencePricingCatalog.estimator,
                 referenceDate: APIReferencePricingCatalog.observedAt,
-                conversionRates: APIReferencePricingCatalog.conversionRatesToUSD
+                conversionRates: APIReferencePricingCatalog.conversionRatesToUSD,
+                unmodelledTokens: priorMissing
             )
         } else {
             priorAPIReferenceCost = nil
@@ -303,13 +281,14 @@ struct OverviewSnapshot: Equatable {
 
         let coverageStart = modelDays.keys.min()
         modelCoverageStartDate = coverageStart
+        unmodelledTokens = missingModelTokens
         let firstModelSourceUsage = history.first { point in
             modelSources.contains { (point.bySource[$0] ?? 0) > 0 }
         }?.date
         if let coverageStart, let firstModelSourceUsage {
-            modelCoverageIsPartial = firstModelSourceUsage < coverageStart
+            modelCoverageIsPartial = firstModelSourceUsage < coverageStart || unmodelledTokens > 0
         } else {
-            modelCoverageIsPartial = false
+            modelCoverageIsPartial = unmodelledTokens > 0
         }
 
         let monthlyFee = SubscriptionPlan.monthlyTotalUSD(subscriptionPlans)
@@ -320,7 +299,9 @@ struct OverviewSnapshot: Equatable {
             subscriptionValue = SubscriptionValueSummary(
                 monthlyFeeUSD: monthlyFee,
                 days: Self.dayCount(from: start, through: todayKey),
-                apiValueUSD: apiReferenceCost.total
+                apiValueUSD: apiReferenceCost.total,
+                apiValueKnown: apiReferenceCost.pricedTotal != nil,
+                priceCoverage: apiReferenceCost.coverage
             )
         } else {
             subscriptionValue = nil
@@ -329,7 +310,8 @@ struct OverviewSnapshot: Equatable {
             ? SubscriptionROICurve.weeklyPoints(
                 participants: modelSources,
                 monthlyFeeUSD: monthlyFee,
-                persisted: modelHistory,
+                persisted: liveHistory.models,
+                dailyHistory: liveHistory.daily,
                 today: DateUtil.date(from: todayKey) ?? Date())
             : []
 
@@ -346,7 +328,8 @@ struct OverviewSnapshot: Equatable {
                 kimi: kimi,
                 openCode: openCode,
                 gemini: gemini,
-                qwen: qwen
+                qwen: qwen,
+                todayKey: todayKey
             )
             computedTrend = Self.makeHourlyTrend(
                 todayKey: todayKey,
@@ -400,9 +383,9 @@ struct OverviewSnapshot: Equatable {
                     conversionRates: rates)
                 // 缺汇率的币种已被 summary 静默跳过，这里的 total 即可入账的
                 // 美元等价；为 0 (全缺价)不建条目，说明行自然不显示金额
-                if summary.total > 0 {
+                if let amount = summary.pricedTotal {
                     valueByBucket[bucket, default: [:]][source] =
-                        (valueByBucket[bucket]?[source] ?? 0) + summary.total
+                        (valueByBucket[bucket]?[source] ?? 0) + amount
                 }
             }
         }
@@ -467,38 +450,27 @@ struct OverviewSnapshot: Equatable {
         kimi: KimiUsageResult?,
         openCode: OpenCodeUsageResult?,
         gemini: GeminiUsageResult?,
-        qwen: QwenCodeUsageResult?
+        qwen: QwenCodeUsageResult?,
+        todayKey: String
     ) -> [HistorySource: [Int: Int]] {
         var result: [HistorySource: [Int: Int]] = [:]
-        if selection.contains(.claude), let claude {
-            result[.claude] = Dictionary(uniqueKeysWithValues: claude.todayHours.map {
-                ($0.hour, max($0.totalTokens, 0))
-            })
+        if selection.contains(.claude), let claude, claude.isAuthoritative {
+            result[.claude] = claude.hourlyTokens(on: todayKey)
         }
-        if selection.contains(.codex), let codex {
-            result[.codex] = Dictionary(uniqueKeysWithValues: codex.todayHours.map {
-                ($0.hour, max($0.totalTokens, 0))
-            })
+        if selection.contains(.codex), let codex, codex.isAuthoritative {
+            result[.codex] = codex.hourlyTokens(on: todayKey)
         }
         if selection.contains(.kimi), let kimi {
-            result[.kimi] = Dictionary(uniqueKeysWithValues: kimi.todayHours.map {
-                ($0.hour, max($0.totalTokens, 0))
-            })
+            result[.kimi] = kimi.hourlyTokens(on: todayKey)
         }
         if selection.contains(.opencode), let openCode {
-            result[.opencode] = Dictionary(uniqueKeysWithValues: openCode.todayHours.map {
-                ($0.hour, max($0.totalTokens, 0))
-            })
+            result[.opencode] = openCode.hourlyTokens(on: todayKey)
         }
         if selection.contains(.gemini), let gemini {
-            result[.gemini] = Dictionary(uniqueKeysWithValues: gemini.todayHours.map {
-                ($0.hour, max($0.totalTokens, 0))
-            })
+            result[.gemini] = gemini.hourlyTokens(on: todayKey)
         }
         if selection.contains(.qwen), let qwen {
-            result[.qwen] = Dictionary(uniqueKeysWithValues: qwen.todayHours.map {
-                ($0.hour, max($0.totalTokens, 0))
-            })
+            result[.qwen] = qwen.hourlyTokens(on: todayKey)
         }
         return result
     }

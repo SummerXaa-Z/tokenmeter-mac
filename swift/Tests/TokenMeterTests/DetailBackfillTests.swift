@@ -2,6 +2,12 @@ import XCTest
 @testable import TokenMeter
 
 final class DetailBackfillTests: XCTestCase {
+    func testOldModelOnlyMarkerRequiresOneCombinedHistoryBackfill() {
+        XCTAssertTrue(DetailBackfill.shouldRun(markerDay: "2026-09-27", todayKey: "2026-09-27", markerVersion: 0))
+        XCTAssertFalse(DetailBackfill.shouldRun(markerDay: "2026-09-27", todayKey: "2026-09-27",
+                                              markerVersion: DetailBackfill.storageVersion))
+    }
+
     func testShouldRunWithoutMarkerOrStaleMarker() {
         // 从未跑过：跑
         XCTAssertTrue(DetailBackfill.shouldRun(markerDay: nil, todayKey: "2026-09-27"))

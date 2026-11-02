@@ -4,6 +4,29 @@ import XCTest
 // 来源页 7|30 天趋势卡导出：逐日一行、分量列与图例同名同序、星期列、
 // 合计行与口径行（含各来源的分量折叠说明）。
 final class SourceTrendCSVExportTests: XCTestCase {
+    func testExplicitAllCSVStatesMonthBucketsAndKeepsOlderDates() {
+        let csv = SourceTrendCSVExport.makeCSV(source: .kimi, spanDays: 0,
+            days: [day("2025-09-01", [("输出", 7), ("未归因", 2)]), day("2026-09-01", [("输出", 8), ("未归因", 0)])],
+            todayKey: "2026-10-03", scopeTitle: "全部历史", granularity: .month)
+        XCTAssertTrue(csv.contains("全部历史"))
+        XCTAssertTrue(csv.contains("按月汇总"))
+        XCTAssertTrue(csv.contains("2025-09-01"))
+        XCTAssertFalse(csv.contains("近 0 天"))
+        XCTAssertFalse(csv.contains("30 天档"))
+        XCTAssertEqual(SourceTrendCSVExport.suggestedFilename(source: .kimi, spanDays: 0,
+            todayKey: "2026-10-03", scopeTitle: "全部"), "TokenMeter-trend-Kimi-Code-全部-2026-10-03.csv")
+    }
+
+    func testExplicitDayCSVHasRealHourKeysAndScope() {
+        let csv = SourceTrendCSVExport.makeSingleSeriesCSV(source: .codex, spanDays: 1,
+            days: [("2026-10-03T00", 0), ("2026-10-03T09", 7)], todayKey: "2026-10-03",
+            scopeTitle: "今日", granularity: .hour)
+        XCTAssertTrue(csv.hasPrefix("小时,星期,Token\n"))
+        XCTAssertTrue(csv.contains("2026-10-03T09,六,7"))
+        XCTAssertTrue(csv.contains("Codex · 今日"))
+        XCTAssertTrue(csv.contains("按小时合计"))
+        XCTAssertFalse(csv.contains("Cursor"))
+    }
     private func parseRows(_ csv: String) -> [[String]] {
         csv.split(separator: "\n").map {
             $0.split(separator: ",", omittingEmptySubsequences: false).map(String.init)

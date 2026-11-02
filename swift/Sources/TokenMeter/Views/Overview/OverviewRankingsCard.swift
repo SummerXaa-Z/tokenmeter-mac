@@ -106,7 +106,7 @@ struct OverviewRankingsCard: View {
             persisted: persisted,
             windowDays: activeSort == .week ? 7 : 30) else { return nil }
         if activeSort == .usd {
-            return (summary.coverage ?? 0) > 0 ? summary.totalUSD : nil
+            return summary.pricedTotalUSD
         }
         return Double(summary.tally.total)
     }
@@ -137,7 +137,7 @@ struct OverviewRankingsCard: View {
             liveDayModels: liveDayModels, persisted: persisted,
             todayKey: todayKey, windowDays: sort == .week ? 7 : 30)
         else { return -1 }
-        return sort == .usd ? summary.totalUSD : Double(summary.tally.total)
+        return sort == .usd ? (summary.pricedTotalUSD ?? -1) : Double(summary.tally.total)
     }
 
     /// 当前排序档下的完整榜单(排序作用于全量,再由调用方取前 5,
@@ -319,9 +319,7 @@ struct OverviewRankingsCard: View {
                 sharePercent: entry.share,
                 weekTokens: week?.tally.total,
                 monthTokens: month?.tally.total,
-                monthUSD: month.flatMap { summary in
-                    (summary.coverage ?? 1) > 0 ? summary.totalUSD : nil
-                },
+                monthUSD: month?.pricedTotalUSD,
                 activeDays: month?.activeDays,
                 priceNote: ModelPriceCheatSheet.caption(model: entry.model) ?? "")
         }
@@ -350,17 +348,10 @@ struct OverviewRankingsCard: View {
                     .frame(width: 132)
                     .help("用量 = \(range.scopeTitle)合计；等价 / 近7天来自近 30 天明细留存")
                     // 导出当前排序下的完整模型榜（不只前 5）为 CSV
-                    Button {
+                    DashboardExportButton(help: "导出模型榜 CSV（当前排序的完整榜单）",
+                                          disabled: rankings.models.isEmpty || !historyReader.canUseSnapshot) {
                         exportRankingsCSV()
-                    } label: {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.tertiary)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(rankings.models.isEmpty || !historyReader.canUseSnapshot)
-                    .help("导出模型榜 CSV（当前排序的完整榜单）")
-                    .accessibilityLabel("导出模型榜 CSV")
                 }
                 Text(activeSort == .usd ? "近 30 天 API 等价参考" : (activeSort == .week ? "近 7 天 Token 占比" : "\(range.scopeTitle) Token 占比"))
                     .font(Theme.footnoteFont).foregroundStyle(.secondary)
@@ -393,7 +384,7 @@ struct OverviewRankingsCard: View {
                                     ? previewSparkDay?.dayIndex : nil
                             )
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.borderless)
                         .help("查看该模型明细与 API 等价走势（7|30|90 天可切）")
                         .onHover { hovering in
                             if hovering {
@@ -411,7 +402,7 @@ struct OverviewRankingsCard: View {
                     .help("用量按所选范围排序；等价按近 30 天、近 7 天按各自窗口排序。小柱图为近 30 天逐日用量。没有对应窗口明细的行排在末尾，CSV 缺少的数值留空。模型榜保留采集来源；Cursor 只有订阅周期聚合，不混入模型榜。")
                 if let coverageNote {
                     Text(coverageNote)
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        .font(Theme.footnoteFont).foregroundStyle(.secondary)
                 }
 
                 Divider()
@@ -431,22 +422,16 @@ struct OverviewRankingsCard: View {
                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                 .background(filter.overviewColor.opacity(0.14), in: Capsule())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.borderless)
+                        .frame(minHeight: Theme.minimumControlSize)
                         .help("清除来源筛选（当前只看 \(filter.overviewName) 的 Skill 调用）")
                         .accessibilityLabel("清除 Skill 来源筛选")
                     }
                     // 导出完整 Skills 榜（不只前 5）为 CSV
-                    Button {
+                    DashboardExportButton(help: "导出 Skills 榜 CSV（完整榜单与近 13 周次数）",
+                                          disabled: skillRankings.entries.isEmpty || !historyReader.canUseSnapshot) {
                         exportSkillsCSV()
-                    } label: {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.tertiary)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(skillRankings.entries.isEmpty || !historyReader.canUseSnapshot)
-                    .help("导出 Skills 榜 CSV（完整榜单与近 13 周次数）")
-                    .accessibilityLabel("导出 Skills 榜 CSV")
                 }
                 if skillRankings.entries.isEmpty {
                     empty("Claude / Codex / Copilot 暂无可确认的 Skill 调用")
@@ -455,9 +440,6 @@ struct OverviewRankingsCard: View {
                 } else {
                     ForEach(Array(visibleSkills.prefix(5).enumerated()), id: \.element.id) {
                         index, entry in
-                        Button {
-                            onOpenSkill(entry, activeSkillSourceFilter, skillRankings.enabledSources)
-                        } label: {
                             skillRow(
                                 entry: entry,
                                 highlighted: (hoverSkill ?? previewSkillEntry)?.id == entry.id,
@@ -475,8 +457,6 @@ struct OverviewRankingsCard: View {
                                     skillSourceFilter = skillSourceFilter == source ? nil : source
                                 },
                                 activeFilter: activeSkillSourceFilter)
-                        }
-                        .buttonStyle(.plain)
                         .help("查看该 Skill 近 13 周调用走势与来源拆解")
                         .onHover { hovering in
                             if hovering {
@@ -565,8 +545,8 @@ struct OverviewRankingsCard: View {
     /// 悬停说明行:常驻一行,未悬停时显示占位提示,版面不跳动
     private var modelHoverCaption: some View {
         Text(currentHoverText)
-            .font(.system(size: 10)).foregroundStyle(.tertiary)
-            .lineLimit(1)
+            .font(Theme.footnoteFont).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -639,8 +619,8 @@ struct OverviewRankingsCard: View {
     /// 单周悬停最具体,优先于整行来源拆解。
     private var skillHoverCaption: some View {
         Text(currentSkillHoverText)
-            .font(.system(size: 10)).foregroundStyle(.tertiary)
-            .lineLimit(1)
+            .font(Theme.footnoteFont).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -693,6 +673,7 @@ struct OverviewRankingsCard: View {
                 if let sparkline {
                     ModelSparkline(
                         values: sparkline.map(\.tokens), color: source.overviewColor,
+                        period: "近 30 天", unit: "Token",
                         onDayHover: onDayHover, highlightOverride: highlightOverride)
                 }
             }
@@ -718,39 +699,47 @@ struct OverviewRankingsCard: View {
         activeFilter: HistorySource? = nil
     ) -> some View {
         VStack(spacing: 5) {
-            HStack(spacing: 7) {
+            Button {
+                onOpenSkill(entry, activeSkillSourceFilter, skillRankings.enabledSources)
+            } label: {
+              HStack(spacing: 7) {
                 Image(systemName: "sparkles")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.brand)
                 Text(entry.name).font(.system(size: 11, weight: .medium)).lineLimit(1)
-                ForEach(Array(entry.sources.prefix(2))) { sourceCount in
-                    // 徽标可点:只看该来源的 Skill 调用(再点/点胶囊还原)。
-                    // 行本身是 Button(进详情),嵌套 Button 的命中区各自独立。
+                Spacer(minLength: 4)
+                Text("\(Fmt.int(entry.invocationCount))次")
+                    .font(Theme.detailFont).foregroundStyle(.secondary).fixedSize()
+                Text("\(Int((entry.share * 100).rounded()))%")
+                    .font(Theme.rowTitleFont).frame(width: 35, alignment: .trailing)
+              }
+              .frame(minHeight: Theme.minimumControlSize)
+              .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            WrappingHStack(spacing: 4) {
+                ForEach(entry.sources) { sourceCount in
+                    // 来源筛选是独立按钮，不能嵌套在打开详情的按钮中。
                     Button {
                         onSourceTap?(sourceCount.source)
                     } label: {
                         sourceBadge(
                             sourceCount.source,
                             active: sourceCount.source == activeFilter)
+                            .frame(minHeight: Theme.minimumControlSize)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.borderless)
                     .help("只看 \(sourceCount.source.overviewName) 的 Skill 调用")
+                    .accessibilityLabel("筛选 \(sourceCount.source.overviewName) 的 Skill 调用")
+                    .accessibilityValue(sourceCount.source == activeFilter ? "已筛选" : "未筛选")
             }
-                if entry.sources.count > 2 {
-                    Text("+\(entry.sources.count - 2)")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-                Spacer(minLength: 4)
-                Text("\(Fmt.int(entry.invocationCount))次")
-                    .font(Theme.detailFont).foregroundStyle(.secondary).fixedSize()
-                Text("\(Int((entry.share * 100).rounded()))%")
-                    .font(Theme.rowTitleFont).frame(width: 35, alignment: .trailing)
             }
             HStack(spacing: 10) {
                 QuotaBar(progress: entry.share, tint: Theme.brand)
                 if let weekly {
                     ModelSparkline(
                         values: weekly.map(\.count), color: Theme.brand,
+                        period: "近 13 周", unit: "调用次数",
                         onDayHover: onWeekHover, highlightOverride: highlightOverride)
                 }
             }
@@ -780,6 +769,8 @@ struct OverviewRankingsCard: View {
 private struct ModelSparkline: View {
     let values: [Int]
     let color: Color
+    let period: String
+    let unit: String
     var onDayHover: ((Int?) -> Void)? = nil
     // 渲染夹具:强制提亮某根柱(离屏渲染无法模拟指针)
     var highlightOverride: Int? = nil
@@ -812,6 +803,14 @@ private struct ModelSparkline: View {
                 onDayHover(nil)
             }
         }
-        .accessibilityLabel("近 30 天日用量迷你趋势")
+        .accessibilityLabel("\(period)\(unit)迷你趋势")
+        .accessibilityValue(OverviewRankingsCard.sparklineSummary(values: values, period: period, unit: unit))
+        .help(OverviewRankingsCard.sparklineSummary(values: values, period: period, unit: unit) + "；点击所在行可查看完整明细")
+    }
+}
+
+extension OverviewRankingsCard {
+    static func sparklineSummary(values: [Int], period: String, unit: String) -> String {
+        "\(period)合计 \(Fmt.int(values.reduce(0, +))) \(unit)，峰值 \(Fmt.int(values.max() ?? 0)) \(unit)；完整明细可从所在行打开"
     }
 }

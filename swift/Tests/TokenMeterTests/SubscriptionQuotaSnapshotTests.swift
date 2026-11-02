@@ -2,6 +2,8 @@ import XCTest
 @testable import TokenMeter
 
 final class SubscriptionQuotaSnapshotTests: XCTestCase {
+    private let referenceDate = Date(timeIntervalSince1970: 1_760_000_000)
+
     func testCombinesSourcesInStableOrderAndUsesStableGroupIDs() throws {
         let codex = CodexRateLimits(
             limitId: "codex",
@@ -42,7 +44,8 @@ final class SubscriptionQuotaSnapshotTests: XCTestCase {
             weekly: nil
         )
 
-        let snapshot = SubscriptionQuotaSnapshot(codex: codex, kimi: kimi, ark: ark, zhipu: zhipu)
+        let snapshot = SubscriptionQuotaSnapshot(codex: codex, kimi: kimi, ark: ark, zhipu: zhipu,
+                                                 now: referenceDate)
 
         XCTAssertEqual(snapshot.groups.map(\.id), [
             "codex:subscription",
@@ -77,7 +80,7 @@ final class SubscriptionQuotaSnapshotTests: XCTestCase {
             asOf: Date()
         )
 
-        let group = SubscriptionQuotaSnapshot(codex: main).groups[0]
+        let group = SubscriptionQuotaSnapshot(codex: main, now: referenceDate).groups[0]
 
         XCTAssertEqual(group.id, "codex:subscription")
         XCTAssertEqual(group.subtitle, "PRO")
@@ -97,7 +100,7 @@ final class SubscriptionQuotaSnapshotTests: XCTestCase {
             planType: "pro",
             asOf: Date()
         )
-        XCTAssertEqual(SubscriptionQuotaSnapshot(codex: experimental).groups, [])
+        XCTAssertEqual(SubscriptionQuotaSnapshot(codex: experimental, now: referenceDate).groups, [])
     }
 
     func testKimiMapsSummaryAndSortedLimitsAndPreservesExtraUsage() throws {
@@ -138,7 +141,7 @@ final class SubscriptionQuotaSnapshotTests: XCTestCase {
             origin: .officialAPI
         )
 
-        let group = SubscriptionQuotaSnapshot(kimi: kimi).groups[0]
+        let group = SubscriptionQuotaSnapshot(kimi: kimi, now: referenceDate).groups[0]
 
         XCTAssertEqual(group.subtitle, "KIMI API")
         XCTAssertEqual(group.periods.map(\.label), ["5小时", "周", "周"])
@@ -193,7 +196,7 @@ final class SubscriptionQuotaSnapshotTests: XCTestCase {
         ]
         """#)
 
-        let groups = SubscriptionQuotaSnapshot(ark: ark).groups
+        let groups = SubscriptionQuotaSnapshot(ark: ark, now: referenceDate).groups
 
         XCTAssertEqual(groups.map(\.id), ["ark:agent-plan", "ark:coding-plan"])
         XCTAssertEqual(groups[0].subtitle, "MEDIUM")
@@ -237,7 +240,7 @@ final class SubscriptionQuotaSnapshotTests: XCTestCase {
             extraUsage: nil
         )
 
-        let snapshot = SubscriptionQuotaSnapshot(kimi: kimi, ark: ark)
+        let snapshot = SubscriptionQuotaSnapshot(kimi: kimi, ark: ark, now: referenceDate)
         let kimiReset = try XCTUnwrap(snapshot.groups[0].periods[0].resetAt)
         let arkReset = try XCTUnwrap(snapshot.groups[1].periods[0].resetAt)
         let calendar = Calendar(identifier: .gregorian)
@@ -286,7 +289,7 @@ final class SubscriptionQuotaSnapshotTests: XCTestCase {
             level: "pro"
         )
 
-        let group = SubscriptionQuotaSnapshot(zhipu: result).groups[0]
+        let group = SubscriptionQuotaSnapshot(zhipu: result, now: referenceDate).groups[0]
 
         XCTAssertEqual(group.id, "zhipu:subscription")
         XCTAssertEqual(group.source, .zhipu)
@@ -318,7 +321,7 @@ final class SubscriptionQuotaSnapshotTests: XCTestCase {
             level: "  "
         )
 
-        let group = SubscriptionQuotaSnapshot(zhipu: result).groups[0]
+        let group = SubscriptionQuotaSnapshot(zhipu: result, now: referenceDate).groups[0]
 
         XCTAssertEqual(group.periods.map(\.id), ["zhipu:subscription:five-hour"])
         XCTAssertEqual(group.periods[0].remainingPercent, 0)

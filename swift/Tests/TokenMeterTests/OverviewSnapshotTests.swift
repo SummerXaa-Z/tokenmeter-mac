@@ -37,9 +37,9 @@ final class OverviewSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.todayBySource[.claude], 180)
         XCTAssertEqual(snapshot.todayBySource[.codex], 200)
         XCTAssertEqual(snapshot.todayTotal, 380)
-        XCTAssertEqual(snapshot.periodBySource[.claude], 130)
-        XCTAssertEqual(snapshot.periodBySource[.codex], 220)
-        XCTAssertEqual(snapshot.periodTotal, 350)
+        XCTAssertEqual(snapshot.periodBySource[.claude], 230)
+        XCTAssertEqual(snapshot.periodBySource[.codex], 300)
+        XCTAssertEqual(snapshot.periodTotal, 530)
         XCTAssertEqual(snapshot.historyStartDate, "2026-08-11")
         XCTAssertEqual(snapshot.availableHistoryDays, 2)
         XCTAssertEqual(snapshot.profile.rangeSessions, 3)
@@ -47,7 +47,7 @@ final class OverviewSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.skillRankings.entries.map(\.name), ["shared-skill"])
         XCTAssertEqual(snapshot.skillRankings.entries.first?.invocationCount, 5)
         XCTAssertFalse(snapshot.trend.contains { $0.source == .cursor })
-        XCTAssertEqual(snapshot.trendTotal, 350)
+        XCTAssertEqual(snapshot.trendTotal, 530)
         XCTAssertEqual(snapshot.trendGranularity, .day)
         XCTAssertEqual(Set(snapshot.trend.map(\.date)).count, 7)
         XCTAssertNil(snapshot.deepSeekPlatformCost)
@@ -768,12 +768,12 @@ final class OverviewSnapshotTests: XCTestCase {
 
         let month = snapshot(.month)
         XCTAssertTrue(month.modelCoverageIsPartial)
-        XCTAssertEqual(month.modelCoverageNote, "按天明细自 9/20 起留存，更早的用量只计入工具合计。")
+        XCTAssertEqual(month.modelCoverageNote, "部分用量没有模型明细，只计入工具合计；API 等价和模型榜仅覆盖已知部分。")
         XCTAssertTrue(snapshot(.all).modelCoverageIsPartial)
         // 近 7 天从 09-19 起，09-19 有工具用量但没有模型明细
         XCTAssertTrue(snapshot(.week).modelCoverageIsPartial)
-        XCTAssertFalse(snapshot(.day).modelCoverageIsPartial)
-        XCTAssertNil(snapshot(.day).modelCoverageNote)
+        XCTAssertTrue(snapshot(.day).modelCoverageIsPartial)
+        XCTAssertNotNil(snapshot(.day).modelCoverageNote)
     }
 
     func testSubscriptionValueProratesMonthlyFeesOverCoveredDaysOnly() throws {

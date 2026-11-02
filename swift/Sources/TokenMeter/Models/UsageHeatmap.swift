@@ -217,7 +217,7 @@ enum UsageHeatmap {
                 estimator: APIReferencePricingCatalog.estimator,
                 referenceDate: APIReferencePricingCatalog.observedAt,
                 conversionRates: APIReferencePricingCatalog.conversionRatesToUSD)
-            if summary.total > 0 { result[date] = summary.total }
+            if let amount = summary.pricedTotal { result[date] = amount }
         }
         return result
     }

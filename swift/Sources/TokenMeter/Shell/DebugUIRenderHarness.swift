@@ -4,6 +4,72 @@ import SwiftUI
 #if DEBUG
 @MainActor
 enum DebugUIRenderHarness {
+    // Debug-only, opt-in synthetic scenarios for native interaction checks.
+    // The --ui-smoke-window boundary still isolates every collector and account.
+    static func smokeContent() -> AnyView {
+        let scenario = ProcessInfo.processInfo.arguments.first {
+            $0.hasPrefix("--ui-smoke-scenario=")
+        }?.replacingOccurrences(of: "--ui-smoke-scenario=", with: "")
+        let reader = HistorySnapshotReader(initial: .init(), read: { .init() })
+        switch scenario {
+        case "model-empty":
+            return AnyView(modelEmptyRangeFixture().environmentObject(reader))
+        case "roi":
+            return AnyView(roiSelectionFixture().environmentObject(reader))
+        case "eight-sources":
+            return AnyView(eightSourceTrendFixture().environmentObject(reader))
+        default: return AnyView(RootView())
+        }
+    }
+
+    private static func modelEmptyRangeFixture() -> some View {
+        let today = DateUtil.today()
+        let earlier = Calendar.current.date(byAdding: .day, value: -40, to: Date())
+            .map(DateUtil.key) ?? today
+        return CodingModelDetailView(
+            source: .codex, model: "gpt-5.4 · 仅40天前使用", onBack: {},
+            injectedFor: { days in
+                CodingModelDetail.summary(source: .codex, model: "gpt-5.4",
+                    liveDayModels: [earlier: ["gpt-5.4": .init(input: 2_000_000)]],
+                    todayKey: today, windowDays: days, allHistory: days == 0)
+            }, initialRange: .month)
+    }
+
+    private static func roiSelectionFixture() -> some View {
+        let monday = DateUtil.date(from: UsageHeatmap.mondayKey(of: Date(), calendar: .current)) ?? Date()
+        let points = [0.5, 1.2, 2.4, 0.8, 1.6, 3.0].enumerated().compactMap { index, multiple in
+            Calendar.current.date(byAdding: .weekOfYear, value: index - 6, to: monday).map {
+                SubscriptionROICurve.WeekPoint(weekOf: DateUtil.key($0),
+                    apiValueUSD: multiple * 10, feeUSD: 10)
+            }
+        }
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("订阅回本选择验证 · 示例数据").font(Theme.pageTitleFont)
+            SubscriptionROITrendChart(points: points)
+            Text("选择不同周；日期、倍数和金额应同时变化。")
+                .font(Theme.detailFont).foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }.padding(14)
+    }
+
+    private static func eightSourceTrendFixture() -> some View {
+        let sources = HistorySource.codingAgents
+        let days: [HistoryStore.DayPoint] = (0..<30).compactMap { offset in
+            guard let date = Calendar.current.date(byAdding: .day, value: offset - 29, to: Date())
+            else { return nil }
+            let totals = Dictionary(uniqueKeysWithValues: sources.enumerated().map { index, source in
+                (source, (index + 1) * (offset % 7 + 1) * 1_000_000)
+            })
+            return .init(date: DateUtil.key(date), bySource: totals, cost: 0)
+        }
+        let snapshot = OverviewSnapshot(selection: .init(sources: sources), range: .month,
+            history: days, streakHistory: days, deepSeek: nil, claude: nil, codex: nil,
+            openCode: nil, gemini: nil, copilot: nil, cursor: nil)
+        return ScrollView {
+            OverviewTrendCard(snapshot: snapshot, range: .month).padding(14)
+        }
+    }
+
     // 热力图 13|26 周档的合成数据页：本机留存未必有 26 周历史，
     // 用确定性周节律覆盖双倍列数下的布局（格宽收窄、月份标签、节律与脚注）。
     // 只在内存里构造 DayPoint，不写入真实按天留存。
@@ -418,6 +484,26 @@ enum DebugUIRenderHarness {
         }
     }
 
+    // 已过期的低余额不得继续显示百分比或触发节奏告警，且保留观测时间。
+    // 仅使用合成快照，不查询账号或本地真实会话。
+    private static func expiredQuotaFixture() -> some View {
+        let now = Date()
+        let limits = CodexRateLimits(
+            limitId: "codex", limitName: nil,
+            primary: CodexRateWindow(
+                usedPercent: 98, windowMinutes: 300, resetsAt: now.addingTimeInterval(-60)),
+            secondary: CodexRateWindow(
+                usedPercent: 96, windowMinutes: 10_080, resetsAt: now.addingTimeInterval(-120)),
+            planType: "pro", asOf: now.addingTimeInterval(-3600))
+        return VStack {
+            OverviewSubscriptionQuotaCard(
+                snapshot: SubscriptionQuotaSnapshot(codex: limits, now: now),
+                statuses: [.init(source: .codex, title: "Codex", loading: false, message: "")])
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+    }
+
     // API 等价 / 订阅回本 / 模型明细覆盖说明的合成数据页：本机数据未必同时
     // 出现缺价模型、人民币价、订阅月费与各倍数分支，用公开模型名固定覆盖。
     private static func costFixture() -> some View {
@@ -527,14 +613,16 @@ enum DebugUIRenderHarness {
                         referenceDate: APIReferencePricingCatalog.observedAt,
                         conversionRates: APIReferencePricingCatalog.conversionRatesToUSD),
                     subscriptionValue: SubscriptionValueSummary(
-                        monthlyFeeUSD: 120, days: 7, apiValueUSD: full.total),
+                        monthlyFeeUSD: 120, days: 7, apiValueUSD: full.total,
+                        priceCoverage: full.coverage),
                     roiCurve: roiFixture,
                     coverageNote: note)
-                // 回本 < 1 倍：提示按 API 付费更省
+                // 缺价时即使下限 < 1 倍，也不能断言按 API 付费更省。
                 OverviewAPICostCard(
                     summary: full, range: .week,
                     subscriptionValue: SubscriptionValueSummary(
-                        monthlyFeeUSD: 400, days: 7, apiValueUSD: full.total),
+                        monthlyFeeUSD: 400, days: 7, apiValueUSD: full.total,
+                        priceCoverage: full.coverage),
                     roiCurve: roiFixture)
                 // 未填订阅：引导去设置
                 OverviewAPICostCard(summary: sparse, range: .all)
@@ -885,7 +973,7 @@ enum DebugUIRenderHarness {
     static func render(appState: AppState, outputPath: String) {
         NSApp.setActivationPolicy(.accessory)
         let overviewOnly = ProcessInfo.processInfo.arguments.contains("--ui-render-overview-only")
-        if overviewOnly { PreviewData.seed(appState) }
+        PreviewData.seed(appState)
         let dir = URL(fileURLWithPath: outputPath)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
@@ -1010,8 +1098,16 @@ enum DebugUIRenderHarness {
             // 额度节奏/余额可用天数的合成数据页:本机未必有实时配额与平台消费,
             // 用固定快照覆盖"会提前用完 / 撑得到重置 / 余额偏低"各分支
             ("pace-fixture", hosting(Self.paceFixture(), height: 1100)),
+            ("quota-expired-fixture", hosting(Self.expiredQuotaFixture(), height: 420)),
             ("cost-fixture", hosting(Self.costFixture(), height: 2940)),
             ("model-detail-fixture", hosting(Self.modelDetailFixture(), height: 2400)),
+            ("model-empty-range-fixture", hosting(Self.modelEmptyRangeFixture())),
+            ("roi-selection-fixture", hosting(Self.roiSelectionFixture())),
+            ("eight-source-trend-fixture", hosting(Self.eightSourceTrendFixture())),
+            ("codex-scope-week", hosting(CodexView(onBack: {}, onSettings: {})
+                .environment(\.sourceUsageRange, .week))),
+            ("codex-scope-all", hosting(CodexView(onBack: {}, onSettings: {})
+                .environment(\.sourceUsageRange, .all))),
             ("skill-detail-fixture", hosting(Self.skillDetailFixture(), height: 640)),
             // 模型榜悬停预览的合成数据页:离屏渲染无法模拟指针悬停,
             // 用 previewRowId/previewTextOverride 强制某行进入悬停态(行高亮 +

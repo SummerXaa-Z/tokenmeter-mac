@@ -10,8 +10,8 @@ import Foundation
 // 2. 消息带 model 字段，可按模型分桶（Opus/Sonnet/Haiku/Fable…）。
 //
 // 文件扫描沿用 CodexUsage 的策略：全树枚举 + mtime 过滤 + 8MB chunk 流式
-// 读 + (size, mtime, calendar) 内存缓存。去重集合按文件维度保存在缓存里，跨文件重复
-// （罕见，仅 session 续写复制时出现）不处理。
+// 读 + (size, mtime, calendar) 内存缓存。稳定请求/工具调用标识在全扫描范围去重；
+// 会话副本和 fork 复制的旧请求只记一次，独立 subagent 的新请求仍保留。
 
 struct ClaudeDayUsage: Equatable, Identifiable {
     let date: String                  // "YYYY-MM-DD"
@@ -133,6 +133,8 @@ enum ClaudeUsage {
         let type: String?
         let timestamp: String?
         let requestId: String?
+        let sessionId: String?
+        let agentId: String?
         let cwd: String?
         let message: Message?
         struct Message: Decodable {
@@ -181,11 +183,22 @@ enum ClaudeUsage {
         let size: UInt64
         let mtime: Date
         let calendar: Calendar
-        let perDay: [String: Tally]
-        let perDayModel: [String: [String: Tally]]
-        let perDayProject: [String: [String: Tally]]
-        let perDayHour: [String: [Int: HourTally]] // day → hour → total + 去重值
-        let perDaySkill: [String: [String: Int]] // day → Skill 名 → 调用次数
+        let requests: [RequestUsage]
+        let skills: [SkillUsage]
+    }
+
+    private struct RequestUsage {
+        let timestamp: Date
+        let key: String
+        let session: String
+        let model: String
+        let project: String
+        let tally: Tally
+    }
+    private struct SkillUsage {
+        let timestamp: Date
+        let key: String
+        let name: String
     }
 
     private static var cache: [String: FileSummary] = [:]
@@ -218,6 +231,7 @@ enum ClaudeUsage {
         var hourMap: [Int: HourTally] = [:]
         var lastTotal = 0, lastOutput = 0, lastMessages = 0
         let todayKey = DateUtil.key(now)
+        var files: [(path: String, summary: FileSummary)] = []
 
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
         guard let walker = fm.enumerator(
@@ -260,63 +274,81 @@ enum ClaudeUsage {
                 readError = readError ?? "本地会话文件读取失败"
                 continue
             }
-            // 上周只累计三项合计，不进 days/models/projects（它们保持 7 天口径）
-            for (date, t) in summary.perDay where lastWeek.contains(date) {
+            files.append((file.path, summary))
+        }
+
+        var requests: [String: RequestUsage] = [:]
+        var skillRequests: [String: SkillUsage] = [:]
+        for file in files.sorted(by: { $0.path < $1.path }) {
+            for request in file.summary.requests {
+                if let old = requests[request.key] {
+                    // 恢复副本可能已完成更完整的流式输出；同一请求只留完整值，
+                    // 不是将重复的 usage 相加。时间仍采用原始请求的最早记录。
+                    let oldTotal = old.tally.input + old.tally.cacheCreate + old.tally.cacheRead + old.tally.output
+                    let newTotal = request.tally.input + request.tally.cacheCreate + request.tally.cacheRead + request.tally.output
+                    let complete = newTotal > oldTotal ? request : old
+                    requests[request.key] = RequestUsage(
+                        timestamp: min(old.timestamp, request.timestamp), key: old.key,
+                        session: old.session, model: complete.model,
+                        project: complete.project, tally: complete.tally)
+                } else {
+                    requests[request.key] = request
+                }
+            }
+            for skill in file.summary.skills {
+                if let old = skillRequests[skill.key], old.timestamp <= skill.timestamp { continue }
+                skillRequests[skill.key] = skill
+            }
+        }
+        var daySessions: [String: Set<String>] = [:]
+        for request in requests.values {
+            let date = DateUtil.key(request.timestamp)
+            let t = request.tally
+            // 上周只累计三项合计，不进 days/models/projects。
+            if lastWeek.contains(date) {
                 lastTotal += t.input + t.cacheCreate + t.cacheRead + t.output
                 lastOutput += t.output
                 lastMessages += t.messages
             }
-            var counted = false
-            for (date, t) in summary.perDay where window.contains(date) {
-                var d = dayMap[date] ?? ClaudeDayUsage(date: date)
-                d.inputTokens += t.input
-                d.cacheCreationTokens += t.cacheCreate
-                d.cacheReadTokens += t.cacheRead
-                d.outputTokens += t.output
-                d.messageCount += t.messages
-                d.deepseekBackendTokens += t.deepseekBackend
-                d.sessionCount += 1
-                dayMap[date] = d
-                counted = true
+            guard window.contains(date) else { continue }
+            var d = dayMap[date] ?? ClaudeDayUsage(date: date)
+            d.inputTokens += t.input
+            d.cacheCreationTokens += t.cacheCreate
+            d.cacheReadTokens += t.cacheRead
+            d.outputTokens += t.output
+            d.messageCount += t.messages
+            d.deepseekBackendTokens += t.deepseekBackend
+            dayMap[date] = d
+            daySessions[date, default: []].insert(request.session)
+            let total = t.input + t.cacheCreate + t.cacheRead + t.output
+            var m = modelMap[request.model] ?? ClaudeModelUsage(model: request.model)
+            m.totalTokens += total
+            m.inputTokens += t.input
+            m.cacheCreationTokens += t.cacheCreate
+            m.cacheReadTokens += t.cacheRead
+            m.outputTokens += t.output
+            m.messageCount += t.messages
+            modelMap[request.model] = m
+            dayModels[date, default: [:]][request.model, default: .init()] += ModelTokenTally(
+                input: t.input, cached: t.cacheRead, cacheWrite: t.cacheCreate, output: t.output)
+            var p = projectMap[request.project] ?? ClaudeProjectUsage(project: request.project)
+            p.totalTokens += total
+            p.messageCount += t.messages
+            projectMap[request.project] = p
+            if date == todayKey {
+                let hour = calendar.component(.hour, from: request.timestamp)
+                var aggregate = hourMap[hour] ?? HourTally()
+                aggregate.total += total
+                aggregate.deepseekBackend += t.deepseekBackend
+                hourMap[hour] = aggregate
             }
-            for (date, skills) in summary.perDaySkill where window.contains(date) {
-                for (name, count) in skills {
-                    skillMap[name, default: 0] += count
-                    daySkills[date, default: [:]][name, default: 0] += count
-                }
-            }
-            guard counted else { continue }
-            for (date, models) in summary.perDayModel where window.contains(date) {
-                for (model, t) in models {
-                    var m = modelMap[model] ?? ClaudeModelUsage(model: model)
-                    m.totalTokens += t.input + t.cacheCreate + t.cacheRead + t.output
-                    m.inputTokens += t.input
-                    m.cacheCreationTokens += t.cacheCreate
-                    m.cacheReadTokens += t.cacheRead
-                    m.outputTokens += t.output
-                    m.messageCount += t.messages
-                    modelMap[model] = m
-                    dayModels[date, default: [:]][model, default: .init()] += ModelTokenTally(
-                        input: t.input, cached: t.cacheRead,
-                        cacheWrite: t.cacheCreate, output: t.output)
-                }
-            }
-            for (date, projects) in summary.perDayProject where window.contains(date) {
-                for (project, t) in projects {
-                    var p = projectMap[project] ?? ClaudeProjectUsage(project: project)
-                    p.totalTokens += t.input + t.cacheCreate + t.cacheRead + t.output
-                    p.messageCount += t.messages
-                    projectMap[project] = p
-                }
-            }
-            if let hours = summary.perDayHour[todayKey] {
-                for (hour, tally) in hours {
-                    var aggregate = hourMap[hour] ?? HourTally()
-                    aggregate.total += tally.total
-                    aggregate.deepseekBackend += tally.deepseekBackend
-                    hourMap[hour] = aggregate
-                }
-            }
+        }
+        for (date, ids) in daySessions { dayMap[date]?.sessionCount = ids.count }
+        for skill in skillRequests.values {
+            let date = DateUtil.key(skill.timestamp)
+            guard window.contains(date) else { continue }
+            skillMap[skill.name, default: 0] += 1
+            daySkills[date, default: [:]][skill.name, default: 0] += 1
         }
 
         let days = dayMap.values.sorted { $0.date < $1.date }
@@ -384,14 +416,11 @@ enum ClaudeUsage {
         let chunkSize = 8 * 1024 * 1024
         let decoder = JSONDecoder()
 
-        var perDay: [String: Tally] = [:]
-        var perDayModel: [String: [String: Tally]] = [:]
-        var perDayProject: [String: [String: Tally]] = [:]
-        var perDayHour: [String: [Int: HourTally]] = [:]
-        var perDaySkill: [String: [String: Int]] = [:]
-        var seen = Set<String>()      // (message.id|requestId) 去重，文件内
+        var requests: [RequestUsage] = []
+        var skills: [SkillUsage] = []
         var seenSkillCalls = Set<String>() // tool_use.id 去重，避免流式重复行
         var carry = Data()
+        var lineNumber = 0
 
         var reachedEnd = false
         while !reachedEnd {
@@ -420,6 +449,7 @@ enum ClaudeUsage {
                 }
                 let line = data[lineStart..<nl]
                 lineStart = data.index(after: nl)
+                lineNumber += 1
                 guard line.range(of: usageMarker) != nil || line.range(of: skillMarker) != nil,
                       let row = try? decoder.decode(Line.self, from: line),
                       row.type == "assistant",
@@ -428,76 +458,42 @@ enum ClaudeUsage {
 
                 // Claude 原生 Skill 工具提供结构化名称。只保留名称与次数；同一
                 // tool_use 在流式 transcript 中重复出现时按 id 去重。
-                let day = DateUtil.key(ts)
                 for item in row.message?.content ?? []
                 where item.type == "tool_use" && item.name == "Skill" {
                     guard let name = normalizedSkillName(item.input?.skill ?? item.input?.name)
                     else { continue }
-                    if let id = item.id, !id.isEmpty {
-                        guard seenSkillCalls.insert(id).inserted else { continue }
-                    }
-                    perDaySkill[day, default: [:]][name, default: 0] += 1
+                    let key = item.id.flatMap { $0.isEmpty ? nil : "tool:\($0)" }
+                        ?? "file:\(file.path)|\(lineNumber)|\(name)"
+                    guard seenSkillCalls.insert(key).inserted else { continue }
+                    skills.append(SkillUsage(timestamp: ts, key: key, name: name))
                 }
 
                 guard let usage = row.message?.usage else { continue }
-
-                // 流式输出会把同一条消息写多行，按 (message.id, requestId) 只记一次
-                let key = "\(row.message?.id ?? "")|\(row.requestId ?? "")"
-                if key != "|" {
-                    guard seen.insert(key).inserted else { continue }
-                }
 
                 let rawModel = row.message?.model ?? ""
                 let isDeepseek = rawModel.hasPrefix("deepseek")
                 let msgTotal = (usage.inputTokens ?? 0) + (usage.cacheCreationInputTokens ?? 0)
                     + (usage.cacheReadInputTokens ?? 0) + (usage.outputTokens ?? 0)
-
-                var t = perDay[day] ?? Tally()
-                t.input += usage.inputTokens ?? 0
-                t.cacheCreate += usage.cacheCreationInputTokens ?? 0
-                t.cacheRead += usage.cacheReadInputTokens ?? 0
-                t.output += usage.outputTokens ?? 0
-                t.messages += 1
-                if isDeepseek { t.deepseekBackend += msgTotal }
-                perDay[day] = t
-
-                let model = Self.displayModel(row.message?.model)
-                var models = perDayModel[day] ?? [:]
-                var m = models[model] ?? Tally()
-                m.input += usage.inputTokens ?? 0
-                m.cacheCreate += usage.cacheCreationInputTokens ?? 0
-                m.cacheRead += usage.cacheReadInputTokens ?? 0
-                m.output += usage.outputTokens ?? 0
-                m.messages += 1
-                models[model] = m
-                perDayModel[day] = models
-
-                let project = Self.displayProject(row.cwd)
-                var projects = perDayProject[day] ?? [:]
-                var p = projects[project] ?? Tally()
-                p.input += usage.inputTokens ?? 0
-                p.cacheCreate += usage.cacheCreationInputTokens ?? 0
-                p.cacheRead += usage.cacheReadInputTokens ?? 0
-                p.output += usage.outputTokens ?? 0
-                p.messages += 1
-                projects[project] = p
-                perDayProject[day] = projects
-
-                let lineTotal = (usage.inputTokens ?? 0) + (usage.cacheCreationInputTokens ?? 0)
-                    + (usage.cacheReadInputTokens ?? 0) + (usage.outputTokens ?? 0)
-                let hour = Calendar.current.component(.hour, from: ts)
-                var hourly = perDayHour[day] ?? [:]
-                var tally = hourly[hour] ?? HourTally()
-                tally.total += lineTotal
-                if isDeepseek { tally.deepseekBackend += lineTotal }
-                hourly[hour] = tally
-                perDayHour[day] = hourly
+                let stableKey = "\(row.message?.id ?? "")|\(row.requestId ?? "")"
+                let key = stableKey == "|" ? "file:\(file.path)|\(lineNumber)" : "request:\(stableKey)"
+                // 子代理通常共享父 sessionId，agentId/标准 subagents 文件名保留
+                // 独立会话身份；复制出来的父请求本身仍按 request key 合并。
+                let agent = row.agentId ?? (file.deletingLastPathComponent().lastPathComponent == "subagents"
+                    ? file.deletingPathExtension().lastPathComponent : "")
+                let session = row.sessionId.flatMap { $0.isEmpty ? nil : "session:\($0)|\(agent)" }
+                    ?? "file:\(file.path)"
+                requests.append(RequestUsage(
+                    timestamp: ts, key: key, session: session,
+                    model: Self.displayModel(row.message?.model), project: Self.displayProject(row.cwd),
+                    tally: Tally(input: usage.inputTokens ?? 0,
+                                 cacheCreate: usage.cacheCreationInputTokens ?? 0,
+                                 cacheRead: usage.cacheReadInputTokens ?? 0,
+                                 output: usage.outputTokens ?? 0, messages: 1,
+                                 deepseekBackend: isDeepseek ? msgTotal : 0)))
             }
         }
         return FileSummary(size: size, mtime: mtime, calendar: calendar,
-                           perDay: perDay, perDayModel: perDayModel,
-                           perDayProject: perDayProject, perDayHour: perDayHour,
-                           perDaySkill: perDaySkill)
+                           requests: requests, skills: skills)
     }
 
     private static func normalizedSkillName(_ value: String?) -> String? {

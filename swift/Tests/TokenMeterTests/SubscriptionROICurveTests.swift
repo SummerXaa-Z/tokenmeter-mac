@@ -2,6 +2,15 @@ import XCTest
 @testable import TokenMeter
 
 final class SubscriptionROICurveTests: XCTestCase {
+    func testChartSelectionMatchesCompleteWeekKeyAcrossYears() throws {
+        let points = [
+            SubscriptionROICurve.WeekPoint(weekOf: "2025-09-22", apiValueUSD: 2, feeUSD: 1),
+            SubscriptionROICurve.WeekPoint(weekOf: "2026-09-22", apiValueUSD: 9, feeUSD: 1),
+        ]
+        XCTAssertEqual(SubscriptionROITrendChart.selectedPoint(in: points, key: "2025-09-22")?.apiValueUSD, 2)
+        XCTAssertEqual(SubscriptionROITrendChart.selectedPoint(in: points, key: "2026-09-22")?.apiValueUSD, 9)
+        XCTAssertEqual(SubscriptionROITrendChart.selectedPoint(in: points, key: nil)?.weekOf, "2026-09-22")
+    }
     private func modelDay(
         _ date: String, source: HistorySource = .kimi,
         _ models: [String: ModelTokenTally] = ["kimi-k2.6": .init(output: 1_000_000)]

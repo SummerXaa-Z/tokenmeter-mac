@@ -18,9 +18,19 @@ final class HistorySnapshotReader: ObservableObject {
     @Published private(set) var error: String?
     @Published private(set) var hasSuccessfulRead: Bool
     @Published private(set) var completion: Completion?
-    var canUseSnapshot: Bool { hasSuccessfulRead && !loading && error == nil }
+    @Published var writesPending = false
+    @Published private(set) var requiredRevision: UInt?
+    private var successfulRevision: UInt?
+    private var needsRevisionRead: Bool {
+        requiredRevision != nil && successfulRevision != requiredRevision
+    }
+    var canUseSnapshot: Bool {
+        hasSuccessfulRead && !loading && !writesPending && error == nil && !needsRevisionRead
+    }
     var unavailableMessage: String {
-        error ?? (loading ? "历史正在读取，请稍后重试。" : "历史尚未成功读取，请刷新后重试。")
+        error ?? (writesPending ? "历史正在保存，请稍后重试。"
+            : (loading ? "历史正在读取，请稍后重试。"
+                : (needsRevisionRead ? "历史正在更新，请稍后重试。" : "历史尚未成功读取，请刷新后重试。")))
     }
     private let read: () async throws -> Snapshot
     private var requestedRevision: UInt?
@@ -47,7 +57,26 @@ final class HistorySnapshotReader: ObservableObject {
         report(value.succeeded)
     }
 
-    func refresh(revision: UInt, force: Bool = false) async {
+    // revision 换代立即失效，不能等 flush/debounce 后才禁用旧历史导出。
+    // 初始注入夹具未绑定 revision 时仍可使用；生产由 RootView 显式绑定。
+    func requireRevision(_ revision: UInt) {
+        guard requiredRevision != revision else { return }
+        if let requiredRevision, revision < requiredRevision { return }
+        requiredRevision = revision
+        generation &+= 1
+        requestedRevision = nil
+        pending = nil
+        loading = false
+        completion = nil
+    }
+
+    func refresh(
+        revision: UInt, force: Bool = false,
+        read overrideRead: (() async throws -> Snapshot)? = nil
+    ) async {
+        requireRevision(revision)
+        // 已取消的旧视图等待不能把所需版本退回去。
+        guard requiredRevision == revision else { return }
         if !force, requestedRevision == revision {
             await pending?.value
             return
@@ -55,6 +84,7 @@ final class HistorySnapshotReader: ObservableObject {
         requestedRevision = revision
         generation &+= 1
         let request = generation
+        let read = overrideRead ?? self.read
         loading = true
         let task = Task { [weak self, read] in
             do {
@@ -62,6 +92,7 @@ final class HistorySnapshotReader: ObservableObject {
                 guard let self, request == self.generation else { return }
                 self.snapshot = value
                 self.hasSuccessfulRead = true
+                self.successfulRevision = revision
                 self.error = nil
                 self.loading = false
                 self.completion = Completion(sequence: request, succeeded: true)

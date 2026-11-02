@@ -4,6 +4,7 @@ import SwiftUI
 // OverviewSnapshot，具体渲染在 OverviewCards，避免继续膨胀成单体 View。
 struct OverviewView: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.usageNow) private var now
     @EnvironmentObject private var historyReader: HistorySnapshotReader
     let range: UsageHistoryRange
     let sources: [Provider]
@@ -32,9 +33,9 @@ struct OverviewView: View {
                     range: range,
                     entries: entries,
                     onOpen: onOpenSource,
-                    history: history,
+                    history: data.mergedHistory,
                     participants: Set(sourceSelection.sources),
-                    collectionStatuses: collectionStatuses
+                    collectionStatuses: collectionStatuses(for: data)
                 )
                 if sources.contains(.deepseek) {
                     OverviewDeepSeekPlatformCard(
@@ -63,7 +64,7 @@ struct OverviewView: View {
                         coverageNote: data.modelCoverageNote,
                         onOpenModel: onOpenModel,
                         onOpenSkill: onOpenSkill,
-                        persisted: modelHistory
+                        persisted: data.mergedModelHistory
                     )
                     if data.apiReferenceCost.totalTokens > 0 {
                         DisclosureGroup("费用与订阅明细") {
@@ -81,15 +82,15 @@ struct OverviewView: View {
                     }
                     OverviewProfileCard(profile: data.profile, range: range)
                 }
-                if !history.isEmpty {
+                if !data.mergedHistory.isEmpty {
                     OverviewHeatmapCard(
-                        history: history,
+                        history: data.mergedHistory,
                         participants: Set(sourceSelection.sources),
-                        persisted: modelHistory
+                        persisted: data.mergedModelHistory
                     )
                     DisclosureGroup("周期对比") {
                         OverviewCompareCard(
-                            history: history,
+                            history: data.mergedHistory,
                             participants: Set(sourceSelection.sources)
                         )
                     }
@@ -118,7 +119,9 @@ struct OverviewView: View {
                 refreshing = true
                 Task {
                     await loadSources(force: true)
-                    await historyReader.refresh(revision: state.historyRevision, force: true)
+                    await historyReader.refresh(revision: state.historyRevision, force: true, read: {
+                        try await state.readPersistedHistory()
+                    })
                     refreshing = false
                 }
             },
@@ -146,19 +149,20 @@ struct OverviewView: View {
             qwen: state.qwen.result,
             cursor: state.cursor.result,
             modelHistory: modelHistory,
-            subscriptionPlans: subscriptionPlans
+            subscriptionPlans: subscriptionPlans,
+            todayKey: DateUtil.key(now)
         )
     }
 
     private func toolEntries(for snapshot: OverviewSnapshot) -> [OverviewToolEntry] {
         return sources.compactMap { provider in
             guard let source = provider.codingHistorySource else { return nil }
-            let status = collectionStatus(for: provider)
+            let status = collectionStatus(for: provider, snapshot: snapshot)
             let tokens = snapshot.periodBySource[source] ?? 0
             guard tokens > 0 || status.phase == .loading || status.phase == .failed else { return nil }
             let detail: String
             switch status.phase {
-            case .loading: detail = "正在读取用量…"
+            case .loading: detail = status.awaitingToday && !status.loading ? "今日尚未刷新" : "正在读取用量…"
             case .failed: detail = status.hasResult ? "读取失败，保留上次成功数据" : (status.error ?? "读取失败")
             case .ready, .unavailable: detail = self.detail(for: provider)
             }
@@ -171,27 +175,15 @@ struct OverviewView: View {
         }
     }
 
-    private var collectionStatuses: [OverviewSourceCollectionStatus] {
-        sources.filter { $0.codingHistorySource != nil }.map(collectionStatus)
+    private func collectionStatuses(for snapshot: OverviewSnapshot) -> [OverviewSourceCollectionStatus] {
+        sources.filter { $0.codingHistorySource != nil }.map { collectionStatus(for: $0, snapshot: snapshot) }
     }
 
-    private func collectionStatus(for provider: Provider) -> OverviewSourceCollectionStatus {
-        func status<T>(_ cache: SourceCache<T>) -> OverviewSourceCollectionStatus {
-            OverviewSourceCollectionStatus(
-                provider: provider, loading: cache.loading, hasResult: cache.result != nil,
-                error: cache.error, available: provider.available)
-        }
-        switch provider {
-        case .claude: return status(state.claude)
-        case .codex: return status(state.codex)
-        case .kimi: return status(state.kimi)
-        case .opencode: return status(state.opencode)
-        case .gemini: return status(state.gemini)
-        case .copilot: return status(state.copilot)
-        case .qwen: return status(state.qwen)
-        case .cursor: return status(state.cursor)
-        case .deepseek: return .init(provider: provider, loading: false, hasResult: false, error: nil, available: false)
-        }
+    private func collectionStatus(for provider: Provider, snapshot: OverviewSnapshot) -> OverviewSourceCollectionStatus {
+        state.usageCollectionStatus(provider: provider, range: range,
+            todayKnown: provider.codingHistorySource.map {
+                snapshot.confirmedTodaySources.contains($0)
+            } ?? false)
     }
 
     private func detail(for provider: Provider) -> String {
@@ -207,9 +199,13 @@ struct OverviewView: View {
             return "近 7 天 \(Fmt.int(result.weekSessions)) 会话 · \(Fmt.int(result.weekMessages)) 请求"
         case .codex:
             if let limits = state.codexRateLimits {
+                let now = Date()
                 let values = [limits.primary, limits.secondary].compactMap { window -> String? in
                     guard let window else { return nil }
-                    return "\(Self.windowName(window.windowMinutes))剩余 \(Int(max(100 - window.usedPercent, 0)))%"
+                    guard let remaining = QuotaWindowFreshness.remainingPercent(window, now: now) else {
+                        return "\(Self.windowName(window.windowMinutes))额度待刷新"
+                    }
+                    return "\(Self.windowName(window.windowMinutes))剩余 \(Int(remaining))%"
                 }
                 if !values.isEmpty { return values.joined(separator: " · ") }
             }
@@ -271,7 +267,9 @@ struct OverviewView: View {
             codex: state.codexEnabled ? state.codexRateLimits : nil,
             kimi: state.kimiQuota.result,
             ark: state.arkPlanQuota.result,
-            zhipu: state.zhipuQuota.result
+            zhipu: state.zhipuQuota.result,
+            kimiObservedAt: state.kimiQuota.succeededAt,
+            zhipuObservedAt: state.zhipuQuota.succeededAt
         )
     }
 

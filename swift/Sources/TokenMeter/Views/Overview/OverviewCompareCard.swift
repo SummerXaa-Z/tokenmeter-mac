@@ -25,26 +25,25 @@ struct OverviewCompareCard: View {
                     Label("\(period.title)（全部 Coding 来源）", systemImage: "arrow.up.arrow.down")
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
+                    DashboardExportButton(
+                        help: "导出当前周期环比 CSV（合计与各来源本期/上期/环比）",
+                        disabled: rows.isEmpty || !historyReader.canUseSnapshot
+                    ) {
+                        exportCSV(compare: compare)
+                    }
+                    .accessibilityLabel("导出环比 CSV")
+                }
+                HStack {
                     Picker("周期", selection: $period) {
                         Text("周").tag(PeriodCompare.Period.week)
                         Text("近7天").tag(PeriodCompare.Period.rolling7)
                         Text("月").tag(PeriodCompare.Period.month)
                     }
                     .pickerStyle(.segmented)
-                    .controlSize(.mini)
-                    .frame(width: 104)
-                    // 导出当前周期的环比表(合计 + 各来源,附口径行)
-                    Button {
-                        exportCSV(compare: compare)
-                    } label: {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(rows.isEmpty || !historyReader.canUseSnapshot)
-                    .help("导出当前周期环比 CSV（合计与各来源本期/上期/环比）")
-                    .accessibilityLabel("导出环比 CSV")
+                    .controlSize(.small)
+                    .labelsHidden()
+                    .frame(width: 176)
+                    Spacer()
                 }
                 if rows.isEmpty {
                     Text("本周期与上一周期暂无 Coding 用量记录")
@@ -60,7 +59,8 @@ struct OverviewCompareCard: View {
                             this: row.this, last: row.last, emphasized: false)
                     }
                     Text("\(period.footnote)；DeepSeek 平台账户不计入。")
-                        .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                        .font(Theme.footnoteFont).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
                     ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
                 }

@@ -44,4 +44,22 @@ final class ChartHoverPartsTests: XCTestCase {
         XCTAssertTrue(result.visible.isEmpty)
         XCTAssertEqual(result.overflowCount, 0)
     }
+
+    func testDateAxisExplicitSamplingKeepsEndsAndBoundsTickCount() {
+        let keys = (1...30).map { String(format: "2026-09-%02d", $0) }
+        let sampled = ChartAxisTicks.sampledKeys(Array(keys.reversed()) + [keys[0]], maximumCount: 6)
+        XCTAssertEqual(sampled.count, 6)
+        XCTAssertEqual(sampled.first, keys.first)
+        XCTAssertEqual(sampled.last, keys.last)
+        XCTAssertEqual(sampled, sampled.sorted())
+        XCTAssertEqual(Set(sampled).count, 6)
+        XCTAssertEqual(ChartAxisTicks.sampledKeys(keys, maximumCount: 1), [keys.last!])
+        XCTAssertTrue(ChartAxisTicks.sampledKeys(keys, maximumCount: 0).isEmpty)
+    }
+
+    func testHourlyMoneyUsesDayBucketNotHourTrendIdentity() {
+        XCTAssertEqual(OverviewTrendCard.hourlyDateKey("2026-10-03T07"), "2026-10-03")
+        XCTAssertEqual(OverviewTrendCard.hourlyDateKey("2026-10-03"), "2026-10-03")
+        XCTAssertNil(OverviewTrendCard.hourlyDateKey("missing-date"))
+    }
 }

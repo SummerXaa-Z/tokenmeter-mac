@@ -167,10 +167,134 @@ final class GeminiUsageTests: XCTestCase {
         XCTAssertEqual(result.weekMessages, 1)
     }
 
+    func testNewestConfirmedEmptySessionSupersedesOlderNonEmptyCopy() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let chats = try makeChats(root: root, project: "synthetic-project")
+        let old = chats.appendingPathComponent("old.jsonl")
+        try writeJSONLines([
+            ["sessionId": "shared-session"],
+            geminiMessage(id: "old-message", timestamp: "2026-08-12T09:00:00Z", input: 17),
+        ], to: old)
+        let empty = chats.appendingPathComponent("empty.json")
+        try JSONSerialization.data(withJSONObject: ["sessionId": "shared-session", "messages": []])
+            .write(to: empty)
+        try FileManager.default.setAttributes([.modificationDate: fixedNow.addingTimeInterval(-60)],
+                                             ofItemAtPath: old.path)
+        try FileManager.default.setAttributes([.modificationDate: fixedNow], ofItemAtPath: empty.path)
+
+        let result = try GeminiUsage.load(sessionsRoot: root, now: fixedNow, calendar: utcCalendar)
+
+        XCTAssertEqual(result.weekTotal, 0)
+        XCTAssertEqual(result.weekMessages, 0)
+        XCTAssertEqual(result.weekSessions, 0)
+        XCTAssertTrue(result.models.isEmpty)
+        XCTAssertTrue(result.dayModels.isEmpty)
+    }
+
+    func testLegacyEmptySessionIdentifiersKeepIndependentFilesSeparate() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let chats = try makeChats(root: root, project: "synthetic-project")
+        for name in ["a", "b"] {
+            let object: [String: Any] = ["sessionId": "", "messages": [
+                geminiMessage(id: "same-id", timestamp: "2026-08-12T09:00:00Z", input: 7),
+            ]]
+            try JSONSerialization.data(withJSONObject: object).write(to: chats.appendingPathComponent("\(name).json"))
+        }
+
+        let result = try GeminiUsage.load(sessionsRoot: root, now: fixedNow, calendar: utcCalendar)
+
+        XCTAssertEqual(result.weekTotal, 14)
+        XCTAssertEqual(result.weekMessages, 2)
+        XCTAssertEqual(result.today?.sessionCount, 2)
+    }
+
     func testCollectorRegistryIncludesGeminiCLI() throws {
         let descriptor = try XCTUnwrap(LocalUsageCollectorRegistry.collector(for: .gemini))
         XCTAssertEqual(descriptor.displayName, "Gemini CLI")
         XCTAssertEqual(descriptor.dataPath.lastPathComponent, "tmp")
+    }
+
+    func testMalformedLegacyJSONFailsWholeScanAndRecoversWithoutCachingEmpty() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let chats = try makeChats(root: root, project: "synthetic-project")
+        let damaged = chats.appendingPathComponent("damaged-private-name.json")
+        try Data("{broken synthetic session".utf8).write(to: damaged)
+        try writeJSONLines([
+            ["sessionId": "healthy"],
+            geminiMessage(id: "healthy-message", timestamp: "2026-08-12T09:00:00Z", input: 5),
+        ], to: chats.appendingPathComponent("healthy.jsonl"))
+
+        XCTAssertThrowsError(try GeminiUsage.load(sessionsRoot: root, now: fixedNow, calendar: utcCalendar)) { error in
+            guard let typed = error as? GeminiUsageError, case .invalidLegacySession = typed else {
+                return XCTFail("Expected a typed malformed-session failure")
+            }
+            XCTAssertFalse(error.localizedDescription.contains("damaged-private-name"))
+            XCTAssertFalse(error.localizedDescription.contains(root.path))
+        }
+        let repaired: [String: Any] = ["sessionId": "repaired", "messages": [
+            geminiMessage(id: "repaired-message", timestamp: "2026-08-12T10:00:00Z", input: 7),
+        ]]
+        try JSONSerialization.data(withJSONObject: repaired).write(to: damaged)
+
+        let recovered = try GeminiUsage.load(sessionsRoot: root, now: fixedNow, calendar: utcCalendar)
+        XCTAssertEqual(recovered.weekTotal, 12)
+    }
+
+    func testOversizedLegacyJSONFailsInsteadOfReturningPartialSuccess() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let chats = try makeChats(root: root, project: "synthetic-project")
+        let large = chats.appendingPathComponent("large.json")
+        try Data("{}".utf8).write(to: large)
+        let handle = try FileHandle(forWritingTo: large)
+        try handle.truncate(atOffset: 32 * 1024 * 1024 + 1)
+        try handle.close()
+        try writeJSONLines([
+            ["sessionId": "healthy"],
+            geminiMessage(id: "healthy-message", timestamp: "2026-08-12T09:00:00Z", input: 5),
+        ], to: chats.appendingPathComponent("healthy.jsonl"))
+
+        XCTAssertThrowsError(try GeminiUsage.load(sessionsRoot: root, now: fixedNow, calendar: utcCalendar)) { error in
+            guard let typed = error as? GeminiUsageError, case .legacyFileTooLarge = typed else {
+                return XCTFail("Expected a typed size-limit failure, not a successful 5-token partial scan")
+            }
+            XCTAssertFalse(error.localizedDescription.contains(large.path))
+        }
+    }
+
+    func testLegacyJSONAtExactSafetyLimitStillParses() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let chats = try makeChats(root: root, project: "synthetic-project")
+        let object: [String: Any] = ["sessionId": "at-limit", "messages": [
+            geminiMessage(id: "message", timestamp: "2026-08-12T09:00:00Z", input: 9),
+        ]]
+        var data = try JSONSerialization.data(withJSONObject: object)
+        data.append(Data(repeating: 0x20, count: 32 * 1024 * 1024 - data.count))
+        try data.write(to: chats.appendingPathComponent("at-limit.json"))
+
+        let result = try GeminiUsage.load(sessionsRoot: root, now: fixedNow, calendar: utcCalendar)
+
+        XCTAssertEqual(result.weekTotal, 9)
+    }
+
+    func testLegacyConfirmedEmptyIsDistinctFromUnrecognizedJSONShape() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let chats = try makeChats(root: root, project: "synthetic-project")
+        let file = chats.appendingPathComponent("empty.json")
+        try Data("{\"sessionId\":\"empty\",\"messages\":[]}".utf8).write(to: file)
+        XCTAssertEqual(try GeminiUsage.load(sessionsRoot: root, now: fixedNow, calendar: utcCalendar).weekTotal, 0)
+        try Data("{\"unknown_messages\":[]}".utf8).write(to: file)
+
+        XCTAssertThrowsError(try GeminiUsage.load(sessionsRoot: root, now: fixedNow, calendar: utcCalendar)) { error in
+            guard let typed = error as? GeminiUsageError, case .invalidLegacySession = typed else {
+                return XCTFail("Unrecognized schema is not a confirmed empty session")
+            }
+        }
     }
 
     private var fixedNow: Date {

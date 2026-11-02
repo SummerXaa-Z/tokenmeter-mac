@@ -118,7 +118,7 @@ final class QuotaPaceTests: XCTestCase {
             fiveHour: ZhipuQuotaTier(usedPercent: 10, used: nil, total: nil, resetAt: codexReset),
             weekly: ZhipuQuotaTier(usedPercent: 10, used: nil, total: nil, resetAt: weekReset),
             toolCalls: ZhipuQuotaTier(usedPercent: 10, used: 10, total: 100, resetAt: weekReset))
-        let snapshot = SubscriptionQuotaSnapshot(codex: codex, kimi: kimi, zhipu: zhipu)
+        let snapshot = SubscriptionQuotaSnapshot(codex: codex, kimi: kimi, zhipu: zhipu, now: now)
         let periods = Dictionary(
             uniqueKeysWithValues: snapshot.groups.flatMap(\.periods).map { ($0.id, $0) })
 
@@ -155,7 +155,7 @@ final class QuotaPaceTests: XCTestCase {
         let ark = ArkPlanQuotaSnapshot(
             items: try ArkPlanQuotaService.parseItems(Data(json.utf8)),
             fetchedAt: now)
-        let periods = SubscriptionQuotaSnapshot(ark: ark).groups.flatMap(\.periods)
+        let periods = SubscriptionQuotaSnapshot(ark: ark, now: now).groups.flatMap(\.periods)
         let byLabel = Dictionary(uniqueKeysWithValues: periods.map { ($0.label, $0) })
 
         let five = try XCTUnwrap(byLabel["5小时"])
@@ -179,7 +179,7 @@ final class QuotaPaceTests: XCTestCase {
             secondary: CodexRateWindow(
                 usedPercent: weeklyUsed, windowMinutes: 10_080,
                 resetsAt: now.addingTimeInterval(weeklyResetIn)),
-            planType: "pro", asOf: now))
+            planType: "pro", asOf: now), now: now)
     }
 
     func testAlertFiresForLongWindowRunningOutWellBeforeReset() throws {

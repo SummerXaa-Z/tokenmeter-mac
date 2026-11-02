@@ -117,6 +117,7 @@ enum QuotaPaceAlert {
         for group in snapshot.groups {
             for period in group.periods {
                 guard let start = period.windowStart, let reset = period.resetAt,
+                      reset > now,
                       reset.timeIntervalSince(start) >= minimumWindow
                 else { continue }
                 let pace = QuotaPace.compute(

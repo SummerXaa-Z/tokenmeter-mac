@@ -50,12 +50,14 @@ struct SubscriptionValueSummary: Equatable {
     let monthlyFeeUSD: Double
     let days: Int
     let apiValueUSD: Double
+    var apiValueKnown: Bool = true
+    var priceCoverage: Double? = nil
 
     var proratedFeeUSD: Double { monthlyFeeUSD * 12 / 365 * Double(max(days, 0)) }
 
     var multiple: Double? {
         let fee = proratedFeeUSD
-        guard fee > 0 else { return nil }
+        guard fee > 0, apiValueKnown else { return nil }
         return apiValueUSD / fee
     }
 
@@ -66,9 +68,18 @@ struct SubscriptionValueSummary: Equatable {
 
     var detailText: String {
         var text = "订阅月费 \(Fmt.usd(monthlyFeeUSD)) · 按 \(days) 天折算 \(Fmt.usd(proratedFeeUSD))"
-        if let multiple, multiple < 1 {
-            text += "；低于 1 倍表示按 API 用量付费会更省。"
+        if !apiValueKnown {
+            text += "；暂无可计价金额，回本倍数未知。"
+        } else if let priceCoverage, priceCoverage < 0.999 {
+            text += "；仅计入已匹配价格的用量，金额与倍数是下限，不能据此判断 API 付费更省。"
+        } else if let multiple, multiple < 1 {
+            text += "；已计价 API 参考金额低于同期订阅费（不代表实际账单或付费建议）。"
         }
         return text
+    }
+
+    var multipleLabel: String {
+        guard let multiple else { return "—" }
+        return (priceCoverage.map { $0 < 0.999 } == true ? "至少 " : "") + Self.multipleText(multiple)
     }
 }

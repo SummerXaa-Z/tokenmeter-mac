@@ -15,9 +15,19 @@ struct SubscriptionQuotaPeriod: Equatable, Identifiable {
     let detail: String?
     // 窗口起点：由窗口时长从重置时间回推，供额度节奏预测；时长未知时为 nil
     var windowStart: Date? = nil
+    var evaluatedAt: Date = Date()
+
+    var isExpired: Bool { QuotaWindowFreshness.isExpired(resetAt: resetAt, now: evaluatedAt) }
+
+    func evaluated(at now: Date) -> SubscriptionQuotaPeriod {
+        .init(id: id, label: label,
+              remainingPercent: QuotaWindowFreshness.remainingPercent(remainingPercent, resetAt: resetAt, now: now),
+              resetAt: resetAt, detail: detail, windowStart: windowStart, evaluatedAt: now)
+    }
 
     var pace: QuotaPace? {
-        QuotaPace.compute(remainingPercent: remainingPercent, windowStart: windowStart, resetAt: resetAt)
+        QuotaPace.compute(remainingPercent: remainingPercent, windowStart: windowStart,
+                          resetAt: resetAt, now: evaluatedAt)
     }
 }
 
@@ -37,25 +47,53 @@ struct SubscriptionQuotaGroup: Equatable, Identifiable {
     let subtitle: String?
     let periods: [SubscriptionQuotaPeriod]
     let extraUsage: SubscriptionQuotaExtraUsage?
+    var observedAt: Date? = nil
+
+    func evaluated(at now: Date) -> SubscriptionQuotaGroup {
+        .init(id: id, source: source, title: title, subtitle: subtitle,
+              periods: periods.map { $0.evaluated(at: now) }, extraUsage: extraUsage, observedAt: observedAt)
+    }
 }
 
 // 将各订阅源不同的配额结构归一为 UI 可直接平铺的 group / period。
 // 加载失败、未登录等状态仍由 AppState/UI 各自维护，不混入纯数据模型。
 struct SubscriptionQuotaSnapshot: Equatable {
     let groups: [SubscriptionQuotaGroup]
+    let evaluatedAt: Date
 
     init(
         codex: CodexRateLimits? = nil,
         kimi: KimiQuotaResult? = nil,
         ark: ArkPlanQuotaSnapshot? = nil,
-        zhipu: ZhipuQuotaResult? = nil
+        zhipu: ZhipuQuotaResult? = nil,
+        kimiObservedAt: Date? = nil,
+        zhipuObservedAt: Date? = nil,
+        now: Date = Date()
     ) {
         var result: [SubscriptionQuotaGroup] = []
         if let codexGroup = Self.codexGroup(codex) { result.append(codexGroup) }
-        if let kimi { result.append(Self.kimiGroup(kimi)) }
+        if let kimi {
+            var group = Self.kimiGroup(kimi)
+            group.observedAt = kimiObservedAt
+            result.append(group)
+        }
         result.append(contentsOf: Self.arkGroups(ark))
-        if let zhipu { result.append(Self.zhipuGroup(zhipu)) }
-        groups = result
+        if let zhipu {
+            var group = Self.zhipuGroup(zhipu)
+            group.observedAt = zhipuObservedAt
+            result.append(group)
+        }
+        groups = result.map { $0.evaluated(at: now) }
+        evaluatedAt = now
+    }
+
+    private init(groups: [SubscriptionQuotaGroup], evaluatedAt: Date) {
+        self.groups = groups
+        self.evaluatedAt = evaluatedAt
+    }
+
+    func evaluated(at now: Date) -> SubscriptionQuotaSnapshot {
+        .init(groups: groups.map { $0.evaluated(at: now) }, evaluatedAt: now)
     }
 
     private static func codexGroup(_ limits: CodexRateLimits?) -> SubscriptionQuotaGroup? {
@@ -66,7 +104,8 @@ struct SubscriptionQuotaSnapshot: Equatable {
             periods.append(SubscriptionQuotaPeriod(
                 id: "codex:subscription:primary",
                 label: label(windowMinutes: primary.windowMinutes),
-                remainingPercent: remaining(fromUsedPercent: primary.usedPercent),
+                remainingPercent: primary.resetsAt.timeIntervalSince1970 > 0
+                    ? remaining(fromUsedPercent: primary.usedPercent) : nil,
                 resetAt: validResetDate(primary.resetsAt),
                 detail: nil,
                 windowStart: QuotaPace.windowStart(
@@ -78,7 +117,8 @@ struct SubscriptionQuotaSnapshot: Equatable {
             periods.append(SubscriptionQuotaPeriod(
                 id: "codex:subscription:secondary",
                 label: label(windowMinutes: secondary.windowMinutes),
-                remainingPercent: remaining(fromUsedPercent: secondary.usedPercent),
+                remainingPercent: secondary.resetsAt.timeIntervalSince1970 > 0
+                    ? remaining(fromUsedPercent: secondary.usedPercent) : nil,
                 resetAt: validResetDate(secondary.resetsAt),
                 detail: nil,
                 windowStart: QuotaPace.windowStart(
@@ -92,7 +132,8 @@ struct SubscriptionQuotaSnapshot: Equatable {
             title: "Codex",
             subtitle: normalizedText(limits.planType?.uppercased()),
             periods: periods,
-            extraUsage: nil
+            extraUsage: nil,
+            observedAt: limits.asOf
         )
     }
 
@@ -198,7 +239,8 @@ struct SubscriptionQuotaSnapshot: Equatable {
                     title: arkTitle(item.product),
                     subtitle: normalizedText(item.tier?.uppercased()),
                     periods: periods,
-                    extraUsage: nil
+                    extraUsage: nil,
+                    observedAt: snapshot.fetchedAt
                 )
             }
     }

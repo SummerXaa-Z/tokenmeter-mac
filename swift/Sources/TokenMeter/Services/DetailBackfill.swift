@@ -2,7 +2,7 @@ import Foundation
 
 // 一次性回填：实时采集只扫近 7 天，升级当天 30D/全部范围的按天明细只有
 // 起点。这里用加宽的窗口（各采集器的 windowDays 参数）低优先级补扫本地
-// 会话文件，把更早的模型 / Skills / 会话明细写进 model-history/。
+// 会话文件，把更早的日汇总、模型 / Skills / 会话明细一起保存。
 //
 // 读取仍然本地、有界（滚动 90 天，采集器按文件 mtime 过滤 + 流式读 +
 // (size, mtime) 缓存）、对缺失与变化中的文件容错：任一来源失败只跳过
@@ -53,10 +53,12 @@ enum DetailBackfill {
     static let windowDays = 90
     // 每 7 天跑一次即可：实时窗覆盖最近 7 天，滚动回填窗与之无缝衔接
     static let repeatDays = 7
+    static let storageVersion = 1
 
     // marker 为空（从未跑过）或已早于 today - (repeatDays - 1) 时需要跑。
     // 纯函数留给测试；日期键都是 YYYY-MM-DD，字符串比较即日期比较。
-    static func shouldRun(markerDay: String?, todayKey: String) -> Bool {
+    static func shouldRun(markerDay: String?, todayKey: String, markerVersion: Int = storageVersion) -> Bool {
+        guard markerVersion >= storageVersion else { return true }
         guard let markerDay, !markerDay.isEmpty,
               let today = DateUtil.date(from: todayKey) else { return true }
         let cutoff = DateUtil.key(DateUtil.addDays(today, 1 - repeatDays))

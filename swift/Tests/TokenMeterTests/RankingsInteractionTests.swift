@@ -2,6 +2,14 @@ import XCTest
 @testable import TokenMeter
 
 final class RankingsInteractionTests: XCTestCase {
+    func testSparklineAccessibleSummaryUsesActualPeriodAndUnit() {
+        let model = OverviewRankingsCard.sparklineSummary(values: [10, 0, 20], period: "近 30 天", unit: "Token")
+        let skill = OverviewRankingsCard.sparklineSummary(values: [1, 0, 2], period: "近 13 周", unit: "调用次数")
+        XCTAssertTrue(model.contains("近 30 天合计 30 Token"))
+        XCTAssertTrue(skill.contains("近 13 周合计 3 调用次数"))
+        XCTAssertFalse(skill.contains("30 天"))
+        XCTAssertTrue(skill.contains("完整明细"))
+    }
     func testSevenDaySortUsesSevenDayModelDetails() {
         let models = [
             model("A", source: .codex, tokens: 1_000),

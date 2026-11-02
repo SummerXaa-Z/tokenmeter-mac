@@ -66,11 +66,15 @@ struct GeminiUsageResult: Equatable {
 enum GeminiUsageError: LocalizedError {
     case dataUnavailable
     case scanFailed
+    case legacyFileTooLarge
+    case invalidLegacySession
 
     var errorDescription: String? {
         switch self {
         case .dataUnavailable: return "未找到 Gemini CLI 本地 session"
         case .scanFailed: return "Gemini CLI 本地用量读取失败"
+        case .legacyFileTooLarge: return "Gemini CLI 旧版会话超过安全读取上限"
+        case .invalidLegacySession: return "Gemini CLI 旧版会话格式损坏或不兼容"
         }
     }
 }
@@ -164,7 +168,6 @@ enum GeminiUsage {
         var sessions: [String: (url: URL, summary: FileSummary)] = [:]
         for file in files {
             let summary = try cachedSummary(file)
-            guard !summary.messages.isEmpty else { continue }
             if let current = sessions[summary.sessionID] {
                 let isNewer = summary.mtime > current.summary.mtime
                 let prefersJSONL = summary.mtime == current.summary.mtime
@@ -338,23 +341,22 @@ enum GeminiUsage {
     }
 
     private static func scanLegacyJSON(_ file: URL, size: UInt64, mtime: Date) throws -> FileSummary {
-        let fallback = FileSummary(
-            size: size, mtime: mtime, sessionID: file.path, messages: [:]
-        )
         // 旧版完整 JSON 含会话内容，限制单文件 32MB，避免异常文件无限占用内存。
-        guard size <= 32 * 1024 * 1024 else { return fallback }
+        // 超限/损坏不是已确认零用量；让接收层保留上次完整快照。
+        guard size <= 32 * 1024 * 1024 else { throw GeminiUsageError.legacyFileTooLarge }
         let data = try Data(contentsOf: file, options: .mappedIfSafe)
-        guard let session = try? JSONDecoder().decode(LegacySession.self, from: data)
-        else { return fallback }
+        guard let session = try? JSONDecoder().decode(LegacySession.self, from: data),
+              let lines = session.messages
+        else { throw GeminiUsageError.invalidLegacySession }
 
         var messages: [String: MessageUsage] = [:]
-        for line in session.messages ?? [] {
+        for line in lines {
             if let usage = messageUsage(line) { messages[usage.id] = usage }
         }
         return FileSummary(
             size: size,
             mtime: mtime,
-            sessionID: session.sessionId ?? file.path,
+            sessionID: session.sessionId.flatMap { $0.isEmpty ? nil : $0 } ?? file.path,
             messages: messages
         )
     }
