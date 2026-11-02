@@ -62,7 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appState.rearmTimer()
 
         // 启动 10s 后低优先级回填按天明细（每约 7 天一次，见 DetailBackfill）：
-        // 把实时 7 天窗之外的本地会话补进 model-history（滚动 90 天），让
+        // 把实时 7 天窗之外的本地会话补进日汇总和 model-history（滚动 90 天），让
         // 30D/全部 与各处上期基期立即可回溯
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
             guard let self else { return }
@@ -80,6 +80,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // router 必须由 self 持有；回调统一回主线程后再碰 AppKit。
         notificationRouter.onOpen = { [weak self] target in
             self?.openPanelForNotification(target)
+        }
+        notificationRouter.readHistory = { [weak appState] in
+            guard let appState else { throw CocoaError(.fileReadUnknown) }
+            return try await appState.readPersistedHistory()
         }
         UNUserNotificationCenter.current().delegate = notificationRouter
 
@@ -108,6 +112,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var quotaTimer: Timer?
     private var weeklyDigestLoading = false
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard appState.historyWritesInFlight > 0 else { return .terminateNow }
+        Task {
+            await appState.flushHistoryWrites()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
 #if DEBUG
     private func showUISmokeWindow() {
         PreviewData.seed(appState)
@@ -120,13 +133,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         window.title = "TokenMeter UI Smoke · 示例数据"
         window.contentViewController = NSHostingController(
-            rootView: RootView().environmentObject(appState)
+            rootView: DebugUIRenderHarness.smokeContent()
+                .frame(width: Theme.panelWidth, height: Theme.panelHeight, alignment: .top)
+                .preferredColorScheme(smokeColorScheme)
+                .environmentObject(appState)
         )
         window.isReleasedWhenClosed = false
         window.center()
         window.makeKeyAndOrderFront(nil)
         smokeWindow = window
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private var smokeColorScheme: ColorScheme? {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--ui-smoke-appearance=light") { return .light }
+        if arguments.contains("--ui-smoke-appearance=dark") { return .dark }
+        return nil
     }
 
     private func runUIRender(outputPath: String) {
@@ -200,25 +223,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               WeeklyDigest.isDue(lastSentWeek: store.lastWeeklyDigestWeek)
         else { return }
         weeklyDigestLoading = true
-        let now = Date()
-        let participants = WeeklyDigest.participants(store)
-        let plans = store.subscriptionPlans
         Task { [weak self] in
             guard let self else { return }
             defer { self.weeklyDigestLoading = false }
             do {
-                let snapshot = try await Task.detached(priority: .utility) {
-                    (try HistoryStore.allChecked(now: now), try ModelUsageHistoryStore.shared.allChecked())
-                }.value
+                let snapshot = try await self.appState.readPersistedHistory()
                 self.appState.reportHistoryReadOutcome(succeeded: true)
+                let now = Date()
                 guard store.weeklyDigestEnabled,
                       WeeklyDigest.isDue(lastSentWeek: store.lastWeeklyDigestWeek, today: now)
                 else { return }
                 // 确认历史成功读取后再记本周；读取失败仍允许下一轮重试。
                 store.lastWeeklyDigestWeek = WeeklyDigest.weekKey(now)
                 guard let message = WeeklyDigest.message(
-                    snapshot.0, participants: participants, modelDays: snapshot.1,
-                    plans: plans, today: now) else { return }
+                    snapshot.daily, participants: WeeklyDigest.participants(store), modelDays: snapshot.models,
+                    plans: store.subscriptionPlans, today: now) else { return }
                 Notifier.send(
                     id: Notifier.weeklyDigestID(forWeek: WeeklyDigest.summarizedWeekKey(today: now)),
                     title: message.title, body: message.body)
@@ -235,20 +254,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func evaluateSubscriptionAlerts() {
+        let now = Date()
         if let kimiResult = appState.kimiQuota.result {
-            let worst = SubscriptionQuotaAlert.kimiWorstRemainingPercent(kimiResult)
+            let worst = SubscriptionQuotaAlert.kimiWorstRemainingPercent(kimiResult, now: now)
             evaluateAlert(key: "kimi.quota.low", crossed: SubscriptionQuotaAlert.shouldNotify(remainingPercent: worst),
                           title: "Kimi Code 额度告急",
                           body: "订阅额度仅剩 \(worst.map { Int($0).description } ?? "0")%，留意用量")
         }
         if let zhipuResult = appState.zhipuQuota.result {
-            let worst = SubscriptionQuotaAlert.zhipuWorstRemainingPercent(zhipuResult)
+            let worst = SubscriptionQuotaAlert.zhipuWorstRemainingPercent(zhipuResult, now: now)
             evaluateAlert(key: "zhipu.quota.low", crossed: SubscriptionQuotaAlert.shouldNotify(remainingPercent: worst),
                           title: "智谱 GLM 额度告急",
                           body: "订阅额度仅剩 \(worst.map { Int($0).description } ?? "0")%，留意用量")
         }
         if let arkResult = appState.arkPlanQuota.result {
-            let worst = SubscriptionQuotaAlert.arkWorstRemainingPercent(arkResult)
+            let worst = SubscriptionQuotaAlert.arkWorstRemainingPercent(arkResult, now: now)
             evaluateAlert(key: "ark.quota.low", crossed: SubscriptionQuotaAlert.shouldNotify(remainingPercent: worst),
                           title: "火山方舟额度告急",
                           body: "订阅额度仅剩 \(worst.map { Int($0).description } ?? "0")%，留意用量")
@@ -273,15 +293,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let codexQuotaInfoOn = infoMode == "codex" && codexOn
         let codexTotalInfoOn = infoMode == "total" && codexOn
         let allInfoOn = infoMode == "all"
-        // 「全部」档参与源门禁与 refreshEnabledSources 一致（开关 + 本地数据可用），
-        // 但不含 DeepSeek——平台账户不是 Coding Agent，不计入合计。
-        let kimiOn = appState.kimiEnabled && KimiUsage.isAvailable
-        let opencodeOn = appState.opencodeEnabled && OpenCodeUsage.isAvailable
-        let geminiOn = appState.geminiEnabled && GeminiUsage.isAvailable
-        let copilotOn = appState.copilotEnabled && CopilotUsage.isAvailable
-        let qwenOn = appState.qwenEnabled && QwenCodeUsage.isAvailable
-        let cursorOn = appState.cursorEnabled && CursorUsage.isAvailable
-
         // 用户明确关闭来源/阈值等同于重新布防；以后重新开启时应允许立即提醒。
         if balanceThreshold <= 0 { alertLatch.reset(key: "deepseek.balance.low") }
         if !codexOn { alertLatch.reset(key: "codex.quota.low") }
@@ -322,6 +333,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             // 账户配额始终属于状态刷新计划，不能被菜单栏文本模式门禁跳过。
             await self.appState.refresh(scope: .status(usageSources: requested))
+            let recordedHistory: [HistoryStore.DayPoint]
+            var historyUnavailable = false
+            if allInfoOn {
+                do {
+                    recordedHistory = try await Task.detached(priority: .utility) {
+                        try HistoryStore.allChecked(now: Date())
+                    }.value
+                    self.appState.reportHistoryReadOutcome(succeeded: true)
+                } catch {
+                    self.appState.reportHistoryReadOutcome(succeeded: false)
+                    recordedHistory = []
+                    historyUnavailable = true
+                }
+            } else {
+                recordedHistory = []
+            }
+            // 所有异步 IO 结束后统一取时点；磁盘等待期间可能跨午夜或重置。
+            let now = Date()
+            let todayKey = DateUtil.key(now)
 
             var level = AlertLevel.normal
             var infoTokens = 0          // total/claude 模式累加今日 token
@@ -335,10 +365,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if codexOn {
                 // 配额与本地会话独立；未生成会话文件时也能展示主动开启的实时配额。
                 let limits = self.appState.codexRateLimits
-                let worstUsed = max(limits?.primary?.usedPercent ?? 0,
-                                    limits?.secondary?.usedPercent ?? 0)
-                let remaining = 100 - worstUsed
-                if codexOn {
+                let remaining = limits.flatMap {
+                    SubscriptionQuotaAlert.codexWorstRemainingPercent($0, now: now)
+                }
+                if let remaining {
                     if remaining <= 10 { level = max(level, .critical) }
                     else if remaining <= 30 { level = max(level, .warn) }
                     // 通知只在 critical 线（≤10%）翻转，且要有真实配额数据
@@ -347,16 +377,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         codexRemaining = Int(remaining)
                     }
                 }
-                if codexQuotaInfoOn, limits != nil {
-                    infoText = "\(Int(remaining))%"
+                if remaining == nil, limits != nil { codexCrossed = false }
+                if codexQuotaInfoOn {
+                    infoText = remaining.map { "\(Int($0))%" } ?? "—"
                 }
                 if codexTotalInfoOn {
-                    infoTokens += self.appState.codex.result?.today?.totalTokens ?? 0
+                    infoTokens += self.appState.codex.result?.dailyTokens(on: todayKey) ?? 0
                 }
             }
 
             if claudeAlertOn || claudeInfoOn {
-                let todayTokens = self.appState.claude.result?.today?.totalTokens ?? 0
+                let todayTokens = self.appState.claude.result?.dailyTokens(on: todayKey) ?? 0
                 if claudeAlertOn {
                     let limit = claudeLimitM * 1_000_000
                     // 超阈值即提醒，1.5 倍才升红——日用量越线不等于不可用，留缓冲
@@ -372,19 +403,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if allInfoOn {
                 // 「全部」档合计与总览页今日口径一致：live 优先、历史兜底。
                 // 跨天旧缓存里的"今日"其实是昨天，不算 live，交给当日历史兜底。
-                let now = Date()
-                let recordedToday: [HistorySource: Int]
-                do {
-                    let history = try await Task.detached(priority: .utility) {
-                        try HistoryStore.allChecked(now: now)
-                    }.value
-                    self.appState.reportHistoryReadOutcome(succeeded: true)
-                    recordedToday = history.first { $0.date == DateUtil.key(now) }?.bySource ?? [:]
-                } catch {
-                    self.appState.reportHistoryReadOutcome(succeeded: false)
-                    recordedToday = [:]
-                    infoText = "—"
-                }
+                let recordedToday = recordedHistory.first { $0.date == todayKey }?.bySource ?? [:]
+                if historyUnavailable { infoText = "—" }
                 var participants: Set<HistorySource> = []
                 var live: [HistorySource: Int] = [:]
                 func collect(
@@ -394,26 +414,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     guard on else { return }
                     participants.insert(source)
                     if let loadedAt,
-                       Calendar.current.isDate(loadedAt, inSameDayAs: Date()) {
+                       Calendar.current.isDate(loadedAt, inSameDayAs: now) {
                         live[source] = tokens
                     }
                 }
                 collect(claudeUsable, .claude, self.appState.claude.loadedAt,
-                        self.appState.claude.result?.today?.totalTokens)
+                        self.appState.claude.result?.dailyTokens(on: todayKey))
                 collect(codexOn, .codex, self.appState.codex.loadedAt,
-                        self.appState.codex.result?.today?.totalTokens)
-                collect(kimiOn, .kimi, self.appState.kimi.loadedAt,
-                        self.appState.kimi.result?.today?.totalTokens)
-                collect(opencodeOn, .opencode, self.appState.opencode.loadedAt,
-                        self.appState.opencode.result?.today?.totalTokens)
-                collect(geminiOn, .gemini, self.appState.gemini.loadedAt,
-                        self.appState.gemini.result?.today?.totalTokens)
-                collect(copilotOn, .copilot, self.appState.copilot.loadedAt,
-                        self.appState.copilot.result?.today?.totalTokens)
-                collect(qwenOn, .qwen, self.appState.qwen.loadedAt,
-                        self.appState.qwen.result?.today?.totalTokens)
-                collect(cursorOn, .cursor, self.appState.cursor.loadedAt,
-                        self.appState.cursor.result?.dailyTokens(on: DateUtil.today()))
+                        self.appState.codex.result?.dailyTokens(on: todayKey))
+                collect(self.appState.kimiEnabled && KimiUsage.isAvailable, .kimi, self.appState.kimi.loadedAt,
+                        self.appState.kimi.result?.dailyTokens(on: todayKey))
+                collect(self.appState.opencodeEnabled && OpenCodeUsage.isAvailable, .opencode, self.appState.opencode.loadedAt,
+                        self.appState.opencode.result?.dailyTokens(on: todayKey))
+                collect(self.appState.geminiEnabled && GeminiUsage.isAvailable, .gemini, self.appState.gemini.loadedAt,
+                        self.appState.gemini.result?.dailyTokens(on: todayKey))
+                collect(self.appState.copilotEnabled && CopilotUsage.isAvailable, .copilot, self.appState.copilot.loadedAt,
+                        self.appState.copilot.result?.dailyTokens(on: todayKey))
+                collect(self.appState.qwenEnabled && QwenCodeUsage.isAvailable, .qwen, self.appState.qwen.loadedAt,
+                        self.appState.qwen.result?.dailyTokens(on: todayKey))
+                collect(self.appState.cursorEnabled && CursorUsage.isAvailable, .cursor, self.appState.cursor.loadedAt,
+                        self.appState.cursor.result?.dailyTokens(on: todayKey))
                 infoTokens = MenubarTodayTotal.compute(
                     participants: participants,
                     live: live,
@@ -423,11 +443,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 订阅额度告警只染图标不发通知（通知在 guard 前已按边沿触发过），
             // 阈值线与 Codex 配额一致：≤30% 橙、≤10% 红。
             let kimiWorst = self.appState.kimiQuota.result
-                .flatMap(SubscriptionQuotaAlert.kimiWorstRemainingPercent)
+                .flatMap { SubscriptionQuotaAlert.kimiWorstRemainingPercent($0, now: now) }
             let zhipuWorst = self.appState.zhipuQuota.result
-                .flatMap(SubscriptionQuotaAlert.zhipuWorstRemainingPercent)
+                .flatMap { SubscriptionQuotaAlert.zhipuWorstRemainingPercent($0, now: now) }
             let arkWorst = self.appState.arkPlanQuota.result
-                .flatMap(SubscriptionQuotaAlert.arkWorstRemainingPercent)
+                .flatMap { SubscriptionQuotaAlert.arkWorstRemainingPercent($0, now: now) }
             for worst in [kimiWorst, zhipuWorst, arkWorst].compactMap({ $0 }) {
                 if SubscriptionQuotaAlert.isCritical(worst) { level = max(level, .critical) }
                 else if SubscriptionQuotaAlert.isWarn(worst) { level = max(level, .warn) }
@@ -572,6 +592,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // 实例由 AppDelegate 持有；回调回主线程后再碰 AppKit。
 private final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
     var onOpen: ((AppView) -> Void)?
+    var readHistory: (@MainActor () async throws -> HistorySnapshotReader.Snapshot)?
 
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
@@ -600,18 +621,18 @@ private final class NotificationRouter: NSObject, UNUserNotificationCenterDelega
     private func handleWeeklyDigestExport() {
         guard !RuntimeEnvironment.isIsolated else { return }
         Task { @MainActor in
-            let plans = ConfigStore.shared.subscriptionPlans
             let filename: String?
             do {
-                filename = try await Task.detached(priority: .utility) {
+                guard let readHistory = self.readHistory else { throw CocoaError(.fileReadUnknown) }
+                let snapshot = try await readHistory()
+                let plans = ConfigStore.shared.subscriptionPlans
+                filename = await Task.detached(priority: .utility) {
                     guard let directory = FileManager.default.urls(
                         for: .downloadsDirectory, in: .userDomainMask).first else { return nil as String? }
-                    let days = try HistoryStore.allChecked()
-                    let models = try ModelUsageHistoryStore.shared.allChecked()
                     return UsageCSVExport.writeLastWeekCSV(
-                        directory: directory, days: days,
-                        apiValueByDate: UsageCSVExport.apiValueByDate(models),
-                        modelHistory: models, plans: plans)
+                        directory: directory, days: snapshot.daily,
+                        apiValueByDate: UsageCSVExport.apiValueByDate(snapshot.models),
+                        modelHistory: snapshot.models, plans: plans)
                 }.value
             } catch {
                 filename = nil

@@ -70,7 +70,7 @@ final class PrivacyAndCollectionStateTests: XCTestCase {
     }
 
     @MainActor
-    func testInvalidLiveQuotaWindowsFallBackToValidLocalSnapshot() {
+    func testInvalidLiveQuotaWindowsFallBackToValidLocalSnapshot() async {
         let state = AppState()
         let now = Date()
         let localQuota = CodexRateLimits(
@@ -81,6 +81,7 @@ final class PrivacyAndCollectionStateTests: XCTestCase {
             rateLimits: localQuota, allRateLimits: [localQuota], days: [],
             models: [], projects: [], todayHours: [], skills: [])
         state.acceptCodexCollection(local)
+        await state.flushHistoryWrites()
         state.setCodexLiveQuotaEnabled(true)
         let invalid = CodexRateLimits(
             limitId: "codex", limitName: nil, primary: nil, secondary: nil,

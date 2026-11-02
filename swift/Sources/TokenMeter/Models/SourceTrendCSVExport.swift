@@ -10,7 +10,9 @@ enum SourceTrendCSVExport {
         source: HistorySource,
         spanDays: Int,
         days: [SourceTrendCard.Day],
-        todayKey: String = DateUtil.today()
+        todayKey: String = DateUtil.today(),
+        scopeTitle: String? = nil,
+        granularity: UsageTrendGranularity? = nil
     ) -> String {
         // 分量列：与图例同名同序（补零后每天分量结构一致，取首日即可）
         let partNames = days.first?.parts.map(\.name) ?? []
@@ -24,7 +26,8 @@ enum SourceTrendCSVExport {
             lines.append(totalRow(days: days, partNames: partNames))
         }
         appendNotes(
-            to: &lines, source: source, spanDays: spanDays, todayKey: todayKey)
+            to: &lines, source: source, spanDays: spanDays, todayKey: todayKey,
+            scopeTitle: scopeTitle, granularity: granularity)
         return lines.map { $0.joined(separator: ",") }.joined(separator: "\n") + "\n"
     }
 
@@ -61,7 +64,8 @@ enum SourceTrendCSVExport {
 
     /// 日期键 → 周几（与热力图/周报同一写法）；非法日期留空
     private static func weekday(of dateKey: String) -> String {
-        guard let date = DateUtil.date(from: dateKey) else { return "" }
+        let dayKey = String(dateKey.prefix(10))
+        guard let date = DateUtil.date(from: dayKey) else { return "" }
         return HeatmapCSVExport.weekdayLabel(
             Calendar.current.component(.weekday, from: date))
     }
@@ -70,11 +74,13 @@ enum SourceTrendCSVExport {
         to lines: inout [[String]],
         source: HistorySource,
         spanDays: Int,
-        todayKey: String
+        todayKey: String,
+        scopeTitle: String?,
+        granularity: UsageTrendGranularity?
     ) {
         var notes: [String] = [
             "口径",
-            "\(source.overviewName) · 近 \(spanDays) 天（与来源页趋势图同档同桶）",
+            "\(source.overviewName) · \(scopeTitle ?? "近 \(spanDays) 天")（与来源页趋势图同档同桶）",
         ]
         switch source {
         case .codex:
@@ -86,10 +92,12 @@ enum SourceTrendCSVExport {
         case .deepseek, .cursor:
             break   // 平台账户/订阅聚合无此卡，理论不可达
         }
-        notes.append(spanDays == 7
+        notes.append(scopeTitle == nil ? (spanDays == 7
             ? "7 天档来自各页实时采集拼装"
             : "30 天档来自本机按天留存，实时明细覆盖同一天")
-        notes.append("补零时间轴：无用量日照列 0（真实零）")
+            : "范围来自本机可信历史，全部不代表平台终身用量；未归因部分只有总量")
+        if let granularity { notes.append("\(granularity.rawValue)汇总；日期为桶起点，与图同粒度") }
+        notes.append(granularity == nil ? "补零时间轴：无用量日照列 0（真实零）" : "补零时间轴：无用量桶照列 0（真实零）")
         notes.append("Token 为原始整数")
         notes.append("导出于 \(todayKey)")
         for note in notes {
@@ -103,10 +111,12 @@ enum SourceTrendCSVExport {
         source: HistorySource,
         spanDays: Int,
         days: [(date: String, tokens: Int)],
-        todayKey: String = DateUtil.today()
+        todayKey: String = DateUtil.today(),
+        scopeTitle: String? = nil,
+        granularity: UsageTrendGranularity? = nil
     ) -> String {
         var lines: [[String]] = []
-        lines.append(["日期", "星期", "Token"])
+        lines.append([granularity == .hour ? "小时" : "日期", "星期", "Token"])
         let sorted = days.sorted { $0.date < $1.date }
         for day in sorted {
             lines.append([day.date, weekday(of: day.date), String(day.tokens)])
@@ -116,7 +126,8 @@ enum SourceTrendCSVExport {
             lines.append(["合计", "", String(total)])
         }
         appendSingleSeriesNotes(
-            to: &lines, source: source, spanDays: spanDays, todayKey: todayKey)
+            to: &lines, source: source, spanDays: spanDays, todayKey: todayKey,
+            scopeTitle: scopeTitle, granularity: granularity)
         return lines.map { $0.joined(separator: ",") }.joined(separator: "\n") + "\n"
     }
 
@@ -124,13 +135,16 @@ enum SourceTrendCSVExport {
         to lines: inout [[String]],
         source: HistorySource,
         spanDays: Int,
-        todayKey: String
+        todayKey: String,
+        scopeTitle: String?,
+        granularity: UsageTrendGranularity?
     ) {
         let notes: [String] = [
             "口径",
-            "\(source.overviewName) · 近 \(spanDays) 天（与来源页趋势卡同档）",
-            "按日合计，来自本机按天历史（Cursor 仅有订阅周期聚合，无逐请求分量）",
-            "补零时间轴：无用量日照列 0（真实零）",
+            "\(source.overviewName) · \(scopeTitle ?? "近 \(spanDays) 天")（与来源页趋势卡同档）",
+            granularity.map { "\($0.rawValue)合计，日期为桶起点；与图同粒度，不推测不存在的分量" }
+                ?? "按日合计，来自本机按天历史（Cursor 仅有订阅周期聚合，无逐请求分量）",
+            granularity == nil ? "补零时间轴：无用量日照列 0（真实零）" : "补零时间轴：无用量桶照列 0（真实零）",
             "Token 为原始整数",
             "导出于 \(todayKey)",
         ]
@@ -142,9 +156,11 @@ enum SourceTrendCSVExport {
     static func suggestedFilename(
         source: HistorySource,
         spanDays: Int,
-        todayKey: String = DateUtil.today()
+        todayKey: String = DateUtil.today(),
+        scopeTitle: String? = nil
     ) -> String {
         let token = ModelRankingCSVExport.sanitizedNameToken(source.overviewName)
-        return "TokenMeter-trend-\(token.isEmpty ? "source" : token)-\(spanDays)d-\(todayKey).csv"
+        let scope = scopeTitle.map(ModelRankingCSVExport.sanitizedNameToken) ?? "\(spanDays)d"
+        return "TokenMeter-trend-\(token.isEmpty ? "source" : token)-\(scope)-\(todayKey).csv"
     }
 }

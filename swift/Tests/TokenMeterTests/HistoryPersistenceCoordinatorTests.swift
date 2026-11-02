@@ -5,7 +5,7 @@ final class HistoryPersistenceCoordinatorTests: XCTestCase {
     private enum Failure: Error { case syntheticWrite }
 
     @MainActor
-    func testDailyWriteFailureRetainsTrustedCollectionAndCanRetryWithoutFabricatingReadFailure() {
+    func testDailyWriteFailureRetainsTrustedCollectionAndCanRetryWithoutFabricatingReadFailure() async {
         var fail = true
         var detailWrites = 0
         let persistence = HistoryPersistenceCoordinator(
@@ -16,18 +16,20 @@ final class HistoryPersistenceCoordinatorTests: XCTestCase {
         let result = KimiUsageResult(days: [.init(date: "2026-10-01", inputTokens: 70)], models: [], todayHours: [],
                                      dayModels: ["2026-10-01": ["synthetic": .init(input: 70)]])
         XCTAssertTrue(state.acceptKimiCollection(result), "Collection acceptance is separate from disk success")
+        await state.flushHistoryWrites()
         XCTAssertEqual(state.kimi.result, result)
         XCTAssertNil(state.kimi.error, "An IO write failure cannot mislabel the successful scan as a read failure")
         XCTAssertNotNil(state.historyPersistenceError)
         XCTAssertEqual(detailWrites, 0)
         fail = false
         XCTAssertTrue(state.acceptKimiCollection(result))
+        await state.flushHistoryWrites()
         XCTAssertNil(state.historyPersistenceError)
         XCTAssertEqual(detailWrites, 1)
     }
 
     @MainActor
-    func testModelWriteFailureRetainsTrustedSnapshotAndOtherSourceSuccessCannotHideIt() {
+    func testModelWriteFailureRetainsTrustedSnapshotAndOtherSourceSuccessCannotHideIt() async {
         var failKimi = true
         let state = AppState(historyPersistence: .init(
             writeDaily: { _, _, _ in true },
@@ -40,12 +42,15 @@ final class HistoryPersistenceCoordinatorTests: XCTestCase {
         let kimi = KimiUsageResult(days: [.init(date: "2026-10-01", inputTokens: 70)], models: [], todayHours: [])
         let qwen = QwenCodeUsageResult(days: [.init(date: "2026-10-01", inputTokens: 30)], models: [], todayHours: [])
         XCTAssertTrue(state.acceptKimiCollection(kimi))
+        await state.flushHistoryWrites()
         XCTAssertEqual(state.kimi.result, kimi)
         XCTAssertNotNil(state.historyPersistenceError)
         XCTAssertTrue(state.acceptQwenCollection(qwen))
+        await state.flushHistoryWrites()
         XCTAssertNotNil(state.historyPersistenceError, "Another source's success must not hide the failed persistence")
         failKimi = false
         XCTAssertTrue(state.acceptKimiCollection(kimi))
+        await state.flushHistoryWrites()
         XCTAssertNil(state.historyPersistenceError)
     }
 
@@ -116,6 +121,7 @@ final class HistoryPersistenceCoordinatorTests: XCTestCase {
                 days: [.init(date: "2026-10-01", inputTokens: 70)], models: [], todayHours: [],
                 dayModels: ["2026-10-01": ["synthetic": .init(input: 70)]])
             XCTAssertTrue(state.acceptKimiCollection(live))
+            await state.flushHistoryWrites()
             continuation?.resume()
             let report = await task.value
 

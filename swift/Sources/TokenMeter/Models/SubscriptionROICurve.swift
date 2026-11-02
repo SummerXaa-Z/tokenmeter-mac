@@ -10,8 +10,12 @@ enum SubscriptionROICurve {
         let weekOf: String       // 周一日期键 yyyy-MM-dd
         let apiValueUSD: Double
         let feeUSD: Double
+        var apiValueKnown: Bool = true
+        var priceCoverage: Double? = nil
 
-        var multiple: Double? { feeUSD > 0 ? apiValueUSD / feeUSD : nil }
+        var multiple: Double? { feeUSD > 0 && apiValueKnown ? apiValueUSD / feeUSD : nil }
+        var pricedValueUSD: Double? { apiValueKnown ? apiValueUSD : nil }
+        var isPartial: Bool { priceCoverage.map { $0 < 0.999 } == true }
         var id: String { weekOf }
     }
 
@@ -23,6 +27,7 @@ enum SubscriptionROICurve {
         participants: some Sequence<HistorySource>,
         monthlyFeeUSD: Double,
         persisted: [ModelUsageDay],
+        dailyHistory: [HistoryStore.DayPoint] = [],
         today: Date = Date(),
         weeks: Int = defaultWeeks,
         calendar: Calendar = .current
@@ -30,10 +35,12 @@ enum SubscriptionROICurve {
         guard monthlyFeeUSD > 0, weeks > 0 else { return [] }
         let allowed = Set(participants)
         guard allowed.contains(where: \.isCodingAgent) else { return [] }
+        let todayKey = DateUtil.key(today)
 
         // 分母的覆盖起点：最早一条属于参与来源的按天明细
         var coverageStart: String?
-        for day in persisted where ModelUsageHistoryStore.isDateKey(day.date) {
+        for day in persisted
+        where day.date <= todayKey && ModelUsageHistoryStore.isDateKey(day.date) {
             let hasDetail = day.bySource.contains {
                 allowed.contains($0.key) && !$0.value.models.isEmpty
             }
@@ -43,12 +50,6 @@ enum SubscriptionROICurve {
         }
         guard let coverageStart else { return [] }
 
-        // 分子：与热力图悬停同一条逐日计价管线；多要一周以覆盖"本周偏移"
-        let dailyValues = UsageHeatmap.dailyAPIValues(
-            participants: participants, persisted: persisted,
-            today: today, windowWeeks: weeks + 1, calendar: calendar)
-
-        let todayKey = DateUtil.key(today)
         let thisMonday = UsageHeatmap.mondayKey(of: today, calendar: calendar)
         let mondayDate = DateUtil.date(from: thisMonday) ?? calendar.startOfDay(for: today)
         let dailyFee = monthlyFeeUSD * 12 / 365
@@ -60,20 +61,40 @@ enum SubscriptionROICurve {
                 let sunday = calendar.date(
                     byAdding: .day, value: 6, to: monday)
             else { continue }
-            var api: Double = 0
             var feeDays = 0
             var cursor = monday
             while cursor <= sunday {
                 let key = DateUtil.key(cursor)
-                api += dailyValues[key] ?? 0
                 if key >= coverageStart, key <= todayKey { feeDays += 1 }
                 guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
                 cursor = next
             }
+            let startKey = DateUtil.key(monday), endKey = DateUtil.key(sunday)
+            let weekModels = persisted.filter { $0.date >= startKey && $0.date <= endKey }
+            let weekDaily = dailyHistory.filter { $0.date >= startKey && $0.date <= endKey }
+            let missing = ModelUsageCoverage.unmodelledTokens(
+                dailyHistory: weekDaily, modelHistory: weekModels,
+                participants: allowed, through: todayKey)
+            let samples = weekModels
+                .flatMap { day in
+                    day.bySource.filter { allowed.contains($0.key) }.flatMap { source, detail in
+                        detail.models.map { model, tally in
+                            APICostSample(model: model, tokens: tally.breakdown,
+                                usageDate: max(day.date, APIReferencePricingCatalog.firstObservedAt), source: source)
+                        }
+                    }
+                }
+            let summary = APIReferenceCostSummary(
+                samples: samples, estimator: APIReferencePricingCatalog.estimator,
+                referenceDate: APIReferencePricingCatalog.observedAt,
+                conversionRates: APIReferencePricingCatalog.conversionRatesToUSD,
+                unmodelledTokens: missing)
             points.append(WeekPoint(
                 weekOf: DateUtil.key(monday),
-                apiValueUSD: api,
-                feeUSD: dailyFee * Double(feeDays)))
+                apiValueUSD: summary.total,
+                feeUSD: dailyFee * Double(feeDays),
+                apiValueKnown: summary.pricedTotal != nil,
+                priceCoverage: summary.coverage))
         }
         return points
     }

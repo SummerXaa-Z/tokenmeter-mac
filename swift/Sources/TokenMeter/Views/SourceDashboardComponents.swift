@@ -66,13 +66,24 @@ struct SourceDashboardIconButton: View {
                         .foregroundStyle(hovering ? Color.primary : Color.secondary)
                 }
             }
-            .frame(width: 28, height: 28)
+            .frame(width: Theme.minimumControlSize, height: Theme.minimumControlSize)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .modifier(OptionalHelp(text: help))
         .accessibilityLabel(help ?? "")
+    }
+}
+
+struct DashboardExportButton: View {
+    let help: String
+    var disabled = false
+    let action: () -> Void
+
+    var body: some View {
+        SourceDashboardIconButton(name: "square.and.arrow.down", help: help, action: action)
+            .disabled(disabled)
     }
 }
 
@@ -204,6 +215,7 @@ struct SourceHourChart: View {
                         AxisValueLabel {
                             if let hour = value.as(Int.self) { Text("\(hour)时") }
                         }
+                        .font(Theme.chartAxisFont).foregroundStyle(.secondary)
                     }
                 }
                 .tokenYAxis()
@@ -223,8 +235,10 @@ struct SourceHourChart: View {
 // 导出按钮——逐小时一行（0-23 全钟点）与图同口径。Qwen 的「Session
 // 结束时间归属」脚注经 note 参数带进，并随 CSV 口径行原样带出。
 struct SourceHourCard: View {
+    @Environment(\.usageNow) private var now
     let source: HistorySource
     let bars: [SourceHourChart.Bar]
+    var observedDate: String? = nil
     let color: Color
     var note: String? = nil
     var previewExportStatus: String? = nil
@@ -237,22 +251,20 @@ struct SourceHourCard: View {
                     Label("今日分时（Token）", systemImage: "clock")
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
-                    Button {
+                    DashboardExportButton(
+                        help: "导出今日分时 CSV（逐小时一行，附口径行）",
+                        disabled: SourceHourChart.isEmpty(bars) || observedDate.map { $0 != DateUtil.key(now) } == true) {
                         exportCSV()
-                    } label: {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.tertiary)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(SourceHourChart.isEmpty(bars))
-                    .help("导出今日分时 CSV（逐小时一行，附口径行）")
-                    .accessibilityLabel("导出今日分时 CSV")
                 }
                 SourceHourChart(bars: bars, color: color)
+                if let observedDate, observedDate != DateUtil.key(now) {
+                    Text("今日分时尚未读取；上次扫描截至 \(Fmt.mmdd(observedDate))。")
+                        .font(Theme.footnoteFont).foregroundStyle(.secondary)
+                }
                 if let note {
                     Text(note)
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        .font(Theme.footnoteFont).foregroundStyle(.secondary)
                 }
                 ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
             }
@@ -260,12 +272,14 @@ struct SourceHourCard: View {
     }
 
     private func exportCSV() {
+        guard observedDate.map({ $0 == DateUtil.key(now) }) ?? true else { return }
         let outcome = LocalTextExportPresenter.shared.export(
             title: "导出今日分时 CSV",
-            filename: SourceHourCSVExport.suggestedFilename(source: source)
+            filename: SourceHourCSVExport.suggestedFilename(source: source, todayKey: observedDate ?? DateUtil.key(now))
         ) {
             SourceHourCSVExport.makeCSV(
-                source: source, bars: bars, note: note
+                source: source, bars: bars, note: note,
+                todayKey: observedDate ?? DateUtil.key(now)
             )
         }
         if let feedback = outcome.successFeedback { exportStatus = feedback }

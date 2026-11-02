@@ -5,6 +5,8 @@ import SwiftUI
 // 持久化 shutdown，因此会在正常退出/落盘后出现，不尝试读取账号或远端配额。
 struct CopilotView: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.usageNow) private var now
+    @Environment(\.sourceUsageRange) private var usageRange
     var onBack: () -> Void
     var onSettings: () -> Void
 
@@ -12,10 +14,11 @@ struct CopilotView: View {
         ScrollView {
             VStack(spacing: 10) {
                 header
+                ScopedSourceUsageCard(source: .copilot)
                 SourceCollectionContent(cache: state.copilot, emptyMessage: "未找到 GitHub Copilot CLI 本地数据") { result in
-                    todayCard(result)
+                    if usageRange == nil { todayCard(result) }
                     weekChartCard(result)
-                    modelsCard(result)
+                    if usageRange == nil { modelsCard(result) }
                     outputCard(result)
                     privacyCard
                 }
@@ -43,16 +46,16 @@ struct CopilotView: View {
     }
 
     private func todayCard(_ result: CopilotUsageResult) -> some View {
-        let today = result.today
+        let today = result.day(on: DateUtil.key(now))
         return Card {
             VStack(alignment: .leading, spacing: 8) {
                 Label("今日已结束会话", systemImage: "sun.max")
                     .font(.system(size: 12, weight: .semibold))
                 HStack(spacing: 0) {
-                    SourceMetric(title: "Token", value: Fmt.tokensShort(today?.totalTokens ?? 0))
-                    SourceMetric(title: "消息", value: Fmt.int(today?.messageCount ?? 0))
-                    SourceMetric(title: "Skills", value: Fmt.int(today?.skillCount ?? 0))
-                    SourceMetric(title: "新增行", value: Fmt.int(today?.linesAdded ?? 0))
+                    SourceMetric(title: "Token", value: (today?.totalTokens).map(Fmt.tokensShort) ?? "—")
+                    SourceMetric(title: "消息", value: (today?.messageCount).map(Fmt.int) ?? "—")
+                    SourceMetric(title: "Skills", value: (today?.skillCount).map(Fmt.int) ?? "—")
+                    SourceMetric(title: "新增行", value: (today?.linesAdded).map(Fmt.int) ?? "—")
                 }
                 Divider()
                 Text("近 7 天 \(Fmt.tokensShort(result.weekTotal)) tokens · \(Fmt.int(result.weekSessions)) 个会话 · 缓存命中 \(cacheRateText(result))")
@@ -81,7 +84,7 @@ struct CopilotView: View {
                     ("输出", day.outputTokens + day.reasoningTokens, Theme.response),
                 ])
             },
-            liveDayModels: result.dayModels)
+            liveDayModels: result.dayModels, initialRange: usageRange)
     }
 
     private func modelsCard(_ result: CopilotUsageResult) -> some View {

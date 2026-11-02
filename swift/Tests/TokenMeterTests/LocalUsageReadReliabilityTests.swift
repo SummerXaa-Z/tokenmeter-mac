@@ -207,7 +207,7 @@ final class LocalUsageReadReliabilityTests: XCTestCase {
         }
     }
 
-    func testAdditionalSourcesKeepReadableEmptyAndMalformedDataAsSuccessfulZero() throws {
+    func testAdditionalSourcesKeepEmptyJournalsButRejectMalformedLegacyGeminiJSON() throws {
         let now = try fixedDate("2026-08-06T12:00:00.000Z")
         for source in SyntheticSource.allCases {
             let directory = try makeTemporaryDirectory()
@@ -215,9 +215,24 @@ final class LocalUsageReadReliabilityTests: XCTestCase {
             let fixture = try makeFixture(source, directory: directory, now: now)
             XCTAssertEqual(try fixture.load(), 7)
             try write("", to: fixture.file, modificationDate: now)
-            XCTAssertEqual(try fixture.load(), 0, "A successful truncation is not an IO failure")
+            if source == .geminiLegacyJSON {
+                XCTAssertThrowsError(try fixture.load(), "Truncated legacy JSON is not a confirmed empty session") {
+                    self.assertSanitizedLegacyGeminiError($0, file: fixture.file)
+                }
+            } else {
+                XCTAssertEqual(try fixture.load(), 0, "An empty readable line journal retains the original tolerance")
+            }
             try write("not JSON\n{\"partial\"", to: fixture.file, modificationDate: now)
-            XCTAssertEqual(try fixture.load(), 0, "Malformed/partial JSON retains the original tolerance")
+            if source == .geminiLegacyJSON {
+                XCTAssertThrowsError(try fixture.load(), "Damaged legacy JSON must not produce a successful zero") {
+                    self.assertSanitizedLegacyGeminiError($0, file: fixture.file)
+                }
+                try write("{\"sessionId\":\"synthetic-empty\",\"messages\":[]}",
+                          to: fixture.file, modificationDate: now)
+                XCTAssertEqual(try fixture.load(), 0, "A valid empty messages array is confirmed zero")
+            } else {
+                XCTAssertEqual(try fixture.load(), 0, "Malformed/partial line journals retain the original tolerance")
+            }
         }
     }
 
@@ -283,6 +298,15 @@ final class LocalUsageReadReliabilityTests: XCTestCase {
             XCTAssertEqual(error as? QwenCodeUsageError, .scanFailed)
         }
         XCTAssertFalse(error.localizedDescription.contains("TokenMeterLocalReadTests-"))
+    }
+
+    private func assertSanitizedLegacyGeminiError(_ error: Error, file: URL) {
+        guard let typed = error as? GeminiUsageError, case .invalidLegacySession = typed else {
+            XCTFail("Expected typed legacy Gemini parse failure"); return
+        }
+        XCTAssertFalse(error.localizedDescription.contains(file.path))
+        XCTAssertFalse(error.localizedDescription.contains("TokenMeterLocalReadTests-"))
+        XCTAssertFalse(error.localizedDescription.contains("partial"))
     }
 
     private func makeFixture(_ source: SyntheticSource, directory: URL, now: Date) throws -> SyntheticFixture {

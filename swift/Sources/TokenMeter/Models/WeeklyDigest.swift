@@ -125,35 +125,37 @@ enum WeeklyDigest {
             body += "；\(skills)"
         }
         let amounts = weeklyAmounts(
-            modelDays, allowed: allowed, lastKey: lastKey, priorKey: priorKey,
-            calendar: calendar)
+            modelDays, dailyHistory: days, allowed: allowed, lastKey: lastKey, priorKey: priorKey,
+            todayKey: DateUtil.key(today), calendar: calendar)
         if let last = amounts.last, last.matchedTokens > 0 {
+            let lastCoverage = last.coverage ?? 0
             body += "；API 等价 \(Fmt.usd(last.total))"
-            if let change = PeriodCompare.change(
-                this: last.total, last: amounts.prior?.total ?? 0)
+            if let change = last.changeCompared(to: amounts.prior)
             {
                 body += "（环比 \(change >= 0 ? "↑" : "↓") \(Fmt.percent(abs(change)))）"
             }
-            if let coverage = last.coverage, coverage < 0.999 {
-                body += "，价格覆盖 \(Int((coverage * 100).rounded()))%"
+            if lastCoverage < 0.999 {
+                body += "，价格覆盖 \(Int((lastCoverage * 100).rounded()))%"
+            }
+            if last.unmodelledTokens > 0 {
+                body += "，模型明细不完整"
             }
             // 金额段必附价格新鲜度;覆盖不足时点名缺价模型,方便报给收录流程
             body += "，最近核对 \(APIReferencePricingCatalog.observedAt)"
-            if let coverage = last.coverage, coverage < 0.95,
-               !last.unpricedModels.isEmpty
+            if lastCoverage < 0.95, !last.unpricedModels.isEmpty
             {
                 let listed = last.unpricedModels.prefix(2).joined(separator: "、")
                 let suffix = last.unpricedModels.count > 2 ? " 等" : ""
                 body += "，缺价 \(listed)\(suffix)"
             }
             if let value = subscriptionValue(
-                apiValueUSD: last.total, modelDays: modelDays, allowed: allowed,
+                apiValueUSD: last.total, priceCoverage: lastCoverage, modelDays: modelDays, allowed: allowed,
                 lastWeekDate: lastWeek, plans: plans, calendar: calendar),
-               let multiple = value.multiple
+               value.multiple != nil
             {
-                body += "；订阅回本 \(SubscriptionValueSummary.multipleText(multiple))"
+                body += "；订阅回本 \(value.multipleLabel)"
                 if let trend = roiTrendText(
-                    modelDays: modelDays, allowed: allowed,
+                    modelDays: modelDays, dailyHistory: days, allowed: allowed,
                     plans: plans, today: today, calendar: calendar)
                 {
                     body += "，\(trend)"
@@ -255,11 +257,11 @@ enum WeeklyDigest {
 
     /// 回本走势小抄:近几个完整周的逐周倍数(如"近 4 周 1.8 → 2.4 → 2.1 →
     /// 2.0"),与正文回本倍数同一条曲线(总览口径,全部订阅合计),末位即
-    /// 刚报的倍数。分母自留存起点起逐周连续,有数据的周必然连成一段并
-    /// 终于上周,所以"近 N 周"字面成立;不足两个周不拼——单个数成不了
-    /// 走势。
+    /// 刚报的倍数。未知周保留为 —，缺价或明细不全的倍数标记为下限，
+    /// 不跳过空缺再把相隔多周的数据冒充连续的“近 N 周”。
     private static func roiTrendText(
         modelDays: [ModelUsageDay],
+        dailyHistory: [HistoryStore.DayPoint],
         allowed: Set<HistorySource>,
         plans: [SubscriptionPlan],
         today: Date,
@@ -269,11 +271,14 @@ enum WeeklyDigest {
         guard monthlyFee > 0 else { return nil }
         let recent = SubscriptionROICurve.weeklyPoints(
             participants: allowed, monthlyFeeUSD: monthlyFee,
-            persisted: modelDays, today: today, calendar: calendar)
-            .compactMap(\.multiple)
+            persisted: modelDays, dailyHistory: dailyHistory, today: today, calendar: calendar)
+            .drop(while: { $0.feeUSD <= 0 })
             .suffix(4)
         guard recent.count >= 2 else { return nil }
-        let items = recent.map { String(format: "%.1f", $0) }
+        let items = recent.map { point in
+            guard let multiple = point.multiple else { return "—" }
+            return (point.isPartial ? "≥" : "") + String(format: "%.1f", multiple)
+        }
         return "近 \(recent.count) 周 " + items.joined(separator: " → ")
     }
 
@@ -282,6 +287,7 @@ enum WeeklyDigest {
     /// 天摊(与来源页回本同钳制)。未填订阅或无按天明细返回 nil,段省略。
     private static func subscriptionValue(
         apiValueUSD: Double,
+        priceCoverage: Double?,
         modelDays: [ModelUsageDay],
         allowed: Set<HistorySource>,
         lastWeekDate: Date,
@@ -310,16 +316,19 @@ enum WeeklyDigest {
         else { return nil }
         let days = calendar.dateComponents([.day], from: startDate, to: endDate).day ?? 0
         return SubscriptionValueSummary(
-            monthlyFeeUSD: monthlyFee, days: days + 1, apiValueUSD: apiValueUSD)
+            monthlyFeeUSD: monthlyFee, days: days + 1, apiValueUSD: apiValueUSD,
+            priceCoverage: priceCoverage)
     }
 
     /// 上周/上上周的 API 等价金额:按天明细逐日取样,价格取用量当日已生效
     /// 的快照(首个快照之前的用量按首快照计价),与总览同口径。
     private static func weeklyAmounts(
         _ modelDays: [ModelUsageDay],
+        dailyHistory: [HistoryStore.DayPoint],
         allowed: Set<HistorySource>,
         lastKey: String,
         priorKey: String,
+        todayKey: String,
         calendar: Calendar
     ) -> (last: APIReferenceCostSummary?, prior: APIReferenceCostSummary?) {
         var buckets: [String: [APICostSample]] = [lastKey: [], priorKey: []]
@@ -337,15 +346,25 @@ enum WeeklyDigest {
                 }
             }
         }
-        func summary(_ samples: [APICostSample]) -> APIReferenceCostSummary? {
+        func summary(_ samples: [APICostSample], week: String) -> APIReferenceCostSummary? {
             guard !samples.isEmpty else { return nil }
+            func belongs(_ dateKey: String) -> Bool {
+                guard let date = DateUtil.date(from: dateKey) else { return false }
+                return weekKey(date, calendar: calendar) == week
+            }
+            let unmodelled = ModelUsageCoverage.unmodelledTokens(
+                dailyHistory: dailyHistory.filter { belongs($0.date) },
+                modelHistory: modelDays.filter { belongs($0.date) },
+                participants: allowed, through: todayKey)
             return APIReferenceCostSummary(
                 samples: samples,
                 estimator: APIReferencePricingCatalog.estimator,
                 referenceDate: APIReferencePricingCatalog.observedAt,
-                conversionRates: APIReferencePricingCatalog.conversionRatesToUSD)
+                conversionRates: APIReferencePricingCatalog.conversionRatesToUSD,
+                unmodelledTokens: unmodelled)
         }
-        return (summary(buckets[lastKey] ?? []), summary(buckets[priorKey] ?? []))
+        return (summary(buckets[lastKey] ?? [], week: lastKey),
+                summary(buckets[priorKey] ?? [], week: priorKey))
     }
 
     /// 设置里已启用的 Coding 来源(DeepSeek 平台账户天然不在其列)。

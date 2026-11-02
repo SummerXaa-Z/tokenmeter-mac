@@ -10,7 +10,7 @@ struct SubscriptionPlansEditor: View {
             VStack(alignment: .leading, spacing: 2) {
                 Label("订阅月费", systemImage: "creditcard")
                     .font(.system(size: 12, weight: .semibold))
-                Text("填写正在付费的 AI 订阅；总览按所选范围折算回本倍数，指定归属来源后对应来源页同步显示；两处均附近 13 个完整周的回本走势折线，周报与导出 CSV 同口径。")
+                Text("填写月费和归属来源，用 API 等价估算订阅使用价值。")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -31,18 +31,17 @@ struct SubscriptionPlansEditor: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Text("金额只存本机、不联网，只用于回本倍数对比；人民币按固定参考汇率 $1 = ¥\(String(format: "%.2f", APIReferencePricingCatalog.cnyPerUSD)) 折算，不联网更新。")
+            Text("月费随所选窗口折算；API 等价是参考估算，不是实际账单。金额只存本机，人民币按 $1 ≈ ¥\(String(format: "%.2f", APIReferencePricingCatalog.cnyPerUSD)) 固定折算。")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Divider()
-            VStack(alignment: .leading, spacing: 3) {
-                Text("折算口径小抄")
-                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
-                // 各处天数口径与代码一一对应:总览 OverviewSnapshot、来源页
-                // SourceAPICostCard、周报 WeeklyDigest、导出 UsageCSVExport
-                Group {
-                    Text("· 折算订阅费 = 月费 × 12 ÷ 365 × 天数；回本倍数 = 同窗口 API 等价 ÷ 折算订阅费，低于 1 倍表示按 API 用量付费更省。")
-                    Text("· API 等价按用量当日生效的价格快照重算，缺价模型不计入——倍数只会偏低，不会虚高。")
+            DisclosureGroup("查看完整计价口径") {
+                VStack(alignment: .leading, spacing: 5) {
+                    // 各处天数口径与代码一一对应:总览 OverviewSnapshot、来源页
+                    // SourceAPICostCard、周报 WeeklyDigest、导出 UsageCSVExport
+                    Group {
+                    Text("· 折算订阅费 = 月费 × 12 ÷ 365 × 天数；回本倍数 = 同窗口 API 等价 ÷ 折算订阅费。价格覆盖完整时，低于 1 倍表示按 API 用量付费更省。")
+                    Text("· API 等价按用量当日生效的价格快照重算；缺价或缺模型明细时金额仅是已知部分，不将未知当成零，不作确定的省钱结论。")
                     Text("· 天数 = 所选窗口的自然日，并从本机按天明细留存的第一天起算（更早的天没有金额，不摊订阅费）：")
                     Text("· 　总览：始终计入全部订阅；1D/7D/30D 为滚动窗口，「全部」自留存起点到今天。")
                     Text("· 　来源页：只计入归属该来源的订阅；「周」自本周一到今天、「近7天」为滚动 7 天、「月」自本月 1 日到今天。")
@@ -50,10 +49,14 @@ struct SubscriptionPlansEditor: View {
                     Text("· 　导出「全部/近 N 天」按导出数据的首末行日期；「自定义起止」按所选整段自然日。")
                     Text("· 周走势折线（总览卡、来源页、周报小抄、导出周明细同一条公式）：只取已结束的完整周，含今天的本周不计；折线在单周超 5 倍时纵轴封顶并在脚注说明，周报小抄与 CSV 的数字不封顶。")
                     Text("· 　来源页折线只算归属该来源的订阅与该来源明细；周报小抄取最近几个有数据的周（不足两个不显示）；导出周明细固定最近 13 个完整周、不随导出范围截取。")
+                    }
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
-                .font(.system(size: 10)).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 6)
             }
+            .font(.system(size: 11, weight: .medium))
+            .accessibilityIdentifier("TokenMeter.Settings.SubscriptionPricingDetails")
         }
     }
 
@@ -61,6 +64,7 @@ struct SubscriptionPlansEditor: View {
         HStack(spacing: 6) {
             TextField("名称，如 Claude Max", text: plan.name)
                 .textFieldStyle(.roundedBorder)
+                .accessibilityLabel("订阅名称")
             TextField(
                 "月费",
                 value: plan.monthlyFee,
@@ -69,7 +73,8 @@ struct SubscriptionPlansEditor: View {
             .textFieldStyle(.roundedBorder)
             .multilineTextAlignment(.trailing)
             .frame(width: 64)
-            Picker("", selection: plan.currency) {
+            .accessibilityLabel("订阅月费")
+            Picker("币种", selection: plan.currency) {
                 ForEach(SubscriptionPlan.currencies, id: \.self) { Text($0).tag($0) }
             }
             .labelsHidden()
@@ -91,6 +96,7 @@ struct SubscriptionPlansEditor: View {
             }
             .buttonStyle(.borderless)
             .help("删除这条订阅")
+            .accessibilityLabel("删除\(plan.wrappedValue.name.isEmpty ? "这条订阅" : plan.wrappedValue.name)")
         }
         .controlSize(.small)
     }

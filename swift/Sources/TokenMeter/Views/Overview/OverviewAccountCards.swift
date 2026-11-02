@@ -78,14 +78,16 @@ struct OverviewDeepSeekPlatformCard: View {
                         availableDays: availableHistoryDays
                     ) {
                         Text(coverage)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
+                            .font(Theme.footnoteFont)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .contentShape(Rectangle())
                 .hoverHighlight()
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
+            .accessibilityHint("打开 DeepSeek 平台 API 用量与余额详情")
         }
         .accessibilityIdentifier("TokenMeter.DeepSeekPlatform")
     }
@@ -127,11 +129,13 @@ struct OverviewDeepSeekPlatformCard: View {
             Text(value)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(10.0 / 12.0)
             Text(label)
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity)
     }
@@ -143,12 +147,11 @@ struct BalanceRunwayLine: View {
 
     var body: some View {
         let low = runway.days < 7
-        HStack(spacing: 4) {
+        HStack(alignment: .top, spacing: 4) {
             Image(systemName: low ? "exclamationmark.triangle.fill" : "hourglass")
-                .font(.system(size: 9, weight: .semibold))
+                .font(Theme.badgeFont)
             Text("余额预计可用\(runway.days >= 1 && runway.days < 365 ? " " : "")\(BalanceRunway.daysText(runway.days)) · 按近 \(runway.sampleDays) 天日均 \(Fmt.money(runway.dailyAverage))")
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .font(Theme.footnoteFont)
         .foregroundStyle(low ? Color.orange : Color.secondary)
@@ -162,11 +165,11 @@ struct QuotaPaceLine: View {
     var text: String? = nil
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(alignment: .top, spacing: 4) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 9, weight: .semibold))
+                .font(Theme.badgeFont)
             Text(text ?? pace.summary())
-                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .font(Theme.footnoteFont)
         .foregroundStyle(Color.orange)
@@ -181,6 +184,12 @@ struct OverviewSubscriptionQuotaCard: View {
     let statuses: [SubscriptionQuotaSourceStatus]
 
     var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            quotaContent(snapshot.evaluated(at: context.date))
+        }
+    }
+
+    private func quotaContent(_ current: SubscriptionQuotaSnapshot) -> some View {
         OverviewSection {
             VStack(alignment: .leading, spacing: 9) {
                 Label("订阅剩余量", systemImage: "fuelpump")
@@ -188,7 +197,7 @@ struct OverviewSubscriptionQuotaCard: View {
 
                 ForEach(Array(visibleStatuses.enumerated()), id: \.element.id) { index, status in
                     if index > 0 { Divider().opacity(0.35) }
-                    let groups = snapshot.groups.filter { $0.source == status.source }
+                    let groups = current.groups.filter { $0.source == status.source }
                     if groups.isEmpty {
                         placeholder(status)
                     } else {
@@ -219,7 +228,7 @@ struct OverviewSubscriptionQuotaCard: View {
 
                 Divider().opacity(0.35)
                 DisclosureGroup("额度查询方式 · 本地会话不会上传") {
-                    if hasPace {
+                    if current.groups.contains(where: { $0.periods.contains { $0.pace != nil } }) {
                         Text("刻度线为匀速消耗此刻应剩的位置；节奏按窗口内已用比例线性外推，仅供参考。")
                             .font(Theme.footnoteFont).foregroundStyle(.secondary)
                     }
@@ -242,10 +251,6 @@ struct OverviewSubscriptionQuotaCard: View {
 
     private var otherStatuses: [SubscriptionQuotaSourceStatus] {
         statuses.filter { status in !visibleStatuses.contains { $0.id == status.id } }
-    }
-
-    private var hasPace: Bool {
-        snapshot.groups.contains { $0.periods.contains { $0.pace != nil } }
     }
 
     @ViewBuilder
@@ -308,12 +313,20 @@ struct OverviewSubscriptionQuotaCard: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .padding(.leading, 26)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let observedAt = group.observedAt {
+                Text("数据截至 \(Self.observedFormatter.string(from: observedAt))")
+                    .font(Theme.footnoteFont).foregroundStyle(.secondary)
+                    .padding(.leading, 26)
+                    .help("最近一次成功观测的时间，不代表此后用量未变化；窗口结束后需重新查询。")
             }
             if group.source == .kimiCode {
                 Text("Kimi Code 的 5 小时/周额度不代表会员月总额度；月额度需在 Kimi 订阅页查看。")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .font(Theme.footnoteFont)
+                    .foregroundStyle(.secondary)
                     .padding(.leading, 26)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.vertical, 2)
@@ -342,12 +355,13 @@ struct OverviewSubscriptionQuotaCard: View {
                 }
                 // 撑得到重置时接在重置时间后面:"… 重置 · 届时约剩 30%"
                 let calm = pace.flatMap { $0.isAhead ? nil : "届时约剩 \(QuotaPace.percent($0.projectedRemainingAtReset))" }
-                let details = [period.detail, period.resetAt.map(resetText), calm].compactMap { $0 }
+                let details = period.isExpired ? ["窗口已结束，请刷新"]
+                    : [period.detail, period.resetAt.map(resetText), calm].compactMap { $0 }
                 if !details.isEmpty {
                     Text(details.joined(separator: " · "))
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(2)
+                        .font(Theme.footnoteFont)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -393,6 +407,13 @@ struct OverviewSubscriptionQuotaCard: View {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "M/d HH:mm 重置"
+        return formatter
+    }()
+
+    private static let observedFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M/d HH:mm"
         return formatter
     }()
 

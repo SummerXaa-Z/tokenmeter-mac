@@ -48,37 +48,43 @@ struct SettingsView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
             Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if shows(.dataSources) {
-                        sectionTitle("数据来源")
-                        SettingsSourcesSection()
+            ScrollViewReader { scroll in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        if shows(.dataSources) {
+                            sectionTitle("数据来源")
+                            SettingsSourcesSection()
+                        }
+                        if shows(.accounts) {
+                            sectionTitle("平台账户与额度")
+                            SettingsAccountsSection(interaction: accounts)
+                        }
+                        if shows(.subscriptions) {
+                            sectionTitle("订阅与费用")
+                            SettingsSubscriptionsSection(interaction: subscriptions)
+                        }
+                        if shows(.alerts) {
+                            sectionTitle("菜单栏与提醒")
+                            SettingsAlertsSection(interaction: alerts)
+                        }
+                        if shows(.runtime) {
+                            sectionTitle("刷新与启动")
+                            SettingsRuntimeSection(interaction: runtime)
+                        }
+                        if shows(.tools) {
+                            sectionTitle("工具与维护")
+                            SettingsMaintenanceSection(interaction: maintenance)
+                        }
+                        footer
                     }
-                    if shows(.accounts) {
-                        sectionTitle("平台账户与额度")
-                        SettingsAccountsSection(interaction: accounts)
-                    }
-                    if shows(.subscriptions) {
-                        sectionTitle("订阅与费用")
-                        SettingsSubscriptionsSection(interaction: subscriptions)
-                    }
-                    if shows(.alerts) {
-                        sectionTitle("菜单栏与提醒")
-                        SettingsAlertsSection(interaction: alerts)
-                    }
-                    if shows(.runtime) {
-                        sectionTitle("刷新与启动")
-                        SettingsRuntimeSection(interaction: runtime)
-                    }
-                    if shows(.tools) {
-                        sectionTitle("工具与维护")
-                        SettingsMaintenanceSection(interaction: maintenance)
-                    }
-                    footer
+                    .padding(14)
+                    .id("Settings.ContentTop")
                 }
-                .padding(14)
+                .scrollIndicators(.automatic)
+                .onChange(of: activeSection) { _, _ in
+                    scroll.scrollTo("Settings.ContentTop", anchor: .top)
+                }
             }
-            .scrollIndicators(.hidden)
         }
         .onAppear {
             accounts.bind(to: state)
@@ -94,12 +100,17 @@ struct SettingsView: View {
         activeSection == nil || activeSection == section
     }
 
-    // 「全部」+ 六个分区胶囊；超出宽度可横滑，选中态与来源徽章同款配色
+    // 全部与六区始终可见，不依赖横向滚动发现入口；内容仍可全部直读。
     private var sectionBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        VStack(spacing: 6) {
             HStack(spacing: 6) {
                 sectionChip(nil, label: "全部")
-                ForEach(SettingsSection.allCases) { section in
+                ForEach([SettingsSection.dataSources, .accounts]) { section in
+                    sectionChip(section, label: section.rawValue)
+                }
+            }
+            HStack(spacing: 6) {
+                ForEach([SettingsSection.subscriptions, .alerts, .runtime, .tools]) { section in
                     sectionChip(section, label: section.rawValue)
                 }
             }
@@ -114,16 +125,20 @@ struct SettingsView: View {
             Text(label)
                 .font(.system(size: 11, weight: selected ? .semibold : .regular))
                 .foregroundStyle(selected ? Theme.brand : .secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+                .lineLimit(1)
+                .padding(.horizontal, 6)
+                .frame(maxWidth: .infinity, minHeight: 28)
                 .background(
                     selected
                         ? Theme.brand.opacity(0.12)
                         : Color.primary.opacity(0.05),
                     in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .accessibilityLabel("只看\(label)")
+        .accessibilityValue(selected ? "已选中" : "未选中")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("TokenMeter.Settings.Section.\(section?.id ?? "全部")")
     }
 
     private var header: some View {

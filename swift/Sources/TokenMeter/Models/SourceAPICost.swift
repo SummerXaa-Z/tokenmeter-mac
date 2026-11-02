@@ -10,12 +10,13 @@ enum SourceAPICost {
         liveDayModels: [String: [String: ModelTokenTally]]?,
         period: PeriodCompare.Period = .rolling7,
         persisted: [ModelUsageDay] = [],
+        dailyHistory: [HistoryStore.DayPoint] = [],
         todayKey: String = DateUtil.today(),
         calendar: Calendar = .current
     ) -> APIReferenceCostSummary? {
         costSummary(
             source: source, liveDayModels: liveDayModels, period: period, prior: false,
-            persisted: persisted, todayKey: todayKey, calendar: calendar)
+            persisted: persisted, dailyHistory: dailyHistory, todayKey: todayKey, calendar: calendar)
     }
 
     /// 上期(上周/前 7 天/上月)的同口径金额,作环比徽标的基期。上期完整
@@ -25,12 +26,13 @@ enum SourceAPICost {
         liveDayModels: [String: [String: ModelTokenTally]]?,
         period: PeriodCompare.Period = .rolling7,
         persisted: [ModelUsageDay] = [],
+        dailyHistory: [HistoryStore.DayPoint] = [],
         todayKey: String = DateUtil.today(),
         calendar: Calendar = .current
     ) -> APIReferenceCostSummary? {
         costSummary(
             source: source, liveDayModels: liveDayModels, period: period, prior: true,
-            persisted: persisted, todayKey: todayKey, calendar: calendar)
+            persisted: persisted, dailyHistory: dailyHistory, todayKey: todayKey, calendar: calendar)
     }
 
     private static func costSummary(
@@ -39,18 +41,22 @@ enum SourceAPICost {
         period: PeriodCompare.Period,
         prior: Bool,
         persisted: [ModelUsageDay],
+        dailyHistory: [HistoryStore.DayPoint],
         todayKey: String,
         calendar: Calendar
     ) -> APIReferenceCostSummary? {
         guard let today = DateUtil.date(from: todayKey),
               let window = windowKeys(
-                period: period, today: today, calendar: calendar, prior: prior),
-              let merged = mergedDays(
-                source: source, liveDayModels: liveDayModels,
-                persisted: persisted, window: window),
-              let summary = summary(from: samples(from: merged, source: source))
+                period: period, today: today, calendar: calendar, prior: prior)
         else { return nil }
-        return summary
+        let merged = mergedDays(source: source, liveDayModels: liveDayModels,
+                                persisted: persisted, window: window) ?? [:]
+        let missing = ModelUsageCoverage.unmodelledTokens(
+            dailyHistory: dailyHistory.filter { window.contains($0.date) },
+            modelHistory: merged.map { date, models in
+                ModelUsageDay(date: date, bySource: [source: .init(models: models)])
+            }, participants: [source], through: todayKey)
+        return summary(from: samples(from: merged, source: source), unmodelledTokens: missing)
     }
 
     /// 近 N 个自然日（含今天）逐日 API 等价美元金额（自然日键 → USD）：
@@ -75,8 +81,8 @@ enum SourceAPICost {
         var result: [String: Double] = [:]
         for date in merged.keys {
             let daySamples = samples(from: [date: merged[date] ?? [:]], source: source)
-            if let summary = summary(from: daySamples), summary.total > 0 {
-                result[date] = summary.total
+            if let summary = summary(from: daySamples), let amount = summary.pricedTotal {
+                result[date] = amount
             }
         }
         return result
@@ -108,6 +114,7 @@ enum SourceAPICost {
         period: PeriodCompare.Period = .rolling7,
         plans: [SubscriptionPlan],
         persisted: [ModelUsageDay] = [],
+        dailyHistory: [HistoryStore.DayPoint] = [],
         todayKey: String = DateUtil.today(),
         calendar: Calendar = .current
     ) -> SubscriptionValueSummary? {
@@ -116,17 +123,19 @@ enum SourceAPICost {
               let today = DateUtil.date(from: todayKey),
               let summary = summary(
                 source: source, liveDayModels: liveDayModels, period: period,
-                persisted: persisted, todayKey: todayKey, calendar: calendar),
+                persisted: persisted, dailyHistory: dailyHistory, todayKey: todayKey, calendar: calendar),
               let window = windowKeys(
                 period: period, today: today, calendar: calendar, prior: false),
               let windowStart = window.min(),
               let coverageStart = coverageStart(
-                source: source, liveDayModels: liveDayModels, persisted: persisted),
+                source: source, liveDayModels: liveDayModels, persisted: persisted, through: todayKey),
               let startDate = DateUtil.date(from: max(windowStart, coverageStart))
         else { return nil }
         let days = calendar.dateComponents([.day], from: startDate, to: today).day ?? 0
         return SubscriptionValueSummary(
-            monthlyFeeUSD: monthlyFee, days: days + 1, apiValueUSD: summary.total)
+            monthlyFeeUSD: monthlyFee, days: days + 1, apiValueUSD: summary.total,
+            apiValueKnown: summary.pricedTotal != nil,
+            priceCoverage: summary.coverage)
     }
 
     /// 该来源最早有模型明细的一天（实时 + 留存合并取最早）：订阅费折算
@@ -134,14 +143,17 @@ enum SourceAPICost {
     private static func coverageStart(
         source: HistorySource,
         liveDayModels: [String: [String: ModelTokenTally]]?,
-        persisted: [ModelUsageDay]
+        persisted: [ModelUsageDay],
+        through todayKey: String
     ) -> String? {
         let persistedStart = persisted
-            .filter { !($0.bySource[source]?.models.isEmpty ?? true) }
+            .filter { $0.date <= todayKey && ModelUsageHistoryStore.isDateKey($0.date)
+                && !($0.bySource[source]?.models.isEmpty ?? true) }
             .map(\.date).min()
         let liveStart = (liveDayModels ?? [:])
             .filter { date, models in
                 ModelUsageHistoryStore.isDateKey(date)
+                    && date <= todayKey
                     && !(ModelTokenTally.nonEmpty(models)?.isEmpty ?? true)
             }
             .keys.min()
@@ -187,14 +199,16 @@ enum SourceAPICost {
     }
 
     private static func summary(
-        from samples: [APICostSample]
+        from samples: [APICostSample],
+        unmodelledTokens: Int = 0
     ) -> APIReferenceCostSummary? {
-        guard !samples.isEmpty else { return nil }
+        guard !samples.isEmpty || unmodelledTokens > 0 else { return nil }
         return APIReferenceCostSummary(
             samples: samples,
             estimator: APIReferencePricingCatalog.estimator,
             referenceDate: APIReferencePricingCatalog.observedAt,
-            conversionRates: APIReferencePricingCatalog.conversionRatesToUSD)
+            conversionRates: APIReferencePricingCatalog.conversionRatesToUSD,
+            unmodelledTokens: unmodelledTokens)
     }
 
     /// 该来源是否曾有过模型明细（不限窗口）：决定整卡是否隐藏。某档窗口

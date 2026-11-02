@@ -4,6 +4,8 @@ import SwiftUI
 // Qwen Code 只读取官方本地聚合文件，不打开 chats 对话记录。
 struct QwenCodeView: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.usageNow) private var now
+    @Environment(\.sourceUsageRange) private var usageRange
     var onBack: () -> Void
     var onSettings: () -> Void
 
@@ -11,11 +13,12 @@ struct QwenCodeView: View {
         ScrollView {
             VStack(spacing: 10) {
                 header
+                ScopedSourceUsageCard(source: .qwen)
                 SourceCollectionContent(cache: state.qwen, emptyMessage: "未找到 Qwen Code 本地数据") { result in
-                    todayCard(result)
-                    hourlyCard(result)
+                    if usageRange == nil { todayCard(result) }
+                    if usageRange != .day { hourlyCard(result) }
                     weekCard(result)
-                    modelsCard(result)
+                    if usageRange == nil { modelsCard(result) }
                     privacyCard
                 }
                 SourceAPICostCard(source: .qwen, liveDayModels: state.qwen.result?.dayModels)
@@ -42,15 +45,15 @@ struct QwenCodeView: View {
     }
 
     private func todayCard(_ result: QwenCodeUsageResult) -> some View {
-        let today = result.today
+        let today = result.day(on: DateUtil.key(now))
         return Card {
             VStack(alignment: .leading, spacing: 8) {
                 Label("今日用量", systemImage: "sun.max")
                     .font(.system(size: 12, weight: .semibold))
                 HStack(spacing: 0) {
-                    SourceMetric(title: "Token", value: Fmt.tokensShort(today?.totalTokens ?? 0))
-                    SourceMetric(title: "请求", value: Fmt.int(today?.messageCount ?? 0))
-                    SourceMetric(title: "会话", value: Fmt.int(today?.sessionCount ?? 0))
+                    SourceMetric(title: "Token", value: (today?.totalTokens).map(Fmt.tokensShort) ?? "—")
+                    SourceMetric(title: "请求", value: (today?.messageCount).map(Fmt.int) ?? "—")
+                    SourceMetric(title: "会话", value: (today?.sessionCount).map(Fmt.int) ?? "—")
                     SourceMetric(
                         title: "缓存命中",
                         value: today?.cacheHitRate.map { Fmt.percent($0) } ?? "—"
@@ -78,7 +81,8 @@ struct QwenCodeView: View {
     private func hourlyCard(_ result: QwenCodeUsageResult) -> some View {
         SourceHourCard(
             source: .qwen,
-            bars: result.todayHours.map { .init(hour: $0.hour, tokens: $0.totalTokens) },
+            bars: (result.hourlyTokens(on: DateUtil.key(now)) ?? [:]).sorted { $0.key < $1.key }.map { .init(hour: $0.key, tokens: $0.value) },
+            observedDate: result.days.last?.date,
             color: Theme.qwen,
             note: "Qwen 在 Session 结束时写入聚合记录，因此小时归属按 Session 结束时间。"
         )
@@ -95,7 +99,7 @@ struct QwenCodeView: View {
                     ("推理", day.reasoningTokens, Theme.miss),
                 ])
             },
-            liveDayModels: result.dayModels)
+            liveDayModels: result.dayModels, initialRange: usageRange)
     }
 
     private func modelsCard(_ result: QwenCodeUsageResult) -> some View {

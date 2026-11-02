@@ -2,31 +2,32 @@ import SwiftUI
 
 struct SettingsSourcesSection: View {
     @EnvironmentObject var state: AppState
+    @EnvironmentObject private var historyReader: HistorySnapshotReader
     private var codingProviders: [Provider] {
         SourceCatalog.codingAgentSources.map(SourceCatalog.provider(for:))
     }
 
     // MARK: - 数据来源
 
-    private var availableCodingProviders: [Provider] {
-        codingProviders.filter(\.available)
+    private var visibleCodingProviders: [Provider] {
+        codingProviders.filter { visibility(for: $0).showsToggle }
     }
 
     private var unavailableCodingProviders: [Provider] {
-        codingProviders.filter { !$0.available }
+        codingProviders.filter { !visibility(for: $0).showsToggle }
     }
 
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(availableCodingProviders.enumerated()), id: \.element.id) { index, provider in
+                ForEach(Array(visibleCodingProviders.enumerated()), id: \.element.id) { index, provider in
                     sourceToggleRow(provider)
-                    if index < availableCodingProviders.count - 1 {
+                    if index < visibleCodingProviders.count - 1 {
                         Divider().padding(.leading, 36)
                     }
                 }
                 if !unavailableCodingProviders.isEmpty {
-                    if !availableCodingProviders.isEmpty {
+                    if !visibleCodingProviders.isEmpty {
                         Divider().padding(.leading, 36)
                     }
                     HStack(alignment: .top, spacing: 9) {
@@ -41,7 +42,7 @@ struct SettingsSourcesSection: View {
                             .padding(.top, 6)
                         Spacer(minLength: 0)
                     }
-                    .padding(.top, availableCodingProviders.isEmpty ? 0 : 7)
+                    .padding(.top, visibleCodingProviders.isEmpty ? 0 : 7)
                 }
                 Divider().padding(.vertical, 7)
                 codexLiveQuotaToggle
@@ -70,7 +71,8 @@ struct SettingsSourcesSection: View {
     }
 
     private func sourceToggleRow(_ provider: Provider) -> some View {
-        Toggle(isOn: sourceBinding(provider)) {
+        let visibility = visibility(for: provider)
+        return Toggle(isOn: sourceBinding(provider)) {
             HStack(spacing: 9) {
                 Image(systemName: providerIcon(provider))
                     .font(.system(size: 12, weight: .semibold))
@@ -90,10 +92,18 @@ struct SettingsSourcesSection: View {
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(.quaternary, in: Capsule())
+                        if !visibility.available {
+                            Text("未检测到").font(.system(size: 10)).foregroundStyle(.secondary)
+                        }
                     }
                     Text(providerSubtitle(provider))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+                    if let explanation = visibility.unavailableExplanation {
+                        Text(explanation)
+                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 // 撑满剩余宽度，让所有开关统一靠右成一列
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -101,9 +111,18 @@ struct SettingsSourcesSection: View {
         }
         .toggleStyle(.switch)
         .accessibilityLabel(providerDisplayName(provider))
-        .accessibilityHint(providerSubtitle(provider))
+        .accessibilityHint(visibility.unavailableExplanation ?? providerSubtitle(provider))
         .padding(.vertical, 7)
         .accessibilityIdentifier("TokenMeter.Settings.Source.\(provider.rawValue)")
+    }
+
+    private func visibility(for provider: Provider) -> SettingsSourceVisibility {
+        let source = SourceCatalog.source(for: provider)
+        return SettingsSourceVisibility(
+            available: provider.available,
+            enabled: state.isSourceEnabled(source),
+            hasHistory: SettingsSourceVisibility.hasHistory(
+                for: source, daily: historyReader.snapshot.daily, models: historyReader.snapshot.models))
     }
 
     private func sourceBinding(_ provider: Provider) -> Binding<Bool> {

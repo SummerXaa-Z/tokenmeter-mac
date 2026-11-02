@@ -61,13 +61,19 @@ enum UsageCSVExport {
         modelHistory: [ModelUsageDay] = [],
         plans: [SubscriptionPlan] = [],
         range: ExportRange = .all,
+        historyScope: String = "已保存历史",
         todayKey: String = DateUtil.today()
     ) -> String {
         var lines = [[String]]()
         lines.append(["日期"]
             + codingColumns.map(\.title)
             + ["Coding 合计", "DeepSeek 平台", "平台费用(USD)", "API 等价(USD)"])
-        var sorted = days.sorted(by: { $0.date < $1.date })
+        let validModels = modelHistory.filter {
+            $0.date <= todayKey && ModelUsageHistoryStore.isDateKey($0.date)
+        }
+        var sorted = days.filter {
+            $0.date <= todayKey && ModelUsageHistoryStore.isDateKey($0.date)
+        }.sorted(by: { $0.date < $1.date })
         switch range {
         case .all:
             break
@@ -81,7 +87,7 @@ enum UsageCSVExport {
         // 固定窗口档的折算边界用窗口本身（与周报同口径：整周自然日都摊），
         // 滚动/全部档沿用首末行日期
         let fixedBounds: (start: String, end: String)?
-        if case let .window(start, end) = range { fixedBounds = (start, end) }
+        if case let .window(start, end) = range { fixedBounds = (start, min(end, todayKey)) }
         else { fixedBounds = nil }
         for day in sorted {
             let codingTotal = HistorySource.codingAgents.reduce(0) {
@@ -101,26 +107,30 @@ enum UsageCSVExport {
         }
         if !sorted.isEmpty,
            let coverageRow = priceCoverageRow(
-               modelHistory: modelHistory, range: range, todayKey: todayKey)
+               days: sorted, modelHistory: validModels, todayKey: todayKey)
         {
             lines.append(coverageRow)
         }
         if let subscription = subscriptionSummary(
             sorted, fixedBounds: fixedBounds, apiValueByDate: apiValueByDate,
-            modelHistory: modelHistory, plans: plans)
+            modelHistory: validModels, plans: plans, todayKey: todayKey)
         {
             lines.append([
                 "订阅回本",
                 String(format: "订阅月费合计(USD) %.2f", subscription.monthlyFeeUSD),
                 "折算天数 \(subscription.days)",
                 String(format: "折算订阅费(USD) %.2f", subscription.proratedFeeUSD),
-                String(format: "API 等价合计(USD) %.2f", subscription.apiValueUSD),
-                subscription.multiple.map { String(format: "回本倍数 %.2f", $0) } ?? "回本倍数 —",
+                subscription.apiValueKnown ? String(format: "API 等价合计(USD) %.2f", subscription.apiValueUSD) : "API 等价合计(USD) —",
+                subscription.multiple.map {
+                    String(format: subscription.priceCoverage.map { $0 < 0.999 } == true ? "回本倍数下限 %.2f" : "回本倍数 %.2f", $0)
+                } ?? "回本倍数 —",
+                subscription.detailText,
             ])
             lines.append(contentsOf: roiWeeklyRows(
-                modelHistory: modelHistory, plans: plans, todayKey: todayKey))
+                modelHistory: validModels, dailyHistory: days, plans: plans, todayKey: todayKey))
         }
-        return lines.map { $0.joined(separator: ",") }.joined(separator: "\n") + "\n"
+        lines.append(["数据范围", historyScope, "缺价或无模型明细的金额留空；部分计价合计是下限，不代表零成本"])
+        return lines.map { $0.map(ModelRankingCSVExport.escaped).joined(separator: ",") }.joined(separator: "\n") + "\n"
     }
 
     /// 「订阅回本·周明细」行：最近 13 个完整周逐周回本，与总览回本走势
@@ -129,6 +139,7 @@ enum UsageCSVExport {
     /// 0、倍数留「—」；未填订阅或无按天明细时不输出任何行。
     private static func roiWeeklyRows(
         modelHistory: [ModelUsageDay],
+        dailyHistory: [HistoryStore.DayPoint],
         plans: [SubscriptionPlan],
         todayKey: String
     ) -> [[String]] {
@@ -140,14 +151,16 @@ enum UsageCSVExport {
             participants: HistorySource.codingAgents,
             monthlyFeeUSD: monthlyFee,
             persisted: modelHistory,
+            dailyHistory: dailyHistory,
             today: today
         ).map { point in
             [
                 "订阅回本·周明细",
                 "周(周一) \(point.weekOf)",
-                String(format: "API 等价(USD) %.2f", point.apiValueUSD),
+                point.pricedValueUSD.map { String(format: "API 等价(USD) %.2f", $0) } ?? "API 等价(USD) —",
                 String(format: "折算订阅费(USD) %.2f", point.feeUSD),
-                point.multiple.map { String(format: "回本倍数 %.2f", $0) } ?? "回本倍数 —",
+                point.multiple.map { String(format: point.isPartial ? "回本倍数下限 %.2f" : "回本倍数 %.2f", $0) } ?? "回本倍数 —",
+                point.priceCoverage.map { "价格覆盖 \(Int(($0 * 100).rounded()))%" } ?? "",
             ]
         }
     }
@@ -156,39 +169,30 @@ enum UsageCSVExport {
     /// 金额同一套计价样本），对账时一眼看出「API 等价(USD)」列的可靠程度；
     /// 有缺价模型时点名。没有明细、没有 tokens 或明细全在窗口外时省略。
     private static func priceCoverageRow(
+        days: [HistoryStore.DayPoint],
         modelHistory: [ModelUsageDay],
-        range: ExportRange,
         todayKey: String
     ) -> [String]? {
-        let startKey: String?
-        switch range {
-        case .all: startKey = nil
-        case .lastDays: startKey = windowStartDateKey(range, todayKey: todayKey)
-        case .window(let start, _): startKey = start
-        }
-        let endKey: String?
-        if case let .window(_, end) = range { endKey = end } else { endKey = nil }
-
-        let samples = modelHistory
-            .filter { day in
-                guard ModelUsageHistoryStore.isDateKey(day.date) else { return false }
-                if let startKey, day.date < startKey { return false }
-                if let endKey, day.date > endKey { return false }
-                return true
-            }
-            .flatMap(samples(in:))
+        let exportedDates = Set(days.map(\.date))
+        let exportedModels = modelHistory.filter { exportedDates.contains($0.date) }
+        let samples = exportedModels.flatMap(samples(in:))
         guard !samples.isEmpty else { return nil }
+        let missing = ModelUsageCoverage.unmodelledTokens(
+            dailyHistory: days, modelHistory: exportedModels,
+            participants: HistorySource.codingAgents, through: todayKey)
         let summary = APIReferenceCostSummary(
             samples: samples,
             estimator: APIReferencePricingCatalog.estimator,
             referenceDate: APIReferencePricingCatalog.observedAt,
-            conversionRates: APIReferencePricingCatalog.conversionRatesToUSD)
+            conversionRates: APIReferencePricingCatalog.conversionRatesToUSD,
+            unmodelledTokens: missing)
         guard let coverage = summary.coverage else { return nil }
         var row = [
             "价格覆盖率",
             String(format: "覆盖率 %.1f%%", coverage * 100),
-            "覆盖 tokens \(summary.matchedTokens) / \(summary.totalTokens)",
+            "覆盖 tokens \(summary.matchedTokens) / \(summary.totalTokens + missing)",
         ]
+        if missing > 0 { row.append("无模型明细 tokens \(missing)") }
         if !summary.unpricedModels.isEmpty {
             row.append("缺价模型 " + summary.unpricedModels.joined(separator: "、"))
         }
@@ -210,14 +214,15 @@ enum UsageCSVExport {
         let codingTotal = HistorySource.codingAgents.reduce(0) {
             $0 + (bySource[$1] ?? 0)
         }
-        let apiTotal = sorted.compactMap { apiValueByDate[$0.date] }.reduce(0, +)
+        let apiValues = sorted.compactMap { apiValueByDate[$0.date] }
+        let apiTotal = apiValues.reduce(0, +)
         return ["汇总"]
             + codingColumns.map { String(bySource[$0.source] ?? 0) }
             + [
                 String(codingTotal),
                 String(bySource[.deepseek] ?? 0),
                 String(format: "%.2f", cost),
-                String(format: "%.2f", apiTotal),
+                apiValues.isEmpty ? "" : String(format: "%.2f", apiTotal),
             ]
     }
 
@@ -232,7 +237,8 @@ enum UsageCSVExport {
         fixedBounds: (start: String, end: String)?,
         apiValueByDate: [String: Double],
         modelHistory: [ModelUsageDay],
-        plans: [SubscriptionPlan]
+        plans: [SubscriptionPlan],
+        todayKey: String
     ) -> SubscriptionValueSummary? {
         let monthlyFee = SubscriptionPlan.monthlyTotalUSD(plans)
         guard monthlyFee > 0,
@@ -244,9 +250,23 @@ enum UsageCSVExport {
               startDate <= endDate
         else { return nil }
         let days = Calendar.current.dateComponents([.day], from: startDate, to: endDate).day ?? 0
-        let apiTotal = sorted.compactMap { apiValueByDate[$0.date] }.reduce(0, +)
+        let apiValues = sorted.compactMap { apiValueByDate[$0.date] }
+        let apiTotal = apiValues.reduce(0, +)
+        let exportedDates = Set(sorted.map(\.date))
+        let exportedModels = modelHistory.filter { exportedDates.contains($0.date) }
+        let missing = ModelUsageCoverage.unmodelledTokens(
+            dailyHistory: sorted, modelHistory: exportedModels,
+            participants: HistorySource.codingAgents, through: todayKey)
+        let summary = APIReferenceCostSummary(
+            samples: exportedModels.flatMap { samples(in: $0) },
+            estimator: APIReferencePricingCatalog.estimator,
+            referenceDate: APIReferencePricingCatalog.observedAt,
+            conversionRates: APIReferencePricingCatalog.conversionRatesToUSD,
+            unmodelledTokens: missing)
         return SubscriptionValueSummary(
-            monthlyFeeUSD: monthlyFee, days: days + 1, apiValueUSD: apiTotal)
+            monthlyFeeUSD: monthlyFee, days: days + 1, apiValueUSD: apiTotal,
+            apiValueKnown: !apiValues.isEmpty,
+            priceCoverage: summary.coverage)
     }
 
     /// 最早有按天模型明细的一天（任意 Coding 来源）。
@@ -286,8 +306,8 @@ enum UsageCSVExport {
                 referenceDate: max(day.date, APIReferencePricingCatalog.firstObservedAt),
                 conversionRates: APIReferencePricingCatalog.conversionRatesToUSD)
             // 当天模型全部缺价时留空，不写成 0 元
-            guard !summary.amounts.isEmpty else { continue }
-            result[day.date] = summary.total
+            guard let amount = summary.pricedTotal else { continue }
+            result[day.date] = amount
         }
         return result
     }

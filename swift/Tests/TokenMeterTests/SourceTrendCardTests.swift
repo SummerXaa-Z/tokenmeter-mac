@@ -4,6 +4,42 @@ import XCTest
 // 来源页 7|30 天趋势卡：30 天档的数据装配（留存 + 实时覆盖 + 补零时间轴）
 // 与各来源分量折叠口径。
 final class SourceTrendCardTests: XCTestCase {
+    func testExplicitAllKeepsHistoryBeforeThirtyDaysAndPadsGaps() {
+        let days = SourceTrendCard.rangeDays(source: .kimi, range: .all, persisted: [
+            modelDay("2026-07-01", source: .kimi, ["kimi-k2.6": .init(output: 20)]),
+            modelDay("2026-09-27", source: .kimi, ["kimi-k2.6": .init(output: 5)]),
+        ], dailyHistory: [.init(date: "2026-07-01", bySource: [.kimi: 30], cost: 0)], todayKey: "2026-09-27")
+        XCTAssertEqual(days.first?.date, "2026-07-01")
+        XCTAssertEqual(days.last?.date, "2026-09-27")
+        XCTAssertGreaterThan(days.count, 30)
+        XCTAssertEqual(days.first?.parts.first { $0.name == "未归因" }?.value, 10)
+        XCTAssertEqual(days.reduce(0) { $0 + $1.parts.reduce(0) { $0 + $1.value } }, 35)
+        XCTAssertTrue(days.first { $0.date == "2026-08-10" }?.parts.allSatisfy { $0.value == 0 } == true)
+    }
+
+    func testExplicitDayAndWeekKeepExactRange() {
+        let history = [modelDay("2026-09-20", source: .kimi, ["kimi-k2.6": .init(output: 999)]),
+                       modelDay("2026-09-27", source: .kimi, ["kimi-k2.6": .init(output: 7)])]
+        let day = SourceTrendCard.rangeDays(source: .kimi, range: .day, persisted: history,
+                                          dailyHistory: [], todayKey: "2026-09-27")
+        let week = SourceTrendCard.rangeDays(source: .kimi, range: .week, persisted: history,
+                                           dailyHistory: [], todayKey: "2026-09-27")
+        XCTAssertEqual(day.count, 1)
+        XCTAssertEqual(day.first?.date, "2026-09-27")
+        XCTAssertEqual(week.count, 7)
+        XCTAssertEqual(week.first?.date, "2026-09-21")
+        XCTAssertEqual(week.reduce(0) { $0 + $1.parts.reduce(0) { $0 + $1.value } }, 7)
+    }
+
+    func testLongHistoryMonthBucketsKeepFullYearIdentityAndTotals() {
+        let days = [SourceTrendCard.Day(date: "2025-09-01", parts: [("输出", 3, Theme.response)]),
+                    SourceTrendCard.Day(date: "2025-09-30", parts: [("输出", 4, Theme.response)]),
+                    SourceTrendCard.Day(date: "2026-09-01", parts: [("输出", 8, Theme.response)])]
+        let buckets = SourceTrendCard.chartBuckets(days, granularity: .month)
+        XCTAssertEqual(buckets.map(\.date), ["2025-09-01", "2026-09-01"])
+        XCTAssertEqual(buckets.map { $0.parts.reduce(0) { $0 + $1.value } }, [7, 8])
+        XCTAssertEqual(UsageHistoryRange.all.trendGranularity(historyDayCount: 1096), .month)
+    }
     private func modelDay(
         _ date: String, source: HistorySource,
         _ models: [String: ModelTokenTally]

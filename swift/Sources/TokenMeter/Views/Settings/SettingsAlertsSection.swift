@@ -14,7 +14,7 @@ struct SettingsAlertsSection: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Label("菜单栏显示", systemImage: "menubar.rectangle")
                         .font(.system(size: 12, weight: .semibold))
-                    Picker("", selection: Binding(
+                    Picker("菜单栏显示", selection: Binding(
                         get: { state.menubarInfoMode },
                         set: { state.setMenubarInfoMode($0) }
                     )) {
@@ -124,6 +124,11 @@ struct SettingsAlertsSection: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                     Spacer()
                 }
+                SettingsHistoryAvailabilityLine()
+                if historyReader.canUseSnapshot, digestPreview == nil {
+                    Text("上周没有已保存用量，暂无周报预览。")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
                 if !interaction.digestExportStatus.isEmpty {
                     Text(interaction.digestExportStatus)
                         .font(.system(size: 11))
@@ -135,7 +140,7 @@ struct SettingsAlertsSection: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Claude 日用量阈值")
                         .font(.system(size: 12, weight: .semibold))
-                    Picker("", selection: Binding(
+                    Picker("Claude 日用量阈值", selection: Binding(
                         get: { state.claudeDailyLimitM },
                         set: { state.setClaudeDailyLimit($0) }
                     )) {
@@ -156,7 +161,7 @@ struct SettingsAlertsSection: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("DeepSeek 余额提醒")
                         .font(.system(size: 12, weight: .semibold))
-                    Picker("", selection: Binding(
+                    Picker("DeepSeek 余额提醒", selection: Binding(
                         get: { interaction.balanceAlert },
                         set: {
                             store.deepseekBalanceAlertThreshold = $0

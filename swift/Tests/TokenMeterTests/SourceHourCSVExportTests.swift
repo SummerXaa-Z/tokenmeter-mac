@@ -28,7 +28,7 @@ final class SourceHourCSVExportTests: XCTestCase {
         XCTAssertEqual(rows[3], ["21", "300"])
         XCTAssertEqual(rows[4], ["合计", "420"])
         // 口径行:来源 + 逐时口径,脚注原样带出
-        XCTAssertTrue(csv.contains("Qwen Code · 今日逐时（与分时图同口径）"))
+        XCTAssertTrue(csv.contains("Qwen Code · 2026-10-03 逐时（与分时图同口径）"))
         XCTAssertTrue(csv.contains("Qwen 在 Session 结束时写入聚合记录，因此小时归属按 Session 结束时间。"))
         XCTAssertTrue(csv.contains("0-23 全钟点照列，无用量为 0（真实零）"))
         XCTAssertTrue(csv.contains("导出于 2026-10-03"))
@@ -39,7 +39,7 @@ final class SourceHourCSVExportTests: XCTestCase {
             source: .claude,
             bars: [.init(hour: 10, tokens: 7)],
             todayKey: "2026-10-03")
-        XCTAssertTrue(csv.contains("Claude · 今日逐时（与分时图同口径）"))
+        XCTAssertTrue(csv.contains("Claude · 2026-10-03 逐时（与分时图同口径）"))
         XCTAssertFalse(csv.contains("Session 结束"))
     }
 

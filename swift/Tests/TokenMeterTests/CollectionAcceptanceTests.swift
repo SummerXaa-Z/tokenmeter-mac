@@ -3,7 +3,7 @@ import XCTest
 
 final class CollectionAcceptanceTests: XCTestCase {
     @MainActor
-    func testFailedClaudeScanPreservesLastGoodAndBothHistories() throws {
+    func testFailedClaudeScanPreservesLastGoodAndBothHistories() async throws {
         try assertIsolated()
         let state = AppState()
         let date = "2026-09-25"
@@ -12,6 +12,7 @@ final class CollectionAcceptanceTests: XCTestCase {
             todayHours: [], weekCompare: .empty, skills: [],
             dayModels: [date: ["claude-opus-4.6": .init(input: 70)]])
         XCTAssertTrue(state.acceptClaudeCollection(good))
+        await state.flushHistoryWrites()
         let history = HistoryStore.all()
         let details = ModelUsageHistoryStore.shared.all()
         let revision = state.historyRevision
@@ -29,13 +30,14 @@ final class CollectionAcceptanceTests: XCTestCase {
 
         failed.readError = nil
         XCTAssertTrue(state.acceptClaudeCollection(failed))
+        await state.flushHistoryWrites()
         XCTAssertNil(state.claude.error)
         XCTAssertNil(HistoryStore.all().first { $0.date == date }?.bySource[.claude])
         XCTAssertNil(ModelUsageHistoryStore.shared.all().first { $0.date == date }?.bySource[.claude])
     }
 
     @MainActor
-    func testFailedCodexScanCannotOverwriteNonzeroHistoryWithPartialData() throws {
+    func testFailedCodexScanCannotOverwriteNonzeroHistoryWithPartialData() async throws {
         try assertIsolated()
         let state = AppState()
         let date = "2026-09-26"
@@ -44,6 +46,7 @@ final class CollectionAcceptanceTests: XCTestCase {
             models: [], projects: [], todayHours: [], skills: [],
             dayModels: [date: ["gpt-5.4": .init(input: 70)]])
         XCTAssertTrue(state.acceptCodexCollection(good))
+        await state.flushHistoryWrites()
         let history = HistoryStore.all()
         let details = ModelUsageHistoryStore.shared.all()
         var partial = CodexUsageResult(
@@ -58,6 +61,7 @@ final class CollectionAcceptanceTests: XCTestCase {
         XCTAssertEqual(HistoryStore.all(), history)
         XCTAssertEqual(ModelUsageHistoryStore.shared.all(), details)
         XCTAssertTrue(state.acceptCodexCollection(good))
+        await state.flushHistoryWrites()
         XCTAssertNil(state.codex.error)
     }
 
@@ -69,12 +73,13 @@ final class CollectionAcceptanceTests: XCTestCase {
     }
 
     @MainActor
-    func testNewLocalSourcesPreserveLastGoodSnapshotAndBothHistoriesOnReadFailure() throws {
+    func testNewLocalSourcesPreserveLastGoodSnapshotAndBothHistoriesOnReadFailure() async throws {
         try assertIsolated()
         for source in newLocalSources {
             let state = AppState()
             setEnabled(true, source: source, state: state)
             XCTAssertTrue(acceptFixture(source, state: state, tokens: 70))
+            await state.flushHistoryWrites()
             let history = HistoryStore.all()
             let details = ModelUsageHistoryStore.shared.all()
             let revision = state.historyRevision
@@ -89,6 +94,7 @@ final class CollectionAcceptanceTests: XCTestCase {
             XCTAssertEqual(state.historyRevision, revision)
 
             XCTAssertTrue(acceptFixture(source, state: state, tokens: 71))
+            await state.flushHistoryWrites()
             XCTAssertEqual(total(source, state: state), 71)
             XCTAssertNil(error(source, state: state))
         }
@@ -109,7 +115,7 @@ final class CollectionAcceptanceTests: XCTestCase {
     }
 
     @MainActor
-    func testEveryLocalSourceRejectsSuccessAndFailureFromBeforeOffOnToggle() throws {
+    func testEveryLocalSourceRejectsSuccessAndFailureFromBeforeOffOnToggle() async throws {
         try assertIsolated()
         for source in [.claude, .codex] + newLocalSources {
             let state = AppState()
@@ -117,6 +123,7 @@ final class CollectionAcceptanceTests: XCTestCase {
             let backfillTicket = state.backfillCollectionTicket(for: source)
             XCTAssertTrue(state.acceptsBackfillCollection(backfillTicket))
             XCTAssertTrue(acceptFixture(source, state: state, tokens: 70))
+            await state.flushHistoryWrites()
             XCTAssertFalse(state.acceptsBackfillCollection(backfillTicket),
                            "Every accepted live source must supersede its older backfill")
             let oldRevision = state.localCollectionRevision(for: source)
@@ -139,18 +146,20 @@ final class CollectionAcceptanceTests: XCTestCase {
 
             XCTAssertTrue(acceptFixture(source, state: state, tokens: 71,
                                        requestRevision: state.localCollectionRevision(for: source)))
+            await state.flushHistoryWrites()
             XCTAssertEqual(total(source, state: state), 71)
         }
     }
 
     @MainActor
-    func testConfirmedZeroPreservesEachSourcesExistingHistoryAuthorityContract() throws {
+    func testConfirmedZeroPreservesEachSourcesExistingHistoryAuthorityContract() async throws {
         try assertIsolated()
         for source in newLocalSources {
             let state = AppState()
             setEnabled(true, source: source, state: state)
             XCTAssertTrue(acceptFixture(source, state: state, tokens: 70))
             XCTAssertTrue(acceptFixture(source, state: state, tokens: 0))
+            await state.flushHistoryWrites()
             XCTAssertEqual(total(source, state: state), 0, "Successful zero replaces the live snapshot")
             XCTAssertNil(error(source, state: state))
             let recorded = HistoryStore.all().first { $0.date == fixtureDate }?.bySource[source]

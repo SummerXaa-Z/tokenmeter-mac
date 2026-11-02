@@ -65,6 +65,7 @@ struct SettingsMaintenanceSection: View {
                             .disabled(!historyReader.canUseSnapshot)
                         Spacer()
                     }
+                    SettingsHistoryAvailabilityLine()
                     if !interaction.usageExportStatus.isEmpty {
                         Text(interaction.usageExportStatus)
                             .font(.system(size: 11))
@@ -134,7 +135,7 @@ struct SettingsMaintenanceSection: View {
                     .font(.system(size: 11, weight: .medium))
                 if !entry.enabled {
                     Text("已停用")
-                        .font(.system(size: 9))
+                        .font(Theme.footnoteFont)
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
@@ -153,7 +154,7 @@ struct SettingsMaintenanceSection: View {
                 }
             }
             Text(entry.displayPath)
-                .font(.system(size: 9))
+                .font(Theme.footnoteFont)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
                 .truncationMode(.middle)

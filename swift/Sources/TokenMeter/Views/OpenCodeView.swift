@@ -4,6 +4,8 @@ import Charts
 // OpenCode 面板只展示本机 SQLite 中的结构化聚合字段，不读取或展示会话正文。
 struct OpenCodeView: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.usageNow) private var now
+    @Environment(\.sourceUsageRange) private var usageRange
     var onBack: () -> Void
     var onSettings: () -> Void
 
@@ -11,10 +13,11 @@ struct OpenCodeView: View {
         ScrollView {
             VStack(spacing: 10) {
                 header
+                ScopedSourceUsageCard(source: .opencode)
                 SourceCollectionContent(cache: state.opencode, emptyMessage: "未找到 OpenCode 本地数据") { result in
-                    todayCard(result)
+                    if usageRange == nil { todayCard(result) }
                     weekChartCard(result)
-                    modelsCard(result)
+                    if usageRange == nil { modelsCard(result) }
                     privacyCard
                 }
                 SourceAPICostCard(source: .opencode, liveDayModels: state.opencode.result?.dayModels)
@@ -41,15 +44,15 @@ struct OpenCodeView: View {
     }
 
     private func todayCard(_ result: OpenCodeUsageResult) -> some View {
-        let today = result.today
+        let today = result.day(on: DateUtil.key(now))
         return Card {
             VStack(alignment: .leading, spacing: 8) {
                 Label("今日用量", systemImage: "sun.max")
                     .font(.system(size: 12, weight: .semibold))
                 HStack(spacing: 0) {
-                    SourceMetric(title: "Token", value: Fmt.tokensShort(today?.totalTokens ?? 0))
-                    SourceMetric(title: "消息", value: Fmt.int(today?.messageCount ?? 0))
-                    SourceMetric(title: "会话", value: Fmt.int(today?.sessionCount ?? 0))
+                    SourceMetric(title: "Token", value: (today?.totalTokens).map(Fmt.tokensShort) ?? "—")
+                    SourceMetric(title: "消息", value: (today?.messageCount).map(Fmt.int) ?? "—")
+                    SourceMetric(title: "会话", value: (today?.sessionCount).map(Fmt.int) ?? "—")
                     SourceMetric(
                         title: "缓存命中",
                         value: today?.cacheHitRate.map { Fmt.percent($0) } ?? "—"
@@ -73,7 +76,7 @@ struct OpenCodeView: View {
                     ("输出", day.outputTokens + day.reasoningTokens, Theme.response),
                 ])
             },
-            liveDayModels: result.dayModels)
+            liveDayModels: result.dayModels, initialRange: usageRange)
     }
 
     private func modelsCard(_ result: OpenCodeUsageResult) -> some View {

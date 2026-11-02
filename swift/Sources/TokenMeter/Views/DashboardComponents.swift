@@ -32,7 +32,8 @@ struct BalanceCard: View {
                 case .noKey:
                     Text("未配置 API Key").font(.callout).foregroundStyle(.secondary)
                 case .error(let msg):
-                    Text(msg).font(.callout).foregroundStyle(.orange).lineLimit(2)
+                    Text(msg).font(.callout).foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if todayCost != nil || monthCost != nil {
                     HStack(spacing: 16) {
@@ -122,7 +123,8 @@ struct UsageRow: View {
             }
             .hoverHighlight()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
+        .accessibilityHint("打开\(name)模型用量详情")
     }
 
     private var progressBar: some View {
@@ -198,21 +200,18 @@ struct UsageChartCard: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Text(state == .ok ? summary : "—")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
                     // 导出近 7 天逐日三系列 CSV(与图例同列,附口径行)
-                    Button {
+                    DashboardExportButton(
+                        help: "导出近 7 天 CSV（逐日命中/未命中/输出，附口径行）",
+                        disabled: state != .ok || days.isEmpty
+                    ) {
                         exportCSV()
-                    } label: {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.tertiary)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(state != .ok || days.isEmpty)
-                    .help("导出近 7 天 CSV（逐日命中/未命中/输出，附口径行）")
                     .accessibilityLabel("导出缓存命中 CSV")
                 }
+                Text(state == .ok ? summary : "—")
+                    .font(Theme.detailFont).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if state == .ok {
                     ChartHover.caption(hover: hoverDate, buckets: hoverBuckets)
                     chart
@@ -261,12 +260,11 @@ struct UsageChartCard: View {
             "命中": Theme.hit, "未命中": Theme.miss, "输出": Theme.response,
         ])
         .chartLegend(position: .bottom, spacing: 6)
-        .chartYAxis {
-            AxisMarks(position: .leading) { v in
-                AxisGridLine()
-                AxisValueLabel {
-                    if let n = v.as(Int.self) { Text(Fmt.tokensShort(n)) }
-                }
+        .font(Theme.footnoteFont)
+        .tokenYAxis()
+        .chartXAxis {
+            AxisMarks { _ in
+                AxisValueLabel().font(Theme.chartAxisFont).foregroundStyle(.secondary)
             }
         }
         .frame(height: 150)

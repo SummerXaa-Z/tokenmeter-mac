@@ -24,7 +24,7 @@ struct OverviewAPICostCard: View {
                     }
                 }
                 HStack(spacing: 6) {
-                    Text(summary.amounts.isEmpty ? "暂无参考价" : Fmt.usd(summary.total))
+                    Text(summary.pricedTotal.map { Fmt.usd($0) } ?? "暂无参考价")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundStyle(Theme.brand)
                     if let prior = priorSummary {
@@ -33,8 +33,7 @@ struct OverviewAPICostCard: View {
                     }
                     Spacer()
                     if let prior = priorSummary {
-                        ChangeBadge(change: PeriodCompare.change(
-                            this: summary.total, last: prior.total))
+                        ChangeBadge(change: summary.changeCompared(to: prior))
                     }
                 }
                 HStack {
@@ -83,7 +82,7 @@ struct OverviewAPICostCard: View {
         case 30: name = "前 30 天"
         default: name = "上期"
         }
-        return "\(name) \(Fmt.usd(prior.total))"
+        return "\(name) \(prior.pricedTotal.map { Fmt.usd($0) } ?? "—")"
     }
 
     private func amountRow(rank: Int, amount: APIReferenceCostSummary.ModelAmount) -> some View {
@@ -117,7 +116,7 @@ struct OverviewAPICostCard: View {
             HStack {
                 Text("订阅回本").font(.system(size: 11, weight: .semibold))
                 Spacer()
-                Text(value.multiple.map(SubscriptionValueSummary.multipleText) ?? "—")
+                Text(value.multipleLabel)
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundStyle(Theme.brand)
             }

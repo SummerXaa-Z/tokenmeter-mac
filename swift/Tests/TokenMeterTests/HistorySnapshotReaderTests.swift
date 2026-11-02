@@ -3,6 +3,120 @@ import XCTest
 
 final class HistorySnapshotReaderTests: XCTestCase {
     @MainActor
+    func testChangedHistoryCannotExportOldSnapshotWhileReloadIsDebounced() async {
+        var tokens = 17
+        let reader = HistorySnapshotReader(read: { Self.snapshot(tokens: tokens) })
+        await reader.refresh(revision: 1)
+        XCTAssertTrue(reader.canUseSnapshot)
+
+        reader.writesPending = true
+        tokens = 29
+        reader.requireRevision(2)
+        // RootView waits for the completed writes, then debounces the next read.
+        // Queue drainage is not evidence that the in-memory snapshot is current.
+        reader.writesPending = false
+        XCTAssertFalse(reader.canUseSnapshot, "Old history must remain unavailable until its new revision is read")
+        XCTAssertEqual(reader.snapshot.daily.first?.total, 17)
+        await reader.refresh(revision: 2)
+        XCTAssertTrue(reader.canUseSnapshot)
+        XCTAssertEqual(reader.snapshot.daily.first?.total, 29)
+    }
+
+    @MainActor
+    func testRequiredRevisionRejectsInFlightOldReadBeforeReplacementStarts() async {
+        let old = PendingHistoryRead(started: expectation(description: "Old read started"))
+        var reads = 0
+        let original = Self.snapshot(tokens: 17)
+        let reader = HistorySnapshotReader(initial: original, read: {
+            reads += 1
+            if reads == 1 { return try await old.load() }
+            return Self.snapshot(tokens: 29)
+        })
+        let oldTask = Task { await reader.refresh(revision: 1) }
+        await fulfillment(of: [old.started], timeout: 1)
+        reader.requireRevision(2)
+        old.complete(.success(Self.snapshot(tokens: 20)))
+        await oldTask.value
+
+        XCTAssertEqual(reader.snapshot, original, "An old read must not publish during the new revision's debounce")
+        XCTAssertFalse(reader.canUseSnapshot)
+        XCTAssertNil(reader.completion)
+        XCTAssertEqual(reader.unavailableMessage, "历史正在更新，请稍后重试。")
+        await reader.refresh(revision: 2)
+        XCTAssertTrue(reader.canUseSnapshot)
+        XCTAssertEqual(reader.snapshot.daily.first?.total, 29)
+    }
+
+    @MainActor
+    func testRequiredRevisionCannotRegressAndSameRevisionFailureCanRecover() async {
+        var reads = 0
+        var fails = true
+        let reader = HistorySnapshotReader(initial: Self.snapshot(tokens: 17), read: {
+            reads += 1
+            if fails { throw SyntheticHistoryFailure.unavailable }
+            return Self.snapshot(tokens: 29)
+        })
+        reader.requireRevision(3)
+        await reader.refresh(revision: 2, force: true)
+        XCTAssertEqual(reads, 0)
+        XCTAssertEqual(reader.requiredRevision, 3)
+        XCTAssertFalse(reader.canUseSnapshot)
+
+        await reader.refresh(revision: 3)
+        XCTAssertEqual(reader.snapshot.daily.first?.total, 17)
+        XCTAssertFalse(reader.canUseSnapshot)
+        XCTAssertNotNil(reader.error)
+        fails = false
+        await reader.refresh(revision: 3, force: true)
+        XCTAssertEqual(reads, 2)
+        XCTAssertTrue(reader.canUseSnapshot)
+        XCTAssertNil(reader.error)
+    }
+
+    @MainActor
+    func testInjectedSnapshotIsUsableUntilProductionRevisionIsBound() async {
+        let reader = HistorySnapshotReader(initial: Self.snapshot(tokens: 17), read: {
+            Self.snapshot(tokens: 29)
+        })
+        XCTAssertTrue(reader.canUseSnapshot)
+        reader.requireRevision(0)
+        XCTAssertFalse(reader.canUseSnapshot)
+        XCTAssertEqual(reader.snapshot.daily.first?.total, 17)
+        await reader.refresh(revision: 0)
+        XCTAssertTrue(reader.canUseSnapshot)
+    }
+
+    @MainActor
+    func testProductionReadOverrideDoesNotUseDefaultOrBreakSameRevisionSharing() async {
+        var defaultReads = 0
+        var orderedReads = 0
+        let reader = HistorySnapshotReader(read: { defaultReads += 1; return Self.snapshot(tokens: 17) })
+        let orderedRead = { () async throws -> HistorySnapshotReader.Snapshot in
+            orderedReads += 1
+            return Self.snapshot(tokens: 29)
+        }
+        await reader.refresh(revision: 1, read: orderedRead)
+        await reader.refresh(revision: 1, read: orderedRead)
+        XCTAssertEqual(defaultReads, 0)
+        XCTAssertEqual(orderedReads, 1)
+        XCTAssertEqual(reader.snapshot.daily.first?.total, 29)
+        XCTAssertTrue(reader.canUseSnapshot)
+    }
+
+    @MainActor
+    func testPendingSaveBlocksHistoryExportWithoutDiscardingLastSnapshot() {
+        let snapshot = Self.snapshot(tokens: 17)
+        let reader = HistorySnapshotReader(initial: snapshot)
+        XCTAssertTrue(reader.canUseSnapshot)
+        reader.writesPending = true
+        XCTAssertFalse(reader.canUseSnapshot)
+        XCTAssertEqual(reader.unavailableMessage, "历史正在保存，请稍后重试。")
+        XCTAssertEqual(reader.snapshot, snapshot)
+        reader.writesPending = false
+        XCTAssertTrue(reader.canUseSnapshot)
+    }
+
+    @MainActor
     func testInitializationDoesNotReadAndSuccessfulRevisionIsReadOnce() async {
         var reads = 0
         let value = Self.snapshot(tokens: 12)
@@ -205,6 +319,7 @@ final class HistorySnapshotReaderTests: XCTestCase {
         state.kimiEnabled = true
         XCTAssertTrue(state.acceptKimiCollection(KimiUsageResult(
             days: [.init(date: "2026-10-01", inputTokens: 70)], models: [], todayHours: [])))
+        await state.flushHistoryWrites()
         XCTAssertNotNil(state.historyPersistenceError)
         await reader.refresh(revision: 2)
         reader.reportCurrentCompletion(reader.completion) { state.reportHistoryReadOutcome(succeeded: $0) }

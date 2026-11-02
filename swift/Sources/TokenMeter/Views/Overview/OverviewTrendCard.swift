@@ -41,6 +41,7 @@ struct OverviewTrendCard: View {
         "OpenCode": Theme.opencode,
         "Gemini": Theme.gemini, "Copilot": Theme.copilot,
         "Cursor": Theme.cursor,
+        "Qwen": Theme.qwen,
     ]
 
     var body: some View {
@@ -57,20 +58,15 @@ struct OverviewTrendCard: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                     // 导出当前范围趋势为 CSV(逐桶一行,来源分列;图例点暗
                     // 隐藏的来源不导,与所见一致)
-                    Button {
+                    DashboardExportButton(help: "导出当前范围趋势 CSV（逐桶一行、来源分列、附口径行）",
+                                          disabled: isTrendEmpty || !historyReader.canUseSnapshot) {
                         exportCSV()
-                    } label: {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.tertiary)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isTrendEmpty || !historyReader.canUseSnapshot)
-                    .help("导出当前范围趋势 CSV（逐桶一行、来源分列、附口径行）")
-                    .accessibilityLabel("导出趋势 CSV")
                 }
                 if isTrendEmpty {
                     ChartHover.emptyState(message: emptyMessage, hint: emptyHint)
+                } else if visibleTrend.isEmpty {
+                    ChartHover.emptyState(message: "所有来源已隐藏", hint: "点击下方来源图例重新显示")
                 } else if snapshot.trendGranularity == .hour {
                     hourlyCaption
                     Chart {
@@ -96,6 +92,7 @@ struct OverviewTrendCard: View {
                             AxisValueLabel {
                                 if let hour = value.as(Int.self) { Text("\(hour)时") }
                             }
+                            .font(Theme.chartAxisFont).foregroundStyle(.secondary)
                         }
                     }
                     .tokenYAxis()
@@ -105,7 +102,7 @@ struct OverviewTrendCard: View {
                     Chart {
                         ForEach(visibleTrend) { point in
                             BarMark(
-                                x: .value("日期", point.label),
+                                x: .value("日期", point.date),
                                 y: .value("Token", point.tokens)
                             )
                             .foregroundStyle(by: .value("源", point.source.overviewChartName))
@@ -118,11 +115,7 @@ struct OverviewTrendCard: View {
                     // 自定义 seriesChips 已承担图例职责(可点选+悬停读数),
                     // 内置图例与 chips 全量重复,隐藏防叠两套
                     .chartLegend(.hidden)
-                    .chartXAxis {
-                        AxisMarks(values: .automatic(desiredCount: 6)) { _ in
-                            AxisGridLine(); AxisTick(); AxisValueLabel()
-                        }
-                    }
+                    .dateXAxis(labels: snapshot.trend.reduce(into: [:]) { $0[$1.date] = $1.label })
                     .tokenYAxis()
                     .frame(height: 160)
                 }
@@ -130,7 +123,7 @@ struct OverviewTrendCard: View {
                 if snapshot.trendGranularity == .hour,
                    !snapshot.hourlyUnattributedSources.isEmpty {
                     Text("\(snapshot.hourlyUnattributedSources.map(\.overviewName).joined(separator: "、")) 仅有今日汇总或小时明细未完整加载，未在小时图中平均摊分。")
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        .font(Theme.footnoteFont).foregroundStyle(.secondary)
                 }
                 // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
                 ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
@@ -212,7 +205,7 @@ struct OverviewTrendCard: View {
     @ViewBuilder private var bucketCaption: some View {
         if hoverLabel == nil, let series = hoverSeriesCaption {
             series
-        } else if let active = visibleTrend.first(where: { $0.label == hoverLabel })
+        } else if let active = visibleTrend.first(where: { $0.date == hoverLabel })
             ?? visibleTrend.last {
             let bucket = visibleTrend.filter { $0.date == active.date }
             ChartHoverCaption(
@@ -226,10 +219,16 @@ struct OverviewTrendCard: View {
 
     // 小时粒度的金额：按天明细只有日粒度，悬停任何钟点都显示今日合计
     private var todayAmountText: String? {
-        guard let today = visibleTrend.first?.date,
+        guard let raw = snapshot.trend.first?.date,
+              let today = Self.hourlyDateKey(raw),
               let bySource = snapshot.apiValueByTrendBucket[today],
               !bySource.isEmpty else { return nil }
-        return amountText(summing: bySource)
+        return amountText(summing: bySource).map { "今日等价合计 \($0)" }
+    }
+
+    static func hourlyDateKey(_ key: String) -> String? {
+        let day = String(key.prefix(10))
+        return ModelUsageHistoryStore.isDateKey(day) ? day : nil
     }
 
     private func bucketAmountText(_ bucketKey: String) -> String? {
@@ -286,11 +285,10 @@ struct OverviewTrendCard: View {
     @ViewBuilder private var seriesChips: some View {
         let series = TrendSeriesFilter.seriesTotals(snapshot.trend)
         if !series.isEmpty {
-            HStack(spacing: 4) {
+            WrappingHStack(spacing: 4) {
                 ForEach(series, id: \.name) { entry in
                     seriesChip(entry)
                 }
-                Spacer(minLength: 0)
             }
         }
     }
@@ -315,10 +313,10 @@ struct OverviewTrendCard: View {
                     .opacity(isOn ? 1 : 0.4)
             }
             .padding(.horizontal, 5)
-            .padding(.vertical, 2)
+            .frame(minHeight: Theme.minimumControlSize)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .hoverHighlight()
         .onHover { hovering in
             if hovering {
@@ -330,6 +328,8 @@ struct OverviewTrendCard: View {
         .help("范围内合计 \(Fmt.tokensShort(entry.total)) · " +
               (isOn ? "点按隐藏" : "点按显示"))
         .accessibilityLabel(isOn ? "隐藏 \(name) 系列" : "显示 \(name) 系列")
+        .accessibilityValue(isOn ? "已显示" : "已隐藏")
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }
 

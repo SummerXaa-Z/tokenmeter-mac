@@ -6,11 +6,11 @@
 
 | 来源 | 本地记录 | 主要边界 |
 | --- | --- | --- |
-| Claude Code | `~/.claude/projects/**/*.jsonl` | 从 assistant usage 提取模型与 Token，区分输入、输出、缓存读写；读失败保留已有快照 |
-| Codex | `~/.codex/sessions/**/rollout-*.jsonl` | 使用 Token 用量事件及本地额度快照；本地统计不要求实时账户查询 |
+| Claude Code | `~/.claude/projects/**/*.jsonl` | 从 assistant usage 提取模型与 Token；跨文件按消息/请求标识合并副本与继承请求，保留子代理新请求；读失败保留已有快照 |
+| Codex | `~/.codex/sessions/**/rollout-*.jsonl` | 相同 session_meta.id 的副本/续写先合并累计事件再差分；有显式 forked_from_id 时去除继承前缀，保留各分支增量；本地统计不要求实时账户查询 |
 | Kimi Code | `~/.kimi-code/sessions/` 或桌面 runtime 的 `sessions/` 下 `agents/*/wire.jsonl` | 桌面根目录为 `~/Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/`；请求增量与消息完成用量需去重 |
 | OpenCode | `~/.local/share/opencode/opencode.db` | 只读 SQLite，包含 WAL 中可见提交；统计 assistant 消息 Token |
-| Gemini CLI | `~/.gemini/tmp/<project>/chats/` | 支持 JSONL 与旧 JSON 会话格式；按可用原始 usage 字段统计 |
+| Gemini CLI | `~/.gemini/tmp/<project>/chats/` | 支持 JSONL 与旧 JSON 会话格式；旧 JSON 超过 32 MB 或整文件损坏会报错并保留已有快照，不作为确认零消费 |
 | GitHub Copilot CLI | `~/.copilot/session-state/<session>/events.jsonl` | 以 session.shutdown 完结指标为准，处理 rewind 分支；进行中或没有完结指标的会话不等于零消费 |
 | Qwen Code | `~/.qwen/usage_record.jsonl` | 使用会话最终累计值、按结束时间归日与小时；不扫描原始对话、不推断缓存创建量 |
 
@@ -32,6 +32,7 @@
 ## 共同限制
 
 - Token 是工具原始记录的统计，不是跨平台统一计费单位；工具遗漏的调用或未写入的记录无法凭空补齐。
+- 跨文件去重依赖工具提供的稳定标识。没有请求/会话标识的旧记录保守按文件区分；Codex 无显式 fork 关系时不按文本相似度或相同 Token 数猜测亲缘。子代理和独立会话即使用相同模型、相同数值也不会因此合并。
 - 7D、30D、全部和历史图表依赖本地记录与聚合留存。读取失败、来源不可用、尚未加载和确认无数据是不同状态。
 - API 等价使用内置价格快照与已收录别名，缺价会降低覆盖率；平台实际费用和额度窗口另有各自口径。
 - 新来源应有可核对的结构化用量字段、明确时间/去重规则、只读边界及脱敏 fixture。不能只凭工具名称或截图声称支持；没有这些证据的来源暂不纳入采集。

@@ -4,7 +4,11 @@ import Foundation
 // 写失败；调用方保留可信实时结果，失败只阻止历史完成和回填标记。
 struct HistoryPersistenceCoordinator {
     enum Destination: Hashable { case daily(HistorySource), models(HistorySource) }
-    struct WriteFailure: Error { let destination: Destination }
+    struct WriteFailure: Error {
+        let destination: Destination
+        // 模型分片可能部分提交；日汇总失败则还没有写任何模型分片。
+        var historyMayHaveChanged: Bool = true
+    }
     typealias Day = (date: String, totalTokens: Int, cost: Double?)
     let writeDaily: (HistorySource, [Day], Bool) throws -> Bool
     let writeModels: (HistorySource, [String], [String: SourceDayDetail], Bool) throws -> Bool
@@ -25,7 +29,7 @@ struct HistoryPersistenceCoordinator {
     ) throws -> Bool {
         let dailyChanged: Bool
         do { dailyChanged = try writeDaily(source, days, authoritative) }
-        catch { throw WriteFailure(destination: .daily(source)) }
+        catch { throw WriteFailure(destination: .daily(source), historyMayHaveChanged: false) }
         let modelsChanged: Bool
         do { modelsChanged = try writeModels(source, days.map(\.date), modelDays, authoritative) }
         catch { throw WriteFailure(destination: .models(source)) }

@@ -3,10 +3,12 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject var state: AppState
     @StateObject private var historyReader = HistorySnapshotReader()
-    @State private var view: AppView = .dashboard
+    @State private var navigation = DashboardNavigation()
     @State private var historyRange = UsageHistoryRange(
         rawValue: ConfigStore.shared.overviewHistoryRangeDays
     ) ?? .month
+    private var view: AppView { navigation.current }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // Coding 来源是否进入聚合只由用户开关决定；当前数据路径消失时仍保留
     // 已积累的历史。首页明细再按所选范围 Token > 0 过滤零用量来源。
@@ -15,6 +17,12 @@ struct RootView: View {
     }
 
     var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { clock in
+            content.environment(\.usageNow, clock.date)
+        }
+    }
+
+    private var content: some View {
         VStack(spacing: 0) {
             // 首页只有一层时间目录，工具在正文中平铺。
             if view == .dashboard {
@@ -70,7 +78,7 @@ struct RootView: View {
                     }
                 case .settings:
                     SettingsView(
-                        onBack: { push(.dashboard) }
+                        onBack: returnFromSettings
                     )
                     .transition(.opacity)
                 case .detail(let key):
@@ -79,7 +87,7 @@ struct RootView: View {
                 case .codingModel(let source, let model):
                     CodingModelDetailView(
                         source: source, model: model,
-                        onBack: { push(.dashboard) })
+                        onBack: { push(.dashboard) }, initialRange: historyRange)
                         .transition(.opacity)
                 case .skill(let entry, let source, let enabled):
                     SkillDetailView(
@@ -91,13 +99,27 @@ struct RootView: View {
                         .transition(.opacity)
                 }
             }
+            .environment(\.sourceUsageRange, historyRange)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(width: Theme.panelWidth, height: Theme.panelHeight, alignment: .top)
         .background(Color(nsColor: .controlBackgroundColor))
         .environmentObject(historyReader)
         .task(id: state.historyRevision) {
-            await historyReader.refresh(revision: state.historyRevision)
+            historyReader.requireRevision(state.historyRevision)
+            await state.flushHistoryWrites()
+            // 同批来源完成时只发起一轮历史读取；取消视图等待不取消真实写入。
+            do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
+            guard !Task.isCancelled else { return }
+            await historyReader.refresh(revision: state.historyRevision, read: {
+                try await state.readPersistedHistory()
+            })
+        }
+        .onReceive(state.$historyRevision) { revision in
+            historyReader.requireRevision(revision)
+        }
+        .onReceive(state.$historyWritesInFlight) { count in
+            historyReader.writesPending = count > 0
         }
         .onChange(of: historyReader.completion) { _, completion in
             historyReader.reportCurrentCompletion(completion) {
@@ -124,8 +146,14 @@ struct RootView: View {
 
     // 页面切换统一走这里：带 0.18s 交叉淡入，替代此前的瞬切
     private func push(_ next: AppView) {
-        withAnimation(.easeInOut(duration: 0.18)) {
-            view = next
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+            navigation.open(next)
+        }
+    }
+
+    private func returnFromSettings() {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+            navigation.leaveSettings(enabledProviders: Set(sources))
         }
     }
 
@@ -148,7 +176,9 @@ struct RootView: View {
                             in: Capsule()
                         )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
+                .accessibilityValue(historyRange == range ? "已选择" : "未选择")
+                .accessibilityAddTraits(historyRange == range ? .isSelected : [])
                 .accessibilityIdentifier("TokenMeter.Range.\(range.tabTitle)")
             }
         }

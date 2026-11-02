@@ -21,6 +21,7 @@ struct SkillDetailView: View {
     // 渲染夹具：注入固定的导出反馈文案（离屏渲染无法模拟保存面板）
     var previewExportStatus: String? = nil
     @EnvironmentObject var state: AppState
+    @Environment(\.usageNow) private var now
     @EnvironmentObject private var historyReader: HistorySnapshotReader
     @State private var hoverWeek: String?
     // 导出完成后的行内反馈（「已导出 <文件名> · 时刻」）
@@ -32,7 +33,7 @@ struct SkillDetailView: View {
             name: entry.name, filteredBy: sourceFilter,
             enabledSources: enabledSources,
             liveSkills: OverviewRankingsCard.liveDaySkills(state),
-            persisted: historyReader.snapshot.models)
+            persisted: historyReader.dashboardHistory(state: state, todayKey: DateUtil.key(now)).models)
     }
 
     private var scopedRangeTitle: String {
@@ -41,7 +42,8 @@ struct SkillDetailView: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
+        ScrollView {
+          VStack(spacing: 12) {
             header
             summaryCard
             if let weekly {
@@ -50,9 +52,9 @@ struct SkillDetailView: View {
                 SourceStateView(
                     message: "近 13 周暂无该 Skill 的留存调用记录（范围统计见上，调用可能早于近 13 周）")
             }
-            Spacer(minLength: 0)
+          }
+          .padding(14)
         }
-        .padding(14)
     }
 
     private var header: some View {
@@ -89,7 +91,7 @@ struct SkillDetailView: View {
                     }
                 }
                 Text("范围数字与 Skills 榜一致（\(scopedRangeTitle)）；只认明确调用证据，普通消息提及不计入。")
-                    .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                    .font(Theme.footnoteFont).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -100,7 +102,7 @@ struct SkillDetailView: View {
             (label: Self.weekLabel(week.weekOf), weekOf: week.weekOf, count: week.count)
         }
         // 悬停对准的周（x 轴选中的是周标签）；未悬停显示最新一周
-        let active = points.first { $0.label == hoverWeek } ?? points.last
+        let active = points.first { $0.weekOf == hoverWeek } ?? points.last
         return Card {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -109,17 +111,10 @@ struct SkillDetailView: View {
                     Spacer()
                     // 与热力图/模型榜/Skills 榜导出同款入口；卡只在有
                     // 13 周数据时出现；共享历史尚未成功读取时禁止导出。
-                    Button {
+                    DashboardExportButton(help: "导出近 13 周走势 CSV（逐周次数，附范围与来源口径行）",
+                                          disabled: !historyReader.canUseSnapshot) {
                         exportCSV(weekly)
-                    } label: {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.tertiary)
                     }
-                    .buttonStyle(.plain)
-                    .help("导出近 13 周走势 CSV（逐周次数，附范围与来源口径行）")
-                    .accessibilityLabel("导出 Skill 走势 CSV")
-                    .disabled(!historyReader.canUseSnapshot)
                 }
                 HStack(spacing: 6) {
                     Text(active?.label ?? "")
@@ -134,7 +129,7 @@ struct SkillDetailView: View {
                 Chart {
                     ForEach(Array(points.enumerated()), id: \.offset) { _, point in
                         BarMark(
-                            x: .value("周", point.label),
+                            x: .value("周", point.weekOf),
                             y: .value("次数", point.count))
                             .foregroundStyle(Theme.brand.opacity(0.85))
                             .cornerRadius(2)
@@ -142,24 +137,11 @@ struct SkillDetailView: View {
                     HoverDateRule(date: hoverWeek)
                 }
                 .chartXSelection(value: $hoverWeek)
-                .chartYAxis {
-                    AxisMarks { _ in
-                        AxisGridLine().foregroundStyle(Color.primary.opacity(0.06))
-                        AxisValueLabel()
-                            .font(.system(size: 9))
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                .chartXAxis {
-                    AxisMarks { _ in
-                        AxisValueLabel()
-                            .font(.system(size: 9))
-                            .foregroundStyle(.tertiary)
-                    }
-                }
+                .numericYAxis()
+                .dateXAxis(labels: Dictionary(uniqueKeysWithValues: points.map { ($0.weekOf, $0.label) }))
                 .frame(height: 140)
                 Text("按自然周聚合（周一为界，旧 → 新），本周为进行中；与榜内迷你条同一条取数管线，无调用的周计 0。")
-                    .font(Theme.footnoteFont).foregroundStyle(.tertiary)
+                    .font(Theme.footnoteFont).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
                 ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
@@ -171,7 +153,6 @@ struct SkillDetailView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.system(size: 11)).foregroundStyle(.secondary)
             Text(value).font(.system(size: 15, weight: .bold, design: .rounded))
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

@@ -84,10 +84,8 @@ enum OverviewTrendCSVExport {
             // 小时档无逐时金额，不设该列
             var usd: Double?
             if let bySourceAmount = apiValueByTrendBucket[bucket.key] {
-                let sum = bySourceAmount
-                    .filter { included.contains($0.key.overviewChartName) }
-                    .reduce(0.0) { $0 + $1.value }
-                usd = sum > 0 ? sum : nil
+                let values = bySourceAmount.filter { included.contains($0.key.overviewChartName) }
+                usd = values.isEmpty ? nil : values.values.reduce(0, +)
             }
             cells.append(usd.map { String(format: "%.2f", $0) } ?? "")
         }

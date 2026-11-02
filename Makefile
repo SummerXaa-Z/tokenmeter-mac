@@ -8,6 +8,8 @@ DERIVED_DATA ?= build
 export DERIVED_DATA
 UI_RENDER_DIR ?= .ui-review/render
 UI_OVERVIEW_DIR ?= .ui-review/overview
+UI_SMOKE_SCENARIO ?=
+UI_SMOKE_APPEARANCE ?= auto
 # Make's abspath splits paths on spaces. Prefix relative paths without splitting.
 absolute-path = $(if $(filter /%,$(firstword $(1))),$(1),$(CURDIR)/$(1))
 DERIVED_DATA_PATH := $(if $(filter /%,$(firstword $(DERIVED_DATA))),$(DERIVED_DATA),$(CURDIR)/$(SWIFT_DIR)/$(DERIVED_DATA))
@@ -59,7 +61,8 @@ debug-build: project
 
 ui-smoke: debug-build
 	open -n "$(DEBUG_APP)" \
-		--args --ui-smoke-window
+		--args --ui-smoke-window "--ui-smoke-scenario=$(UI_SMOKE_SCENARIO)" \
+		"--ui-smoke-appearance=$(UI_SMOKE_APPEARANCE)"
 
 ui-render: debug-build
 	"$(DEBUG_APP)/Contents/MacOS/TokenMeter" --ui-render="$(call absolute-path,$(UI_RENDER_DIR))"

@@ -7,11 +7,13 @@ struct OverviewSourceCollectionStatus: Identifiable {
     let hasResult: Bool
     let error: String?
     let available: Bool
+    var awaitingToday: Bool = false
     var id: Provider { provider }
 
     var phase: Phase {
         if loading { return .loading }
         if error != nil { return .failed }
+        if awaitingToday { return .loading }
         if hasResult { return .ready }
         return available ? .loading : .unavailable
     }
@@ -24,6 +26,9 @@ struct OverviewSourceCollectionStatus: Identifiable {
         if !hasSelection { return "尚未启用用量来源" }
         if statuses.contains(where: { $0.phase == .failed }) {
             return total > 0 ? "部分来源读取失败，显示已留存用量" : "来源读取失败，用量暂不可确认"
+        }
+        if statuses.contains(where: { $0.awaitingToday && !$0.loading }) {
+            return total > 0 ? "部分来源今日尚未刷新，先显示已确认用量" : "今日尚未刷新，用量暂不可确认"
         }
         if statuses.contains(where: { $0.phase == .loading }) {
             return total > 0 ? "正在刷新来源，先显示已留存用量…" : "正在读取本地用量…"

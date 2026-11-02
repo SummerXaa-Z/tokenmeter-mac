@@ -77,8 +77,8 @@ struct OverviewUsageCard: View {
                     availableDays: snapshot.availableHistoryDays
                 ) {
                     Text(coverage)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
+                        .font(Theme.footnoteFont)
+                        .foregroundStyle(.secondary)
                         .padding(.top, 2)
                 }
                 if let message = OverviewSourceCollectionStatus.message(
@@ -173,7 +173,7 @@ struct OverviewUsageCard: View {
                 .contentShape(Rectangle())
                 .hoverHighlight()
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
             .accessibilityIdentifier("TokenMeter.Source.\(entry.provider.rawValue)")
         }
     }

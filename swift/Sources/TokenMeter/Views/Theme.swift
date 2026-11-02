@@ -36,6 +36,8 @@ enum Theme {
     static let detailFont = Font.system(size: 11)
     static let footnoteFont = Font.system(size: 10)
     static let badgeFont = Font.system(size: 10, weight: .semibold)
+    static let chartAxisFont = Font.system(size: 10)
+    static let minimumControlSize: CGFloat = 28
 }
 
 extension Color {
@@ -53,16 +55,114 @@ import Charts
 // 替代 Swift Charts 默认的刻度文案。Charts 给出的刻度值是 Double，
 // 必须走 Double 分支，否则自定义标签落空、回退到系统默认格式。
 extension View {
-    func tokenYAxis() -> some View {
+    func tokenYAxis(desiredCount: Int = 5) -> some View {
         chartYAxis {
-            AxisMarks { v in
+            AxisMarks(values: .automatic(desiredCount: desiredCount)) { v in
                 AxisGridLine()
                 AxisValueLabel {
-                    if let n = v.as(Int.self) { Text(Fmt.tokensShort(n)) }
-                    else if let d = v.as(Double.self) { Text(Fmt.tokensShort(Int(d))) }
+                    if let n = v.as(Int.self) {
+                        Text(Fmt.tokensShort(n))
+                            .font(Theme.chartAxisFont).foregroundStyle(Color.secondary)
+                    } else if let d = v.as(Double.self) {
+                        Text(Fmt.tokensShort(Int(d)))
+                            .font(Theme.chartAxisFont).foregroundStyle(Color.secondary)
+                    }
                 }
             }
         }
+    }
+
+    // Plain numerical axes keep their original units (count, USD, multiple).
+    // Significant digits preserve small fractional amounts without forcing
+    // currency rounding or abbreviating values as Token units.
+    func numericYAxis(desiredCount: Int = 5) -> some View {
+        chartYAxis {
+            AxisMarks(values: .automatic(desiredCount: desiredCount)) { value in
+                AxisGridLine().foregroundStyle(Color.primary.opacity(0.06))
+                AxisValueLabel {
+                    if let number = value.as(Double.self) {
+                        Text(number, format: .number.precision(.significantDigits(1...15)))
+                            .font(Theme.chartAxisFont).foregroundStyle(Color.secondary)
+                    } else if let number = value.as(Int.self) {
+                        Text(number, format: .number)
+                            .font(Theme.chartAxisFont).foregroundStyle(Color.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    // Data identity stays a complete date key; only its visible label is abbreviated.
+    func dateXAxis(labels: [String: String] = [:], desiredCount: Int = 6) -> some View {
+        let keys = ChartAxisTicks.sampledKeys(Array(labels.keys), maximumCount: desiredCount)
+        let visibleKeys = Set(keys)
+        return chartXAxis {
+            // Keep a single concrete AxisMarks node and guard label emission as
+            // well as tick selection; never label all categorical buckets.
+            AxisMarks(values: keys) { value in
+                AxisValueLabel {
+                    if let key = value.as(String.self), visibleKeys.contains(key) {
+                        Text(labels[key] ?? Fmt.mmdd(key))
+                            .font(Theme.chartAxisFont)
+                            .foregroundStyle(Color.secondary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+enum ChartAxisTicks {
+    static func sampledKeys(_ keys: [String], maximumCount: Int = 6) -> [String] {
+        let keys = Array(Set(keys)).sorted()
+        guard maximumCount > 0 else { return [] }
+        guard keys.count > maximumCount else { return keys }
+        guard maximumCount > 1 else { return [keys.last!] }
+        return (0..<maximumCount).map { index in
+            keys[Int((Double(index) * Double(keys.count - 1) / Double(maximumCount - 1)).rounded())]
+        }
+    }
+}
+
+// Flow layout for legends and captions: all labels remain visible in a narrow panel.
+struct WrappingHStack: Layout {
+    var spacing: CGFloat = 6
+    var rowSpacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arranged(proposal: proposal, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arranged(proposal: ProposedViewSize(width: bounds.width, height: nil), subviews: subviews)
+        for (index, frame) in result.frames.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                                 proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    private func arranged(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, frames: [CGRect]) {
+        let width = max(proposal.width ?? .infinity, 1)
+        var frames: [CGRect] = []
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, usedWidth: CGFloat = 0
+        for view in subviews {
+            let ideal = view.sizeThatFits(.unspecified)
+            let itemWidth = min(ideal.width, width)
+            let size = view.sizeThatFits(ProposedViewSize(width: itemWidth, height: nil))
+            if x > 0, x + itemWidth > width {
+                y += rowHeight + rowSpacing
+                x = 0
+                rowHeight = 0
+            }
+            frames.append(CGRect(x: x, y: y, width: itemWidth, height: size.height))
+            usedWidth = max(usedWidth, x + itemWidth)
+            x += itemWidth + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        // Keep the measured wrapping width for placement; returning only the
+        // widest row could make placement wrap again into a taller layout.
+        let measuredWidth = proposal.width.flatMap { $0.isFinite ? max($0, 1) : nil } ?? usedWidth
+        return (CGSize(width: measuredWidth, height: y + rowHeight), frames)
     }
 }
 

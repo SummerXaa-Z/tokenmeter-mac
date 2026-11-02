@@ -30,8 +30,17 @@ struct ModelDetailView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            header.padding(14)
+            ScrollView {
+                detailContent.padding(.horizontal, 14).padding(.bottom, 14)
+            }
+            .scrollIndicators(.automatic)
+        }
+    }
+
+    private var detailContent: some View {
         VStack(spacing: 12) {
-            header
             if let m = model {
                 Card {
                     HStack(spacing: 16) {
@@ -56,15 +65,9 @@ struct ModelDetailView: View {
                                 .foregroundStyle(.secondary)
                             Spacer()
                             // 与模型榜/Skill 详情/来源模型详情导出同款入口
-                            Button {
+                            DashboardExportButton(help: "导出近 7 天逐日 Token CSV（附汇总与构成口径行）") {
                                 exportCSV(m)
-                            } label: {
-                                Image(systemName: "square.and.arrow.down")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(.tertiary)
                             }
-                            .buttonStyle(.plain)
-                            .help("导出近 7 天逐日 Token CSV（附汇总与构成口径行）")
                             .accessibilityLabel("导出模型近 7 天 CSV")
                         }
                         ChartHover.caption(
@@ -81,6 +84,11 @@ struct ModelDetailView: View {
                         }
                         .chartXSelection(value: $hoverDate)
                         .tokenYAxis()
+                        .chartXAxis {
+                            AxisMarks { _ in
+                                AxisValueLabel().font(Theme.chartAxisFont).foregroundStyle(.secondary)
+                            }
+                        }
                         .frame(height: 160)
                         // 导出反馈行:保存面板点完「存储」后卡内可见落盘结果
                         ExportFeedbackLine(status: exportStatus ?? previewExportStatus)
@@ -89,9 +97,7 @@ struct ModelDetailView: View {
             } else {
                 SourceStateView(message: "暂无数据")
             }
-            Spacer(minLength: 0)
         }
-        .padding(14)
     }
 
     private var header: some View {

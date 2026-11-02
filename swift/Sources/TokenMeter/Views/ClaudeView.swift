@@ -5,6 +5,8 @@ import Charts
 // 数据全部来自本地 ~/.claude/projects，刷新即重扫（带缓存）。
 struct ClaudeView: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.usageNow) private var now
+    @Environment(\.sourceUsageRange) private var usageRange
     var onBack: () -> Void
     var onSettings: () -> Void
 
@@ -12,15 +14,16 @@ struct ClaudeView: View {
         ScrollView {
             VStack(spacing: 10) {
                 header
+                ScopedSourceUsageCard(source: .claude)
                 if let error = state.claude.error {
                     SourceReadFailureCard(message: error, showingLastGood: state.claude.result != nil)
                 }
                 if let r = state.claude.result {
-                    todayCard(r)
-                    hoursCard(r)
+                    if usageRange == nil { todayCard(r) }
+                    if usageRange != .day { hoursCard(r) }
                     weekChartCard(r)
                     weekCompareCard(r)
-                    modelCard(r)
+                    if usageRange == nil { modelCard(r) }
                     projectCard(r)
                 } else if state.claude.loading {
                     SourceStateView(loading: true, message: "正在读取…")
@@ -56,15 +59,15 @@ struct ClaudeView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("今日用量", systemImage: "sun.max")
                     .font(.system(size: 12, weight: .semibold))
-                let t = r.today
+                let t = r.day(on: DateUtil.key(now))
                 HStack(spacing: 0) {
-                    SourceMetric(title: "Token", value: Fmt.tokensShort(t?.totalTokens ?? 0))
-                    SourceMetric(title: "请求", value: Fmt.int(t?.messageCount ?? 0))
+                    SourceMetric(title: "Token", value: (t?.totalTokens).map(Fmt.tokensShort) ?? "—")
+                    SourceMetric(title: "请求", value: (t?.messageCount).map(Fmt.int) ?? "—")
                     SourceMetric(
                         title: "缓存命中",
                         value: t?.cacheHitRate.map { Fmt.percent($0) } ?? "—"
                     )
-                    SourceMetric(title: "输出", value: Fmt.tokensShort(t?.outputTokens ?? 0))
+                    SourceMetric(title: "输出", value: (t?.outputTokens).map(Fmt.tokensShort) ?? "—")
                 }
                 Divider()
                 HStack {
@@ -80,7 +83,8 @@ struct ClaudeView: View {
     private func hoursCard(_ r: ClaudeUsageResult) -> some View {
         SourceHourCard(
             source: .claude,
-            bars: r.todayHours.map { .init(hour: $0.hour, tokens: $0.totalTokens) },
+            bars: (r.hourlyTokens(on: DateUtil.key(now)) ?? [:]).sorted { $0.key < $1.key }.map { .init(hour: $0.key, tokens: $0.value) },
+            observedDate: r.days.last?.date,
             color: Theme.claude
         )
     }
@@ -97,7 +101,7 @@ struct ClaudeView: View {
                     ("输出", day.outputTokens, Theme.response),
                 ])
             },
-            liveDayModels: r.dayModels)
+            liveDayModels: r.dayModels, initialRange: usageRange)
     }
 
     // MARK: - 周趋势（本周 vs 上周）
@@ -105,7 +109,7 @@ struct ClaudeView: View {
         let c = r.weekCompare
         return Card {
             VStack(alignment: .leading, spacing: 8) {
-                Label("周趋势（本周 vs 上周）", systemImage: "arrow.up.arrow.down")
+                Label("独立周对比（本周 vs 上周）", systemImage: "arrow.up.arrow.down")
                     .font(.system(size: 12, weight: .semibold))
                 compareRow("Token", Fmt.tokensShort(c.thisTotalTokens),
                            Fmt.tokensShort(c.lastTotalTokens), c.totalChange)
