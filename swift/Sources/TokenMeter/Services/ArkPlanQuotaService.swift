@@ -34,6 +34,17 @@ enum ArkPlanQuotaError: LocalizedError, Equatable {
             return "arkcli 返回了无法识别的套餐额度数据，请更新 arkcli 后重试。"
         }
     }
+
+    // 进程启动、超时与管道读取是本机瞬态故障，可短时保留 last-good；
+    // 未安装、未登录、退出码失败、输出超限与解析失败代表旧快照不可信。
+    var isTransient: Bool {
+        switch self {
+        case .launchFailed, .timedOut, .pipeReadFailed:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 struct ArkPlanQuotaPeriod: Decodable, Equatable, Identifiable {

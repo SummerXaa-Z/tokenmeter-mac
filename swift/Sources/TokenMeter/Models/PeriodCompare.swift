@@ -43,6 +43,8 @@ enum PeriodCompare {
 
     /// 本期与上期的统计区间,终点为排他边界。周用 ISO 周一(与趋势图周桶一致),
     /// 月用自然月 1 日;近 7 天为滚动窗口,两期各 7 天且不重叠。
+    /// 周锚点强制 ISO 周一,不受系统区域 firstWeekday 影响(周日起始区域
+    /// 的机器上与热力图/周报/回本曲线同切分);月与滚动窗口沿用传入日历的时区。
     static func intervals(
         of period: Period,
         today: Date = Date(),
@@ -57,11 +59,20 @@ enum PeriodCompare {
             return (DateInterval(start: thisStart, end: nextDay),
                     DateInterval(start: lastStart, end: thisStart))
         }
-        let component: Calendar.Component = period == .month ? .month : .weekOfYear
-        guard let thisInterval = calendar.dateInterval(of: component, for: today),
+        if period == .week {
+            var iso = Calendar(identifier: .iso8601)
+            iso.timeZone = calendar.timeZone
+            iso.firstWeekday = 2
+            guard let thisInterval = iso.dateInterval(of: .weekOfYear, for: today),
+                  let lastStart = iso.date(byAdding: .weekOfYear, value: -1, to: thisInterval.start),
+                  let lastInterval = iso.dateInterval(of: .weekOfYear, for: lastStart)
+            else { return nil }
+            return (thisInterval, lastInterval)
+        }
+        guard let thisInterval = calendar.dateInterval(of: .month, for: today),
               let lastStart = calendar.date(
-                  byAdding: component, value: -1, to: thisInterval.start),
-              let lastInterval = calendar.dateInterval(of: component, for: lastStart)
+                  byAdding: .month, value: -1, to: thisInterval.start),
+              let lastInterval = calendar.dateInterval(of: .month, for: lastStart)
         else { return nil }
         return (thisInterval, lastInterval)
     }

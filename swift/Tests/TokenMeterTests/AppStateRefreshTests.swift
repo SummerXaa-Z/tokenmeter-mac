@@ -65,6 +65,30 @@ final class AppStateRefreshTests: XCTestCase {
         ))
     }
 
+    func testArkPlanQuotaLastGoodOnlySurvivesTransientFailureForTenMinutes() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        XCTAssertTrue(AppState.shouldKeepArkPlanQuotaLastGood(
+            error: .timedOut,
+            succeededAt: now.addingTimeInterval(-599),
+            now: now
+        ))
+        XCTAssertFalse(AppState.shouldKeepArkPlanQuotaLastGood(
+            error: .timedOut,
+            succeededAt: now.addingTimeInterval(-601),
+            now: now
+        ))
+        XCTAssertFalse(AppState.shouldKeepArkPlanQuotaLastGood(
+            error: .notLoggedIn,
+            succeededAt: now,
+            now: now
+        ))
+        XCTAssertFalse(AppState.shouldKeepArkPlanQuotaLastGood(
+            error: .pipeReadFailed,
+            succeededAt: nil,
+            now: now
+        ))
+    }
+
     func testZhipuQuotaLastGoodOnlySurvivesTransientFailureForTenMinutes() {
         let now = Date(timeIntervalSince1970: 10_000)
         XCTAssertTrue(AppState.shouldKeepZhipuQuotaLastGood(

@@ -63,6 +63,8 @@ final class AppState: ObservableObject {
     @Published private(set) var codexLiveRateLimits: [CodexRateLimits] = []
     private(set) var codexLiveQuotaRevision: UInt = 0
     private var codexLiveQuotaLoadedAt: Date?
+    private var codexLiveQuotaSucceededAt: Date?
+    private var codexLiveQuotaExpiryTask: Task<Void, Never>?
 
     var codexAllRateLimits: [CodexRateLimits] {
         codexLiveQuotaEnabled && !codexLiveRateLimits.isEmpty
@@ -88,6 +90,8 @@ final class AppState: ObservableObject {
     static let sourceTTL: TimeInterval = 60
     nonisolated static let kimiQuotaLastGoodTTL: TimeInterval = 10 * 60
     nonisolated static let zhipuQuotaLastGoodTTL: TimeInterval = 10 * 60
+    nonisolated static let arkPlanQuotaLastGoodTTL: TimeInterval = 10 * 60
+    nonisolated static let codexLiveQuotaLastGoodTTL: TimeInterval = 10 * 60
 
     private let store = ConfigStore.shared
     private let historyPersistence: HistoryPersistenceCoordinator
@@ -218,14 +222,14 @@ final class AppState: ObservableObject {
                         }, authoritative: false)
                     }
                 } catch let err as APIError {
+                    // 失败保留上次成功快照（last-good，与余额/本地来源一致），
+                    // 只切换状态；凭据移除（下方无 Token 分支）才清空数据。
                     if usageRefresh.acceptsResult(inputIsCurrent: store.credUsageToken == token) {
-                        usage = nil
                         if case .noToken = err { usageState = .noKey }
                         else { usageState = .error(err.errorDescription ?? "查询失败") }
                     }
                 } catch {
                     if usageRefresh.acceptsResult(inputIsCurrent: store.credUsageToken == token) {
-                        usage = nil
                         usageState = .error(error.localizedDescription)
                     }
                 }
@@ -862,9 +866,46 @@ final class AppState: ObservableObject {
     ) -> Bool {
         guard codexEnabled, wasEnabled, codexLiveQuotaEnabled,
               requestRevision == codexLiveQuotaRevision else { return false }
-        codexLiveRateLimits = (limits ?? []).filter { $0.primary != nil || $0.secondary != nil }
+        guard let limits else {
+            // 查询失败保留上次实时结果（与 Kimi/智谱同款 last-good）：TTL 内
+            // 不降级到本地被动快照，loadedAt 不刷新，下一次刷新仍会重试；
+            // 超过 TTL 由兜底任务清空，回退被动快照。
+            scheduleCodexLiveQuotaExpiry()
+            return true
+        }
+        codexLiveRateLimits = limits.filter { $0.primary != nil || $0.secondary != nil }
         codexLiveQuotaLoadedAt = Date()
+        codexLiveQuotaSucceededAt = Date()
+        cancelCodexLiveQuotaExpiry()
         return true
+    }
+
+    private func scheduleCodexLiveQuotaExpiry() {
+        guard let succeededAt = codexLiveQuotaSucceededAt else { return }
+        cancelCodexLiveQuotaExpiry()
+        let expiresAt = succeededAt.addingTimeInterval(Self.codexLiveQuotaLastGoodTTL)
+        let delay = max(expiresAt.timeIntervalSinceNow, 0)
+        let nanoseconds = UInt64(min(delay, Double(UInt64.max) / 1_000_000_000) * 1_000_000_000)
+        codexLiveQuotaExpiryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard !Task.isCancelled, let self else { return }
+            guard self.codexLiveQuotaSucceededAt == succeededAt,
+                  Date() >= expiresAt
+            else { return }
+            self.clearCodexLiveQuota()
+        }
+    }
+
+    private func cancelCodexLiveQuotaExpiry() {
+        codexLiveQuotaExpiryTask?.cancel()
+        codexLiveQuotaExpiryTask = nil
+    }
+
+    private func clearCodexLiveQuota() {
+        codexLiveRateLimits = []
+        codexLiveQuotaLoadedAt = nil
+        codexLiveQuotaSucceededAt = nil
+        cancelCodexLiveQuotaExpiry()
     }
 
     func loadKimi(force: Bool = false) async {
@@ -1358,6 +1399,8 @@ final class AppState: ObservableObject {
         }
     }
 
+    private var arkPlanQuotaExpiryTask: Task<Void, Never>?
+
     func loadArkPlanQuota(force: Bool = false) async {
         guard !RuntimeEnvironment.isIsolated else { return }
         if !force, !arkPlanQuotaRefresh.isRefreshing, isFresh(arkPlanQuota.loadedAt) { return }
@@ -1375,14 +1418,63 @@ final class AppState: ObservableObject {
             arkPlanQuota.error = nil
             do {
                 arkPlanQuota.result = try await ArkPlanQuotaService.load()
+                arkPlanQuota.succeededAt = Date()
+                cancelArkPlanQuotaExpiry()
             } catch {
-                arkPlanQuota.result = nil
+                // 与 Kimi/智谱同款 last-good：超时、启动与管道读取这类瞬态故障
+                // 在 TTL 内保留上次成功结果（过期由兜底任务清空）；其余错误
+                // 代表旧快照不可信，立即清空。
+                if let quotaError = error as? ArkPlanQuotaError,
+                   Self.shouldKeepArkPlanQuotaLastGood(
+                    error: quotaError,
+                    succeededAt: arkPlanQuota.succeededAt,
+                    now: Date()
+                   ), let succeededAt = arkPlanQuota.succeededAt {
+                    scheduleArkPlanQuotaExpiry(succeededAt: succeededAt)
+                } else {
+                    cancelArkPlanQuotaExpiry()
+                    arkPlanQuota.result = nil
+                    arkPlanQuota.succeededAt = nil
+                }
                 arkPlanQuota.error = (error as? ArkPlanQuotaError)?.errorDescription
                     ?? "火山方舟套餐额度暂不可用"
             }
             arkPlanQuota.loadedAt = Date()
 
             guard arkPlanQuotaRefresh.finish() else { break }
+        }
+    }
+
+    nonisolated static func shouldKeepArkPlanQuotaLastGood(
+        error: ArkPlanQuotaError,
+        succeededAt: Date?,
+        now: Date
+    ) -> Bool {
+        guard error.isTransient, let succeededAt else { return false }
+        let age = now.timeIntervalSince(succeededAt)
+        return age >= 0 && age <= arkPlanQuotaLastGoodTTL
+    }
+
+    private func cancelArkPlanQuotaExpiry() {
+        arkPlanQuotaExpiryTask?.cancel()
+        arkPlanQuotaExpiryTask = nil
+    }
+
+    private func scheduleArkPlanQuotaExpiry(succeededAt: Date) {
+        cancelArkPlanQuotaExpiry()
+        let expiresAt = succeededAt.addingTimeInterval(Self.arkPlanQuotaLastGoodTTL)
+        let delay = max(expiresAt.timeIntervalSinceNow, 0)
+        let nanoseconds = UInt64(min(delay, Double(UInt64.max) / 1_000_000_000) * 1_000_000_000)
+        arkPlanQuotaExpiryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard !Task.isCancelled, let self else { return }
+            guard self.arkPlanQuota.succeededAt == succeededAt,
+                  Date() >= expiresAt,
+                  self.arkPlanQuota.error != nil
+            else { return }
+            self.arkPlanQuota.result = nil
+            self.arkPlanQuota.succeededAt = nil
+            self.arkPlanQuotaExpiryTask = nil
         }
     }
 
@@ -1433,8 +1525,7 @@ final class AppState: ObservableObject {
         store.codexMonitorEnabled = enabled
         codexEnabled = enabled
         codexLiveQuotaRevision &+= 1
-        codexLiveRateLimits = []
-        codexLiveQuotaLoadedAt = nil
+        clearCodexLiveQuota()
         if enabled { Task { await loadCodex(force: true) } }
         requestStatusRefresh()
     }
@@ -1443,8 +1534,7 @@ final class AppState: ObservableObject {
         store.codexLiveQuotaEnabled = enabled
         codexLiveQuotaEnabled = enabled
         codexLiveQuotaRevision &+= 1
-        codexLiveRateLimits = []
-        codexLiveQuotaLoadedAt = nil
+        clearCodexLiveQuota()
         codex.loadedAt = nil
         if codexEnabled { Task { await loadCodex(force: true) } }
         requestStatusRefresh()
