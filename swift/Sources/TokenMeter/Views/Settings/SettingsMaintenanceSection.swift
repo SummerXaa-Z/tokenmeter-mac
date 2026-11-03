@@ -4,6 +4,7 @@ struct SettingsMaintenanceSection: View {
     typealias ExportPreset = SettingsView.ExportPreset
     @EnvironmentObject var state: AppState
     @EnvironmentObject private var historyReader: HistorySnapshotReader
+    @Environment(\.usageNow) private var now
     @ObservedObject var interaction: SettingsMaintenanceInteraction
     @ObservedObject private var updater = Updater.shared
     private let store = ConfigStore.shared
@@ -59,7 +60,7 @@ struct SettingsMaintenanceSection: View {
                             // 「止」带下界:起止双向约束,选不出倒置窗口
                             DatePicker(
                                 "止", selection: $interaction.exportCustomEnd,
-                                in: interaction.exportCustomStart...Date())
+                                in: interaction.exportCustomStart...now)
                         }
                         .datePickerStyle(.compact)
                     }
@@ -94,18 +95,18 @@ struct SettingsMaintenanceSection: View {
                     }
                     HStack {
                         Button(interaction.sourceHealth == nil ? "重新检查" : "再查一次") {
-                            Task { interaction.sourceHealth = await SourceHealth.collect() }
+                            Task { interaction.sourceHealth = await SourceHealth.collect(now: now) }
                         }
                         Spacer()
                     }
                 }
                 .task {
                     if interaction.sourceHealth == nil {
-                        interaction.sourceHealth = await SourceHealth.collect()
+                        interaction.sourceHealth = await SourceHealth.collect(now: now)
                     }
                 }
                 .onChange(of: state.collectRevision) { _, _ in
-                    Task { interaction.sourceHealth = await SourceHealth.collect() }
+                    Task { interaction.sourceHealth = await SourceHealth.collect(now: now) }
                 }
 
                 Divider()

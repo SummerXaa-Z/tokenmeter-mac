@@ -38,19 +38,20 @@ enum SourceHealth {
     }
 
     /// 采集一次健康快照。开关与路径在主线程读,枚举在有界并发任务里做,
-    /// 不阻塞设置页滚动。
+    /// 不阻塞设置页滚动。checkedAt 由调用方传入展示钟(真实 app 是
+    /// usageNow 环境,离屏渲染是固定渲染钟),同一快照的重渲染不漂移。
     @MainActor
-    static func collect(store: ConfigStore = .shared) async -> Snapshot {
+    static func collect(store: ConfigStore = .shared, now: Date = Date()) async -> Snapshot {
         if RuntimeEnvironment.isIsolated {
             return Snapshot(entries: codingOrder.map { source in
                 Entry(source: source, enabled: true, pathExists: false, lastWrite: nil,
                       displayPath: "示例数据", attempt: CollectAttemptLog.attempt(for: source))
-            }, checkedAt: Date())
+            }, checkedAt: now)
         }
         let descriptors = codingOrder.map { source in
             (source, SourceCatalog.descriptor(for: source).isEnabled(in: store), Self.roots(for: source))
         }
-        let checkedAt = Date()
+        let checkedAt = now
         let entries = await withTaskGroup(of: (Int, Entry).self) { group in
             for (order, descriptor) in descriptors.enumerated() {
                 let (source, enabled, roots) = descriptor

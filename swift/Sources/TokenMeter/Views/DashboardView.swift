@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DashboardView: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.usageNow) private var now
     var onBack: () -> Void
     var onSettings: () -> Void
     var onDetail: (String) -> Void
@@ -12,7 +13,7 @@ struct DashboardView: View {
         max(flash?.totalTokens ?? 0, pro?.totalTokens ?? 0, 1)
     }
     private var today: UsageDay? {
-        state.usage?.days.first { $0.date == DateUtil.today() }
+        state.usage?.days.first { $0.date == DateUtil.key(now) }
     }
 
     var body: some View {
