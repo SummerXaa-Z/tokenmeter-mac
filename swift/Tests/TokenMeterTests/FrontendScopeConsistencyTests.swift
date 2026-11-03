@@ -195,4 +195,12 @@ final class FrontendScopeConsistencyTests: XCTestCase {
         XCTAssertEqual(months.reduce(0) { $0 + $1.value }, 30)
         XCTAssertTrue(months.contains { $0.date == "2024-01-01" && $0.value == 0 })
     }
+
+    func testTrendHoverCaptionMatchesXAxisBucketLabels() {
+        // 悬停说明与 X 轴刻度同一口径：周/月桶显示聚合合计，
+        // 标签必须带上周期后缀，不能读成某一天的用量
+        XCTAssertEqual(SourceHistoryTrendCard.captionLabel(granularity: .day, date: "2026-09-14"), "2026/9/14")
+        XCTAssertEqual(SourceHistoryTrendCard.captionLabel(granularity: .week, date: "2026-09-14"), "9/14周")
+        XCTAssertEqual(SourceHistoryTrendCard.captionLabel(granularity: .month, date: "2026-09-01"), "2026/9")
+    }
 }

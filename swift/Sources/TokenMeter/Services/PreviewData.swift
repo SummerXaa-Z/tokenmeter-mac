@@ -38,6 +38,40 @@ enum PreviewData {
             daySkills: [DateUtil.today(): ["pdf": 12, "csv": 20]])
         state.acceptClaudeCollection(claude)
         state.acceptCodexCollection(codex)
+        // Qwen 页今日卡的分量配色与「未确认显示 —」此前没有离屏覆盖：
+        // 补一份合成结果让今日/分时/模型卡都渲染（qwenEnabled 仍为关，
+        // 总览与历史快照不受影响）。
+        let qwen = QwenCodeUsageResult(
+            days: dates.enumerated().map { offset, date in
+                .init(
+                    date: date,
+                    inputTokens: (offset + 1) * 30_000,
+                    cachedInputTokens: (offset + 1) * 90_000,
+                    outputTokens: (offset + 1) * 15_000,
+                    reasoningTokens: (offset + 1) * 6_000,
+                    messageCount: offset + 2,
+                    sessionCount: 1)
+            },
+            models: [
+                .init(
+                    model: "qwen3-coder-plus",
+                    inputTokens: 210_000,
+                    cachedInputTokens: 630_000,
+                    outputTokens: 105_000,
+                    reasoningTokens: 42_000),
+            ],
+            todayHours: (0..<24).map {
+                .init(hour: $0, totalTokens: $0 == 12 ? 141_000 : 0)
+            },
+            dayModels: Dictionary(uniqueKeysWithValues: dates.enumerated().map { offset, date in
+                (date, ["qwen3-coder-plus": ModelTokenTally(
+                    input: (offset + 1) * 30_000, cached: (offset + 1) * 90_000,
+                    output: (offset + 1) * 15_000, reasoning: (offset + 1) * 6_000)])
+            }))
+        // 直接写缓存而非 acceptQwenCollection：来源开关保持关（总览不出现
+        // qwen 行），只有直接托管的 qwen 页消费这份合成结果。
+        state.qwen.result = qwen
+        state.qwen.loadedAt = Date()
     }
 }
 #endif

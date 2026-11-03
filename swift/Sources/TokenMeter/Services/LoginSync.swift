@@ -12,6 +12,15 @@ final class LoginSyncController: NSObject, ObservableObject, WKScriptMessageHand
     @Published var ended = false
     @Published var persistenceError: String?
 
+    // 登录窗比设置页活得久：持有 WKScriptMessageHandler 的控制器必须同样
+    // 常驻。此前每次重建设置页各建一个实例，旧窗口的事件只回旧实例，
+    // 新页面的「同步」还会再开一个窗口。共享实例 + start() 的窗口复用
+    // 保证同时至多一个登录窗。
+    static let shared: LoginSyncController = .init()
+
+    // 绑定时据此恢复「等待登录」状态（窗口仍开着而设置页刚重建的情形）
+    var isWindowOpen: Bool { window != nil }
+
     private var window: NSWindow?
     private var webView: WKWebView?
     private var done = false

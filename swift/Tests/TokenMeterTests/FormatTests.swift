@@ -16,4 +16,11 @@ final class FormatTests: XCTestCase {
         XCTAssertEqual(Fmt.tokensShort(25_000_000), "25M")
         XCTAssertEqual(Fmt.tokensShort(380_000_000), "380M")
     }
+
+    func testTokenAbbreviationsPromoteThousandsToMillions() {
+        // 与 M→B 同一语义：K 四舍五入到 1000 时升为 M，避免 "1000K" 边界值
+        XCTAssertEqual(Fmt.tokensShort(999_449), "999.4K")
+        XCTAssertEqual(Fmt.tokensShort(999_500), "1M")
+        XCTAssertEqual(Fmt.tokensShort(999_950), "1M")
+    }
 }

@@ -7,7 +7,8 @@ import Foundation
 final class SettingsAccountsController: ObservableObject {
     private let store = ConfigStore.shared
     private weak var state: AppState?
-    private let sync = LoginSyncController()
+    // 共享登录控制器：登录窗生命周期挂在 app 上，不随设置页重建
+    private let sync = LoginSyncController.shared
     private var subscriptions: Set<AnyCancellable> = []
     @Published var apiKeyInput = ""
     @Published var apiStatus = ""
@@ -72,21 +73,31 @@ final class SettingsAccountsController: ObservableObject {
             ? "已配置 \(store.zhipuKeyPreview() ?? "")（\(store.zhipuQuotaDomain.title)）"
             : "未配置（\(store.zhipuQuotaDomain.title)）"
 
-        sync.$captured.compactMap { $0 }.sink { [weak self] _ in
+        // dropFirst：@Published 订阅会先回放当前值。共享的 sync 比本页
+        // 活得久，旧会话残留的 ended/captured/persistenceError 若不丢弃，
+        // 会在绑定时把上面刚设置的状态覆盖成陈旧反馈。
+        sync.$captured.dropFirst().compactMap { $0 }.sink { [weak self] _ in
             guard let self else { return }
             self.syncing = false
             self.usageStatus = "已通过网页登录自动同步，正在刷新…"
             Task { await self.refreshUsageAfterToken("已自动同步用量 Token") }
         }.store(in: &subscriptions)
-        sync.$ended.sink { [weak self] ended in
+        sync.$ended.dropFirst().sink { [weak self] ended in
             guard ended, let self else { return }
             self.syncing = false
             self.usageStatus = "登录窗口已关闭，未获取到 Token。可重新同步或手动输入。"
         }.store(in: &subscriptions)
-        sync.$persistenceError.compactMap { $0 }.sink { [weak self] message in
+        sync.$persistenceError.dropFirst().compactMap { $0 }.sink { [weak self] message in
             self?.syncing = false
             self?.usageStatus = message
         }.store(in: &subscriptions)
+
+        // 绑定时登录窗仍开着（设置页在同步中途被重建）：恢复等待态，
+        // 否则上个页面发起的同步在新页面看起来像从未开始。
+        if sync.isWindowOpen {
+            syncing = true
+            usageStatus = "登录窗口仍在等待完成；登录成功后会自动同步并关闭。"
+        }
     }
 
     func saveApiKey() {

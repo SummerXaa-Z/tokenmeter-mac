@@ -61,19 +61,22 @@ struct QwenCodeView: View {
                 }
                 Divider()
                 HStack(spacing: 10) {
-                    tokenPart("新输入", today?.inputTokens ?? 0, Theme.miss)
-                    tokenPart("缓存读取", today?.cachedInputTokens ?? 0, Theme.hit)
-                    tokenPart("输出", today?.outputTokens ?? 0, Theme.response)
-                    tokenPart("推理", today?.reasoningTokens ?? 0, Theme.qwen)
+                    // 分量配色与来源页趋势卡同一约定(新输入=input、缓存读取=hit、
+                    // 输出=response、推理=miss)；今日未确认时显示 —，不冒充 0
+                    tokenPart("新输入", today?.inputTokens, Theme.input)
+                    tokenPart("缓存读取", today?.cachedInputTokens, Theme.hit)
+                    tokenPart("输出", today?.outputTokens, Theme.response)
+                    tokenPart("推理", today?.reasoningTokens, Theme.miss)
                 }
             }
         }
     }
 
-    private func tokenPart(_ title: String, _ value: Int, _ color: Color) -> some View {
+    private func tokenPart(_ title: String, _ value: Int?, _ color: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.system(size: 11)).foregroundStyle(color)
-            Text(Fmt.tokensShort(value)).font(.system(size: 11, weight: .semibold))
+            Text(value.map(Fmt.tokensShort) ?? "—")
+                .font(.system(size: 11, weight: .semibold))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

@@ -6,6 +6,7 @@ import SwiftUI
 struct UnpricedModelsNote: View {
     let names: [String]
     @State private var copied = false
+    @State private var resetTask: Task<Void, Never>?
 
     var body: some View {
         if let caption = Self.caption(names) {
@@ -28,8 +29,14 @@ struct UnpricedModelsNote: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(Self.copyText(names), forType: .string)
         copied = true
-        // 短暂显示「已复制」后复位；用户再次点击仍可重复复制
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { copied = false }
+        // 短暂显示「已复制」后复位；二连点先取消上一次复位任务，
+        // 否则第一次的定时会把刚亮起的提示提前掐灭造成闪灭
+        resetTask?.cancel()
+        resetTask = Task {
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            guard !Task.isCancelled else { return }
+            copied = false
+        }
     }
 
     // 卡内文案：最多列 3 个模型名，其余收进「等」；没有缺价时返回 nil 不渲染

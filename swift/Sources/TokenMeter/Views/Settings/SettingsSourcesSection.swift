@@ -3,6 +3,8 @@ import SwiftUI
 struct SettingsSourcesSection: View {
     @EnvironmentObject var state: AppState
     @EnvironmentObject private var historyReader: HistorySnapshotReader
+    // 探测快照来自交互对象（创建时 stat 一次），body 不再碰文件系统
+    let interaction: SettingsSourcesInteraction
     private var codingProviders: [Provider] {
         SourceCatalog.codingAgentSources.map(SourceCatalog.provider(for:))
     }
@@ -119,7 +121,7 @@ struct SettingsSourcesSection: View {
     private func visibility(for provider: Provider) -> SettingsSourceVisibility {
         let source = SourceCatalog.source(for: provider)
         return SettingsSourceVisibility(
-            available: provider.available,
+            available: interaction.availability[provider] ?? true,
             enabled: state.isSourceEnabled(source),
             hasHistory: SettingsSourceVisibility.hasHistory(
                 for: source, daily: historyReader.snapshot.daily, models: historyReader.snapshot.models))

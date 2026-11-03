@@ -23,3 +23,13 @@ struct AlertLatch {
         firedKeys.remove(key)
     }
 }
+
+// 余额告警的重新布防判定：阈值关闭或余额数据消失（清除 Key 后 noKey
+// 路径置空 balance）都视为布防复位，与配额数据消失（result == nil）
+// 同一纪律；读取失败保留 last-good 余额时不复位，避免瞬时失败恢复后
+// 对同一次越线重复提醒。
+enum BalanceAlertPolicy {
+    static func shouldRearm(threshold: Int, balance: Balance?) -> Bool {
+        threshold <= 0 || balance == nil
+    }
+}
