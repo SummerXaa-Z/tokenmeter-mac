@@ -57,6 +57,19 @@ final class ModelRankingCSVExportTests: XCTestCase {
         XCTAssertTrue(csv.split(separator: "\n")[1].hasPrefix("1,Claude,opus-5-5,524000000,35,"))
     }
 
+    func testEscapingNeutralizesFormulaPrefixes() {
+        // 模型名/技能名来自本地会话文件,可含任意文本;= + - @ 或制表/回车
+        // 开头的字段前置单引号,防止 Excel/Numbers/WPS 把导出文本重释为公式
+        XCTAssertEqual(ModelRankingCSVExport.escaped("=SUM(A1)"), "'=SUM(A1)")
+        XCTAssertEqual(ModelRankingCSVExport.escaped("+12%"), "'+12%")
+        XCTAssertEqual(ModelRankingCSVExport.escaped("-5%"), "'-5%")
+        XCTAssertEqual(ModelRankingCSVExport.escaped("@cmd"), "'@cmd")
+        XCTAssertEqual(ModelRankingCSVExport.escaped("\tboom"), "'\tboom")
+        // 中和后再走 RFC 4180:含逗号/引号时整体加引号、内部引号翻倍
+        XCTAssertEqual(ModelRankingCSVExport.escaped("=a,b"), "\"'=a,b\"")
+        XCTAssertEqual(ModelRankingCSVExport.escaped("=say \"hi\""), "\"'=say \"\"hi\"\"\"")
+    }
+
     func testEscapingFollowsRFC4180() {
         XCTAssertEqual(ModelRankingCSVExport.escaped("plain"), "plain")
         XCTAssertEqual(ModelRankingCSVExport.escaped("a,b"), "\"a,b\"")

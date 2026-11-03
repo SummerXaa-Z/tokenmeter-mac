@@ -29,6 +29,19 @@ final class PeriodCompareTests: XCTestCase {
         )
     }
 
+    func testWeekIntervalAnchorsMondayEvenWithSundayFirstWeekdayLocale() throws {
+        // 2026-09-27 是周日。周锚点必须强制 ISO 周一(9/21~9/27),不能随
+        // 周日起始区域(firstWeekday=1,如 en_US)漂成 9/27 起——否则环比卡
+        // 与热力图/周报/回本曲线同一天分属不同周。
+        var usStyle = Calendar(identifier: .gregorian)
+        usStyle.firstWeekday = 1
+        usStyle.timeZone = Calendar.current.timeZone
+        let sunday = try XCTUnwrap(DateUtil.date(from: "2026-09-27"))
+        let intervals = PeriodCompare.intervals(of: .week, today: sunday, calendar: usStyle)
+        let start = try XCTUnwrap(intervals?.this.start)
+        XCTAssertEqual(DateUtil.key(start), "2026-09-21")
+    }
+
     func testWeekSplitsCalendarWeeksPerSource() {
         let result = compare([
             day("2026-09-25", bySource: [.claude: 100, .codex: 7]),

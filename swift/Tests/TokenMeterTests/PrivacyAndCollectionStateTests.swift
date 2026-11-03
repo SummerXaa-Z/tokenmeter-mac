@@ -70,6 +70,23 @@ final class PrivacyAndCollectionStateTests: XCTestCase {
     }
 
     @MainActor
+    func testCodexLiveQuotaFailureKeepsLastGoodResult() {
+        let state = AppState()
+        state.setCodexLiveQuotaEnabled(true)
+        let quota = CodexRateLimits(
+            limitId: "codex", limitName: nil,
+            primary: .init(usedPercent: 20, windowMinutes: 300, resetsAt: Date()), secondary: nil,
+            planType: "test", asOf: Date())
+        XCTAssertTrue(state.acceptCodexLiveQuota(
+            [quota], requestRevision: state.codexLiveQuotaRevision, wasEnabled: true))
+        XCTAssertEqual(state.codexRateLimits, quota)
+        // 查询失败(nil)不再清空实时结果:TTL 内保留上次成功值,不降级、不冒充
+        XCTAssertTrue(state.acceptCodexLiveQuota(
+            nil, requestRevision: state.codexLiveQuotaRevision, wasEnabled: true))
+        XCTAssertEqual(state.codexRateLimits, quota, "查询失败必须保留上次实时配额")
+    }
+
+    @MainActor
     func testInvalidLiveQuotaWindowsFallBackToValidLocalSnapshot() async {
         let state = AppState()
         let now = Date()

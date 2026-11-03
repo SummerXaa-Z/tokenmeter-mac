@@ -56,13 +56,23 @@ enum ModelRankingCSVExport {
         return lines.map { $0.joined(separator: ",") }.joined(separator: "\n") + "\n"
     }
 
-    /// CSV 字段转义（RFC 4180）：含逗号、引号或换行时整体加引号，
-    /// 内部引号翻倍。数字与日期列不经过这里。
+    /// CSV 字段转义（RFC 4180 + 公式中和）：含逗号、引号或换行时整体加引号，
+    /// 内部引号翻倍；以 = + - @ 或制表/回车开头的文本前置单引号，防止
+    /// Excel/Numbers/WPS 把模型名、技能名等外部文本重释为公式执行。
+    /// 数字与日期列不经过这里。
     static func escaped(_ field: String) -> String {
-        guard field.contains(",") || field.contains("\"") || field.contains("\n") else {
-            return field
+        let neutralized: String
+        if let first = field.first,
+           first == "=" || first == "+" || first == "-"
+               || first == "@" || first == "\t" || first == "\r" {
+            neutralized = "'" + field
+        } else {
+            neutralized = field
         }
-        return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        guard neutralized.contains(",") || neutralized.contains("\"") || neutralized.contains("\n") else {
+            return neutralized
+        }
+        return "\"" + neutralized.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 
     /// 名字段净化为文件名安全段：路径分隔符等不安全字符换连字符、

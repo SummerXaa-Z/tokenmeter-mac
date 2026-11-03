@@ -335,7 +335,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await self.appState.refresh(scope: .status(usageSources: requested))
             let recordedHistory: [HistoryStore.DayPoint]
             var historyUnavailable = false
-            if allInfoOn {
+            if allInfoOn || claudeInfoOn || codexTotalInfoOn {
                 do {
                     recordedHistory = try await Task.detached(priority: .utility) {
                         try HistoryStore.allChecked(now: Date())
@@ -354,7 +354,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let todayKey = DateUtil.key(now)
 
             var level = AlertLevel.normal
-            var infoTokens = 0          // total/claude 模式累加今日 token
+            var infoTokens = 0          // 文本档今日 token（claude/total 经 MenubarTodayTotal 口径）
             var infoText: String?
             // 告警事实在后台算好，回主线程统一过状态机推送
             var codexCrossed: Bool?     // nil = 本轮未评估
@@ -381,24 +381,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if codexQuotaInfoOn {
                     infoText = remaining.map { "\(Int($0))%" } ?? "—"
                 }
-                if codexTotalInfoOn {
-                    infoTokens += self.appState.codex.result?.dailyTokens(on: todayKey) ?? 0
-                }
             }
 
-            if claudeAlertOn || claudeInfoOn {
+            if claudeAlertOn {
+                // 告警走实时值：跨天旧缓存的今日记 0（宁可不报，不拿昨天误报）。
                 let todayTokens = self.appState.claude.result?.dailyTokens(on: todayKey) ?? 0
-                if claudeAlertOn {
-                    let limit = claudeLimitM * 1_000_000
-                    // 超阈值即提醒，1.5 倍才升红——日用量越线不等于不可用，留缓冲
-                    if todayTokens >= limit * 3 / 2 { level = max(level, .critical) }
-                    else if todayTokens >= limit { level = max(level, .warn) }
-                    claudeCrossed = todayTokens >= limit
-                    claudeToday = todayTokens
-                }
+                let limit = claudeLimitM * 1_000_000
+                // 超阈值即提醒，1.5 倍才升红——日用量越线不等于不可用，留缓冲
+                if todayTokens >= limit * 3 / 2 { level = max(level, .critical) }
+                else if todayTokens >= limit { level = max(level, .warn) }
+                claudeCrossed = todayTokens >= limit
+                claudeToday = todayTokens
+            }
+            if claudeInfoOn || codexTotalInfoOn {
+                // 「Claude/合计」档与「全部」档同口径：live 优先、当日历史兜底；
+                // 跨天旧缓存里的"今日"其实是昨天，不算 live，也不再冒充 0。
+                let recordedToday = recordedHistory.first { $0.date == todayKey }?.bySource ?? [:]
+                if historyUnavailable { infoText = "—" }
+                var participants: Set<HistorySource> = []
+                var live: [HistorySource: Int] = [:]
                 if claudeInfoOn {
-                    infoTokens += todayTokens
+                    participants.insert(.claude)
+                    if let loadedAt = self.appState.claude.loadedAt,
+                       Calendar.current.isDate(loadedAt, inSameDayAs: now) {
+                        live[.claude] = self.appState.claude.result?.dailyTokens(on: todayKey)
+                    }
                 }
+                if codexTotalInfoOn {
+                    participants.insert(.codex)
+                    if let loadedAt = self.appState.codex.loadedAt,
+                       Calendar.current.isDate(loadedAt, inSameDayAs: now) {
+                        live[.codex] = self.appState.codex.result?.dailyTokens(on: todayKey)
+                    }
+                }
+                infoTokens = MenubarTodayTotal.compute(
+                    participants: participants,
+                    live: live,
+                    recordedToday: recordedToday
+                )
             }
             if allInfoOn {
                 // 「全部」档合计与总览页今日口径一致：live 优先、历史兜底。
