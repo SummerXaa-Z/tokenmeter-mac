@@ -59,10 +59,11 @@ struct CodexView: View {
     }
 
     // MARK: - 配额窗口
+    // 消费注入的 usageNow（真实 app 由 RootView 的 30 秒 Timeline 驱动重渲，
+    // 离屏渲染为固定渲染钟）——自带 TimelineView 会在渲染夹具里引入活钟，
+    // 配额新鲜度随真实渲染时刻翻转。
     private func rateLimitCard(_ limits: CodexRateLimits?) -> some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            rateLimitContent(limits, now: context.date)
-        }
+        rateLimitContent(limits, now: now)
     }
 
     private func rateLimitContent(_ limits: CodexRateLimits?, now: Date) -> some View {

@@ -461,7 +461,7 @@ enum DebugUIRenderHarness {
         return ScrollView {
             VStack(spacing: 10) {
                 OverviewSubscriptionQuotaCard(
-                    snapshot: SubscriptionQuotaSnapshot(codex: codex, zhipu: zhipu),
+                    snapshot: SubscriptionQuotaSnapshot(codex: codex, zhipu: zhipu, now: now),
                     statuses: [
                         .init(source: .codex, title: "Codex", loading: false, message: ""),
                         .init(source: .zhipu, title: "智谱 GLM", loading: false, message: ""),

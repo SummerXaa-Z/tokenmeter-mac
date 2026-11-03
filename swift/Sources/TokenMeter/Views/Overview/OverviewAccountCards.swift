@@ -182,11 +182,12 @@ struct QuotaPaceLine: View {
 struct OverviewSubscriptionQuotaCard: View {
     let snapshot: SubscriptionQuotaSnapshot
     let statuses: [SubscriptionQuotaSourceStatus]
+    // 消费注入的 usageNow（真实 app 由 RootView 的 30 秒 Timeline 驱动重渲，
+    // 离屏渲染为固定渲染钟），不自带活钟 TimelineView。
+    @Environment(\.usageNow) private var now
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            quotaContent(snapshot.evaluated(at: context.date))
-        }
+        quotaContent(snapshot.evaluated(at: now))
     }
 
     private func quotaContent(_ current: SubscriptionQuotaSnapshot) -> some View {
