@@ -11,6 +11,7 @@
 
 - Use the root Makefile. `make test` runs XCTest; `make release-check` also builds Release and verifies metadata.
 - UI checks use `make ui-smoke`, `make ui-render` or `make ui-render-overview`. These force Debug and isolate configuration, history, collectors and account access.
+- `make ui-render-determinism` (run in CI) asserts two same-build renders are byte-identical; render paths must consume the frozen render clock (`PreviewData.renderNow` / injected `usageNow`), never a live `Date()`.
 - Never use normal startup or Release preview flags as a substitute for isolated validation. Do not access real sessions or accounts merely to validate a layout.
 - Keep meaningful tests for windows, source filters, read failures, asynchronous refresh results and update trust/rollback. Mechanical moves do not need tests that merely duplicate code.
 - Build/test/fixture success does not establish signing, notarization, real installation, updates or account behavior. Follow `docs/release.md` for those checks.
