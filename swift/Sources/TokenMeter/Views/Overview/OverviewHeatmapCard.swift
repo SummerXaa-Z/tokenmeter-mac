@@ -91,6 +91,9 @@ struct OverviewHeatmapCard: View {
         let columns = isMonth ? [] : UsageHeatmap.window(
             history, participants: participants,
             windowWeeks: span.rawValue, weekOffset: weekOffset)
+        // 周档分位用全历史周合计:与日/月档同源,颜色跨页、跨窗口档可比
+        let weeklyThresholds = isMonth ? nil : UsageHeatmap.weeklyThresholds(
+            history, participants: participants)
         let streak = UsageHeatmap.currentStreak(history, participants: participants)
         let monthRange = isMonth ? UsageHeatmap.monthWindow(
             today: Date(), monthCount: monthSpan.rawValue, monthOffset: monthOffset) : nil
@@ -199,7 +202,8 @@ struct OverviewHeatmapCard: View {
                     if isMonth {
                         monthStrip(monthCells)
                     } else if granularity == .week {
-                        weekStrip(UsageHeatmap.weeklyCells(from: columns, apiValues: apiValues))
+                        weekStrip(UsageHeatmap.weeklyCells(
+                            from: columns, apiValues: apiValues, thresholds: weeklyThresholds))
                     } else {
                         grid(columns, apiValues: apiValues, weekdayAverages: weekdayAverages)
                     }
@@ -272,7 +276,12 @@ struct OverviewHeatmapCard: View {
                     persisted: persisted,
                     windowWeeks: span.rawValue, weekOffset: weekOffset)
                 if self.granularity == .week {
-                    rows = UsageHeatmap.weeklyCells(from: columns, apiValues: api).map { cell in
+                    // 与界面周条同一套全历史分位,导出数字与所见颜色同口径
+                    let thresholds = UsageHeatmap.weeklyThresholds(
+                        history, participants: participants)
+                    rows = UsageHeatmap.weeklyCells(
+                        from: columns, apiValues: api, thresholds: thresholds
+                    ).map { cell in
                         let end = DateUtil.date(from: cell.weekOf).map { DateUtil.key(DateUtil.addDays($0, 6)) } ?? cell.weekOf
                         return HeatmapCSVExport.Row(
                             bucket: cell.weekOf, weekday: nil,

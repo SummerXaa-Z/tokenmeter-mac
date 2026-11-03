@@ -215,12 +215,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // 每周一用量周报:周一至周三上午 9 点后、本周未发过时推一条上周摘要。
-    // 无周报开关、不到时机直接返回;到时机但上周没用量也记下本周键,
+    // 无周报开关、不到时机、系统通知总开关关闭都直接返回;总开关关闭的
+    // 一周不记"已发",之后打开仍会补发。到时机但上周没用量也记下本周键,
     // 避免之后每个刷新周期重复读历史计算。
     private func maybeSendWeeklyDigest() {
         let store = ConfigStore.shared
-        guard !weeklyDigestLoading, store.weeklyDigestEnabled,
-              WeeklyDigest.isDue(lastSentWeek: store.lastWeeklyDigestWeek)
+        guard !weeklyDigestLoading,
+              WeeklyDigest.shouldAttempt(
+                enabled: store.weeklyDigestEnabled,
+                notificationsOn: store.notificationsEnabled,
+                lastSentWeek: store.lastWeeklyDigestWeek)
         else { return }
         weeklyDigestLoading = true
         Task { [weak self] in
@@ -230,17 +234,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let snapshot = try await self.appState.readPersistedHistory()
                 self.appState.reportHistoryReadOutcome(succeeded: true)
                 let now = Date()
-                guard store.weeklyDigestEnabled,
-                      WeeklyDigest.isDue(lastSentWeek: store.lastWeeklyDigestWeek, today: now)
+                guard WeeklyDigest.shouldAttempt(
+                    enabled: store.weeklyDigestEnabled,
+                    notificationsOn: store.notificationsEnabled,
+                    lastSentWeek: store.lastWeeklyDigestWeek,
+                    today: now)
                 else { return }
-                // 确认历史成功读取后再记本周；读取失败仍允许下一轮重试。
-                store.lastWeeklyDigestWeek = WeeklyDigest.weekKey(now)
                 guard let message = WeeklyDigest.message(
                     snapshot.daily, participants: WeeklyDigest.participants(store), modelDays: snapshot.models,
-                    plans: store.subscriptionPlans, today: now) else { return }
+                    plans: store.subscriptionPlans, today: now) else {
+                    // 上周一条记录都没有:记本周键,避免整周反复重读重算。
+                    store.lastWeeklyDigestWeek = WeeklyDigest.weekKey(now)
+                    return
+                }
+                // 确认历史成功读取后再尝试发送;只有通知真正入队才记
+                // "本周已发"——总开关或系统授权中途被关时拦在门外,
+                // 之后打开仍会补发本周,不会被静默跳过。
                 Notifier.send(
                     id: Notifier.weeklyDigestID(forWeek: WeeklyDigest.summarizedWeekKey(today: now)),
-                    title: message.title, body: message.body)
+                    title: message.title, body: message.body,
+                    onEnqueued: { store.lastWeeklyDigestWeek = WeeklyDigest.weekKey(now) })
             } catch {
                 self.appState.reportHistoryReadOutcome(succeeded: false)
             }

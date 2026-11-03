@@ -56,7 +56,10 @@ struct SettingsMaintenanceSection: View {
                         HStack(spacing: 12) {
                             DatePicker(
                                 "起", selection: $interaction.exportCustomStart, in: ...interaction.exportCustomEnd)
-                            DatePicker("止", selection: $interaction.exportCustomEnd, in: ...Date())
+                            // 「止」带下界:起止双向约束,选不出倒置窗口
+                            DatePicker(
+                                "止", selection: $interaction.exportCustomEnd,
+                                in: interaction.exportCustomStart...Date())
                         }
                         .datePickerStyle(.compact)
                     }
@@ -218,9 +221,14 @@ struct SettingsMaintenanceSection: View {
         case .d30: return .lastDays(30)
         case .d90: return .lastDays(90)
         case .custom:
+            // 倒置兜底:UI 双向约束选不出起>止,这里再规整一次,
+            // 保证窗口恒为正序、不会静默导出只有表头的空 CSV
+            let window = SettingsMaintenanceInteraction.normalizedWindow(
+                start: interaction.exportCustomStart,
+                end: interaction.exportCustomEnd)
             return .window(
-                start: DateUtil.key(interaction.exportCustomStart),
-                end: DateUtil.key(interaction.exportCustomEnd))
+                start: DateUtil.key(window.start),
+                end: DateUtil.key(window.end))
         }
     }
 

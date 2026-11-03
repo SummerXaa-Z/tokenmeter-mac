@@ -46,4 +46,12 @@ final class SettingsMaintenanceInteraction: ObservableObject {
         exportCustomEnd = today
         exportCustomStart = Calendar.current.date(byAdding: .day, value: -29, to: today) ?? today
     }
+
+    /// 自定义导出窗口规整:起晚于止时交换为正序。DatePicker 的范围已双向
+    /// 约束,这里兜底防止倒置绑定值静默导出只有表头的空 CSV 还报成功。
+    static func normalizedWindow(
+        start: Date, end: Date
+    ) -> (start: Date, end: Date) {
+        start <= end ? (start, end) : (end, start)
+    }
 }

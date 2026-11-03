@@ -117,6 +117,10 @@ struct ClaudeView: View {
                            Fmt.int(c.lastMessageCount), c.messageChange)
                 compareRow("输出", Fmt.tokensShort(c.thisOutputTokens),
                            Fmt.tokensShort(c.lastOutputTokens), c.outputChange)
+                // 与总览环比卡/周报同款口径脚注:周一是周起点,本周是截至
+                // 今天的部分周,不与滚动 7 天混淆
+                Text("日历周口径，本周截至今天")
+                    .font(Theme.footnoteFont).foregroundStyle(.secondary)
             }
         }
     }

@@ -286,24 +286,47 @@ enum UsageHeatmap {
 
     /// 周视图：把日历格的周列折成逐周一块，周合计参与分位分档；
     /// apiValues 为 dailyAPIValues 的逐日金额，折成周内合计。
+    /// thresholds 传入全历史周分位（weeklyThresholds）时颜色跨页可比；
+    /// 缺省按当前窗口样本重算，仅用于测试与独立小样本。
     static func weeklyCells(
         from columns: [WeekColumn],
-        apiValues: [String: Double] = [:]
+        apiValues: [String: Double] = [:],
+        thresholds: [Int]? = nil
     ) -> [WeekCell] {
         let totals = columns.map { column in
             column.cells.reduce(0) { $0 + $1.total }
         }
-        let thresholds = quantileThresholds(totals)
+        let levels = thresholds ?? quantileThresholds(totals)
         return columns.indices.map { index in
             let column = columns[index]
             let usd = column.cells.reduce(0.0) { $0 + (apiValues[$1.date] ?? 0) }
             return WeekCell(
                 weekOf: column.weekOf,
                 total: totals[index],
-                level: level(for: totals[index], thresholds: thresholds),
+                level: level(for: totals[index], thresholds: levels),
                 usd: usd,
                 monthLabel: column.monthLabel)
         }
+    }
+
+    /// 全历史逐周合计（ISO 周一锚）的分位阈值：日档/月档的分位样本都是
+    /// 全历史（跨页恒定），周档也必须同一套，否则翻页或切 13↔26 周后
+    /// 同一周的颜色深浅会漂移，颜色对比暗示的量级关系在翻页前后不成立。
+    static func weeklyThresholds(
+        _ days: [HistoryStore.DayPoint],
+        participants: some Sequence<HistorySource>,
+        calendar: Calendar = .current
+    ) -> [Int]? {
+        let allowed = Set(participants)
+        var byWeek: [String: Int] = [:]
+        for day in days {
+            guard let date = DateUtil.date(from: day.date) else { continue }
+            let total = day.bySource.reduce(0) { sum, entry in
+                allowed.contains(entry.key) ? sum + max(entry.value, 0) : sum
+            }
+            byWeek[mondayKey(of: date, calendar: calendar), default: 0] += total
+        }
+        return quantileThresholds(Array(byWeek.values))
     }
 
     /// 月格悬停的上月对照：给定月份键，返回前一个自然月的合计与日均

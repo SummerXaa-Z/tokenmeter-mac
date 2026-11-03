@@ -92,7 +92,12 @@ enum Notifier {
     }
 
     // 推一条通知。identifier 相同会替换上一条（同类告警不堆叠）。
-    static func send(id: String, title: String, body: String) {
+    /// onEnqueued 只在通知真正提交系统后回调（总开关关闭或系统授权
+    /// 被拒时静默丢弃、不回调）——调用方据此决定"已发送"留痕，不会把
+    /// 被拦下的发送记成已发。
+    static func send(
+        id: String, title: String, body: String, onEnqueued: (() -> Void)? = nil
+    ) {
         guard available else { return }
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
@@ -115,6 +120,7 @@ enum Notifier {
                 }
                 let req = UNNotificationRequest(identifier: id, content: content, trigger: nil)
                 center.add(req)
+                onEnqueued?()
             }
         }
     }

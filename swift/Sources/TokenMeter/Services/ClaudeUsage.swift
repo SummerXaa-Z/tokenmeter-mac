@@ -217,8 +217,20 @@ enum ClaudeUsage {
         let span = max(windowDays, 1)
         var dayMap: [String: ClaudeDayUsage] = [:]
         let window: Set<String> = Set((0..<span).map { DateUtil.key(DateUtil.addDays(now, -$0)) })
-        // 上周环比基期仍取 7..14 天；扫描窗按两者较宽者
-        let lastWeek: Set<String> = Set((7..<14).map { DateUtil.key(DateUtil.addDays(now, -$0)) })
+        // 独立周对比按 ISO 日历周口径(周一锚,与总览环比卡/周报/热力图
+        // 一致):本周桶恒含于滚动 7 天窗、上周桶恒含于 7..14 天窗,
+        // 14 天扫描全覆盖,无需扩窗。
+        var iso = Calendar(identifier: .iso8601)
+        iso.timeZone = calendar.timeZone
+        let thisMonday = iso.dateInterval(of: .weekOfYear, for: now)?.start ?? now
+        var thisWeek: Set<String> = []
+        var weekCursor = thisMonday
+        while weekCursor <= now {
+            thisWeek.insert(DateUtil.key(weekCursor))
+            weekCursor = DateUtil.addDays(weekCursor, 1)
+        }
+        let lastWeek: Set<String> = Set(
+            (0..<7).map { DateUtil.key(DateUtil.addDays(thisMonday, $0 - 7)) })
         for key in window { dayMap[key] = ClaudeDayUsage(date: key) }
         let windowStart = Calendar.current.startOfDay(
             for: DateUtil.addDays(now, 1 - max(span, 14)))
@@ -362,12 +374,15 @@ enum ClaudeUsage {
                 deepseekBackendTokens: tally.deepseekBackend
             )
         }
+        // 周对比按 ISO 日历周取数:本周桶只留周一..今天的 dayMap 天
+        // (滚动窗内的上周五六日不再冒充"本周"),上周桶与上面 lastWeek 同锚
+        let thisDays = days.filter { thisWeek.contains($0.date) }
         let compare = ClaudeWeekCompare(
-            thisTotalTokens: days.reduce(0) { $0 + $1.totalTokens },
+            thisTotalTokens: thisDays.reduce(0) { $0 + $1.totalTokens },
             lastTotalTokens: lastTotal,
-            thisOutputTokens: days.reduce(0) { $0 + $1.outputTokens },
+            thisOutputTokens: thisDays.reduce(0) { $0 + $1.outputTokens },
             lastOutputTokens: lastOutput,
-            thisMessageCount: days.reduce(0) { $0 + $1.messageCount },
+            thisMessageCount: thisDays.reduce(0) { $0 + $1.messageCount },
             lastMessageCount: lastMessages)
         let skills = skillMap.map { ClaudeSkillUsage(name: $0.key, invocationCount: $0.value) }
             .sorted {

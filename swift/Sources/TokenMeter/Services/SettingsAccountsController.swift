@@ -25,21 +25,50 @@ final class SettingsAccountsController: ObservableObject {
     @Published var expandKimiKey = false
     @Published var expandZhipuKey = false
 
+    // 凭据徽章快照：configured/readError 供渲染层消费，不能在 body 里直读
+    // Keychain——每次重渲染 8+ 次同步 IO，钥匙串被锁或受访问代理介入时
+    // 会卡主线程。bind 时读一次，保存/清除/换域名成功后刷新；一次读取
+    // 同时得到值与读取错误。
+    struct CredentialBadge: Equatable {
+        var configured = false
+        var readError: CredentialStoreError?
+    }
+    @Published private(set) var balanceBadge = CredentialBadge()
+    @Published private(set) var usageBadge = CredentialBadge()
+    @Published private(set) var kimiBadge = CredentialBadge()
+    @Published private(set) var zhipuBadge = CredentialBadge()
+
+    func refreshCredentialBadges() {
+        let balance = store.apiKeyRead
+        balanceBadge = CredentialBadge(
+            configured: balance.value?.isEmpty == false, readError: balance.error)
+        let usage = store.usageTokenRead
+        usageBadge = CredentialBadge(
+            configured: usage.value?.isEmpty == false, readError: usage.error)
+        let kimi = store.kimiCodeKeyRead
+        kimiBadge = CredentialBadge(
+            configured: kimi.value?.isEmpty == false, readError: kimi.error)
+        let zhipu = store.zhipuKeyRead
+        zhipuBadge = CredentialBadge(
+            configured: zhipu.value?.isEmpty == false, readError: zhipu.error)
+    }
+
     func bind(to state: AppState) {
         guard self.state == nil else { return }
         self.state = state
-        expandBalanceKey = !store.apiKeyConfigured
-        expandUsageToken = !store.usageTokenConfigured
-        expandKimiKey = !store.kimiCodeKeyConfigured
-        expandZhipuKey = !store.zhipuKeyConfigured
-        apiStatus = store.apiKeyConfigured
+        refreshCredentialBadges()
+        expandBalanceKey = !balanceBadge.configured
+        expandUsageToken = !usageBadge.configured
+        expandKimiKey = !kimiBadge.configured
+        expandZhipuKey = !zhipuBadge.configured
+        apiStatus = balanceBadge.configured
             ? "已配置 \(store.apiKeyPreview() ?? "")"
             : "未配置 API Key"
-        usageStatus = store.usageTokenConfigured ? "用量 Token 已配置" : "未配置用量 Token"
-        kimiCodeKeyStatus = store.kimiCodeKeyConfigured
+        usageStatus = usageBadge.configured ? "用量 Token 已配置" : "未配置用量 Token"
+        kimiCodeKeyStatus = kimiBadge.configured
             ? "已配置 \(store.kimiCodeKeyPreview() ?? "")，额度走 Kimi 官方接口"
             : "未配置；仅在 standalone kimi web 运行时尝试本机额度接口"
-        zhipuKeyStatus = store.zhipuKeyConfigured
+        zhipuKeyStatus = zhipuBadge.configured
             ? "已配置 \(store.zhipuKeyPreview() ?? "")（\(store.zhipuQuotaDomain.title)）"
             : "未配置（\(store.zhipuQuotaDomain.title)）"
 
@@ -74,6 +103,7 @@ final class SettingsAccountsController: ObservableObject {
             do {
                 let balance = try await DeepSeekAPI.fetchBalance(apiKey: key)
                 try store.saveDeepSeekAPIKey(key)
+                refreshCredentialBadges()
                 apiKeyInput = ""
                 apiStatus = "验证通过，当前余额 \(balance.symbol)\(balance.totalBalance)\(balance.isAvailable ? "" : "（余额不足）")"
                 expandBalanceKey = false
@@ -98,6 +128,7 @@ final class SettingsAccountsController: ObservableObject {
             busy = false
             return
         }
+        refreshCredentialBadges()
         apiKeyInput = ""
         apiStatus = "已清除 API Key"
         Task {
@@ -119,6 +150,7 @@ final class SettingsAccountsController: ObservableObject {
             do {
                 switch try await state.connectKimiCode(key: key) {
                 case .completed(let result):
+                    refreshCredentialBadges()
                     kimiCodeKeyInput = ""
                     let windowCount = (result.summary == nil ? 0 : 1) + result.limits.count
                     kimiCodeKeyStatus = "验证通过，已读取 \(windowCount) 个额度窗口"
@@ -145,6 +177,7 @@ final class SettingsAccountsController: ObservableObject {
             do {
                 switch try await state.clearKimiCodeConnection() {
                 case .completed(let status):
+                    refreshCredentialBadges()
                     kimiCodeKeyInput = ""
                     kimiCodeKeyStatus = status
                 case .superseded:
@@ -173,6 +206,7 @@ final class SettingsAccountsController: ObservableObject {
             do {
                 switch try await state.connectZhipu(key: key) {
                 case .completed(let result):
+                    refreshCredentialBadges()
                     zhipuKeyInput = ""
                     zhipuKeyStatus = "验证通过，已读取 \(result.windowCount) 个额度窗口"
                     expandZhipuKey = false
@@ -196,6 +230,7 @@ final class SettingsAccountsController: ObservableObject {
         do {
             switch try state.clearZhipuConnection() {
             case .completed:
+                refreshCredentialBadges()
                 zhipuKeyInput = ""
                 zhipuKeyStatus = "已清除智谱 API Key"
             case .superseded:
@@ -243,6 +278,7 @@ final class SettingsAccountsController: ObservableObject {
             }
             do {
                 try store.saveDeepSeekUsageToken(token)
+                refreshCredentialBadges()
                 usageTokenInput = ""
                 await refreshUsageAfterToken("验证通过，已保存")
             } catch {
@@ -264,6 +300,7 @@ final class SettingsAccountsController: ObservableObject {
             busy = false
             return
         }
+        refreshCredentialBadges()
         usageTokenInput = ""
         usageStatus = "已清除用量 Token"
         state.clearUsage()
