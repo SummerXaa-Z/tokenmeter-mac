@@ -21,3 +21,11 @@ jobs:
 
       - name: Render determinism gate
         run: make ui-render-determinism
+
+      - name: Upload render diff artifacts
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: render-determinism-failure
+          path: .ui-review/render-determinism-failure/
+          if-no-files-found: ignore

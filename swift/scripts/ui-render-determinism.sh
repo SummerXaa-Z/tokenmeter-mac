@@ -33,16 +33,32 @@ if [ "$count1" != "$count2" ] || [ "$count1" -eq 0 ]; then
 fi
 
 failed=0
+failure_dir=""
 for path in "$work/run1"/*; do
   name="$(basename "$path")"
   if ! cmp -s "$path" "$work/run2/$name"; then
-    echo "FAIL: $name 两轮渲染不一致" >&2
+    if command -v magick >/dev/null 2>&1; then
+      bbox="$(magick "$path" "$work/run2/$name" -compose minus -composite \
+        -colorspace gray -threshold 0 -format "%@" info: 2>/dev/null || true)"
+      ae="$(magick compare -metric AE "$path" "$work/run2/$name" null: 2>&1 | head -1 || true)"
+      echo "FAIL: $name 两轮渲染不一致（AE=$ae bbox=$bbox）" >&2
+    else
+      echo "FAIL: $name 两轮渲染不一致" >&2
+    fi
+    if [ -z "$failure_dir" ]; then
+      failure_dir="$root/.ui-review/render-determinism-failure"
+      rm -rf "$failure_dir"
+      mkdir -p "$failure_dir/run1" "$failure_dir/run2"
+    fi
+    cp "$path" "$failure_dir/run1/$name"
+    cp "$work/run2/$name" "$failure_dir/run2/$name"
     failed=$((failed + 1))
   fi
 done
 
 if [ "$failed" -ne 0 ]; then
-  echo "FAIL: $failed/$count1 张夹具两轮渲染不一致——渲染路径重新引入了非确定时间源或非确定布局" >&2
+  echo "FAIL: $failed/$count1 张夹具两轮渲染不一致——渲染路径重新引入了非确定时间源或非确定布局；" >&2
+  echo "      产物已保留在 ${failure_dir}（CI 会作为 artifact 上传）" >&2
   exit 1
 fi
 echo "OK: $count1 张明暗夹具同构建两轮逐字节一致"
