@@ -38,8 +38,8 @@ enum Fmt {
 
     // Token 缩写：1200000000 -> "1.2B"、380000000 -> "380M"、
     // 1000000 -> "1M"、2609 -> "2.6K"。尾随 .0 一律省去，让图表轴刻度
-    // （25M/50M/75M/100M）与正文数值保持同一格式。M 四舍五入到 1000 时
-    // 提升为 B，避免在窄卡片里出现“1000M”这种难读边界值。
+    // （25M/50M/75M/100M）与正文数值保持同一格式。M/K 四舍五入到 1000
+    // 时逐级提升，避免在窄卡片里出现“1000M”“1000K”这种难读边界值。
     static func tokensShort(_ n: Int) -> String {
         let d = Double(n)
         // 先格式化数字再去掉尾随 .0，最后拼单位——否则 ".0" 匹配不到
@@ -53,6 +53,7 @@ enum Fmt {
         }
         if d >= 1e8 { return String(format: "%.0fM", d / 1e6) }
         if d >= 1e6 { return short(d / 1e6, "M") }
+        if (d / 1e3).rounded() >= 1_000 { return short(d / 1e6, "M") }
         if d >= 1e3 { return short(d / 1e3, "K") }
         return String(n)
     }

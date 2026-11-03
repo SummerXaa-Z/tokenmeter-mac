@@ -98,7 +98,10 @@ struct OverviewCompareCard: View {
             }
             Text(name)
                 .font(.system(size: 11, weight: .medium))
-                .frame(width: emphasized ? 70 : 64, alignment: .leading)
+                .lineLimit(1)
+                // 「GitHub Copilot」实测约 79pt：列宽须放得下来源全名，
+                // 否则折行让行错位；再长的名字按尾省略而不是换行
+                .frame(width: emphasized ? 70 : 82, alignment: .leading)
             Text(Fmt.tokensShort(this))
                 .font(.system(
                     size: 11, weight: emphasized ? .semibold : .medium, design: .rounded))

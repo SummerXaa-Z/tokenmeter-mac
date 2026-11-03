@@ -69,4 +69,47 @@ final class SettingsInteractionStateTests: XCTestCase {
         XCTAssertEqual(interaction.digestExportStatus, "synthetic-digest-export")
         XCTAssertFalse(interaction.notificationsOn)
     }
+
+    @MainActor
+    func testSourcesAvailabilityIsSnapshottedPerInteractionLifecycle() {
+        // available 探测是 fileExists：只能在创建/显式刷新时各跑一轮，
+        // 渲染路径反复读快照不得再碰文件系统
+        var probeCount = 0
+        let interaction = SettingsSourcesInteraction(probe: { _ in
+            probeCount += 1
+            return true
+        })
+        let codingCount = SourceCatalog.codingAgentSources.count
+        XCTAssertEqual(probeCount, codingCount)
+        XCTAssertEqual(interaction.availability[.claude], true)
+        XCTAssertEqual(interaction.availability[.codex], true)
+        XCTAssertEqual(probeCount, codingCount)
+        interaction.refreshAvailability()
+        XCTAssertEqual(probeCount, codingCount * 2)
+
+        let selective = SettingsSourcesInteraction(probe: { $0 == .claude })
+        XCTAssertEqual(selective.availability[.claude], true)
+        XCTAssertEqual(selective.availability[.codex], false)
+    }
+
+    @MainActor
+    func testReboundAccountPageDoesNotReplayStaleLoginSyncFeedback() {
+        XCTAssertTrue(RuntimeEnvironment.isIsolated)
+        let state = AppState()
+
+        // 第一页发起网页登录：隔离环境下 start() 直接置 ended=true
+        // （等同窗口关闭未捕获），同步反馈已落到第一页
+        let first = SettingsAccountsController()
+        first.bind(to: state)
+        first.startSync()
+        XCTAssertFalse(first.syncing)
+        XCTAssertEqual(first.usageStatus, "登录窗口已关闭，未获取到 Token。可重新同步或手动输入。")
+
+        // 设置页重建设置后绑定共享登录控制器：不得把旧会话残留的
+        // ended 回放成「登录窗口已关闭」，覆盖新页刚设置的初始状态
+        let second = SettingsAccountsController()
+        second.bind(to: state)
+        XCTAssertFalse(second.syncing)
+        XCTAssertEqual(second.usageStatus, "未配置用量 Token")
+    }
 }

@@ -250,7 +250,8 @@ struct SourceHistoryTrendCard: View {
                     ChartHover.emptyState(message: "今日用量尚未确认", hint: "请返回来源页刷新，不将缺记录当作零")
                 } else {
                     if let active {
-                        ChartHoverCaption(label: granularity == .month ? Fmt.ym(active.date) : Fmt.ymd(active.date),
+                        ChartHoverCaption(
+                            label: Self.captionLabel(granularity: granularity, date: active.date),
                             total: active.value, parts: [])
                     }
                     Chart {
@@ -315,6 +316,22 @@ struct SourceHistoryTrendCard: View {
         guard range == .all else { return .day }
         return range.trendGranularity(historyDayCount:
             dailyBuckets(totals: totals, range: range, todayKey: todayKey, calendar: calendar).count)
+    }
+
+    /// 悬停说明行的期间标签：与 X 轴刻度同一口径——周桶给「9/14周」、
+    /// 月桶给「2026/9」，日桶给完整年月日。周/月桶显示的是聚合合计，
+    /// 沿用裸日期会把整周量读成某一天的量。
+    /// 本卡 granularity 对非「全部」范围一律返回 .day，.hour 不可达，
+    /// 兜底原样返回日期键。
+    static func captionLabel(
+        granularity: UsageTrendGranularity, date: String
+    ) -> String {
+        switch granularity {
+        case .month: return Fmt.ym(date)
+        case .week: return "\(Fmt.mmdd(date))周"
+        case .day: return Fmt.ymd(date)
+        case .hour: return date
+        }
     }
 
     static func makeBuckets(

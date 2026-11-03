@@ -20,6 +20,7 @@ struct SettingsView: View {
     }
 
     @State private var activeSection: SettingsSection?
+    @StateObject private var sources = SettingsSourcesInteraction()
     @StateObject private var accounts = SettingsAccountsController()
     @StateObject private var subscriptions = SettingsSubscriptionsInteraction()
     @StateObject private var alerts: SettingsAlertsInteraction
@@ -53,7 +54,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         if shows(.dataSources) {
                             sectionTitle("数据来源")
-                            SettingsSourcesSection()
+                            SettingsSourcesSection(interaction: sources)
                         }
                         if shows(.accounts) {
                             sectionTitle("平台账户与额度")

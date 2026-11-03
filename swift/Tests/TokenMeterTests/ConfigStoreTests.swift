@@ -245,9 +245,16 @@ final class ConfigStoreTests: XCTestCase {
             SubscriptionPlan(name: "Kimi 会员", monthlyFee: 69, currency: "CNY"),
         ]
         store.subscriptionPlans = plans
+        // 同实例写入后立刻读：解码缓存必须随写入更新，不能返回旧值
+        XCTAssertEqual(store.subscriptionPlans, plans)
         XCTAssertEqual(ConfigStore(defaults: defaults).subscriptionPlans, plans)
 
+        let updated = [SubscriptionPlan(name: "Codex Plus", monthlyFee: 20)]
+        store.subscriptionPlans = updated
+        XCTAssertEqual(store.subscriptionPlans, updated)
+
         store.subscriptionPlans = []
+        XCTAssertEqual(store.subscriptionPlans, [])
         XCTAssertNil(defaults.object(forKey: "subscriptionPlans"))
 
         defaults.set(Data("not json".utf8), forKey: "subscriptionPlans")

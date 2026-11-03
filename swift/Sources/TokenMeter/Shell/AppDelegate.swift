@@ -307,7 +307,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let codexTotalInfoOn = infoMode == "total" && codexOn
         let allInfoOn = infoMode == "all"
         // 用户明确关闭来源/阈值等同于重新布防；以后重新开启时应允许立即提醒。
-        if balanceThreshold <= 0 { alertLatch.reset(key: "deepseek.balance.low") }
+        // 余额数据消失（清除 Key 后置空）同样重新布防——否则换回 Key 仍越线
+        // 时被旧 latch 吞掉；读取失败保留 last-good 余额，不在此列。
+        if BalanceAlertPolicy.shouldRearm(
+            threshold: balanceThreshold, balance: appState.balance) {
+            alertLatch.reset(key: "deepseek.balance.low")
+        }
         if !codexOn { alertLatch.reset(key: "codex.quota.low") }
         if !claudeAlertOn { alertLatch.reset(key: "claude.daily.over") }
         // 配额数据消失（清除 Key 等）同样重新布防，避免下次仍越线时被旧状态吞掉

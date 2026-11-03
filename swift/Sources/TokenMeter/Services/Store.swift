@@ -183,21 +183,41 @@ final class ConfigStore {
     }
 
     // 用户手填的订阅月费（见 SubscriptionPlan），JSON 存 UserDefaults；
-    // 读不出来按空列表处理，不影响其他设置。
+    // 读不出来按空列表处理，不影响其他设置。来源费用卡等渲染路径每次
+    // body 都会读，JSON 解码结果按实例缓存；setter 写入后同步换缓存，
+    // 键缺失的空列表走 UserDefaults 零成本路径不缓存。
+    private let plansLock = NSLock()
+    private var plansCache: [SubscriptionPlan]?
+
     var subscriptionPlans: [SubscriptionPlan] {
         get {
+            plansLock.lock()
+            if let cached = plansCache {
+                plansLock.unlock()
+                return cached
+            }
+            plansLock.unlock()
             guard let data = defaults.data(forKey: DKey.subscriptionPlans),
                   let plans = try? JSONDecoder().decode([SubscriptionPlan].self, from: data)
             else { return [] }
+            plansLock.lock()
+            plansCache = plans
+            plansLock.unlock()
             return plans
         }
         set {
             guard !newValue.isEmpty else {
                 defaults.removeObject(forKey: DKey.subscriptionPlans)
+                plansLock.lock()
+                plansCache = nil
+                plansLock.unlock()
                 return
             }
             guard let data = try? JSONEncoder().encode(newValue) else { return }
             defaults.set(data, forKey: DKey.subscriptionPlans)
+            plansLock.lock()
+            plansCache = newValue
+            plansLock.unlock()
         }
     }
 
