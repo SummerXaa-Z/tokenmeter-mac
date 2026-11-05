@@ -4,6 +4,7 @@ import SwiftUI
 // 数据来自 cursor.com 官方用量接口（本地 token 鉴权），刷新即重查。
 struct CursorView: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.usageNow) private var now
     @Environment(\.sourceUsageRange) private var usageRange
     var onBack: () -> Void
     var onSettings: () -> Void
@@ -86,7 +87,7 @@ struct CursorView: View {
                 }
                 // 周期进度（时间维度）
                 let total = sub.periodEnd.timeIntervalSince(sub.periodStart)
-                let elapsed = min(max(Date().timeIntervalSince(sub.periodStart), 0), total)
+                let elapsed = min(max(now.timeIntervalSince(sub.periodStart), 0), total)
                 QuotaBar(progress: elapsed / max(total, 1), tint: Theme.cursor.opacity(0.5))
                 Text("周期已过 \(Int(elapsed / max(total, 1) * 100))% · 续订 \(Fmt.countdown(to: sub.periodEnd, elapsedText: "即将刷新"))")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
@@ -114,7 +115,7 @@ struct CursorView: View {
                         if case .ahead(let exhaustAt) = pace.status {
                             QuotaPaceLine(
                                 pace: pace,
-                                text: "按当前速度\(QuotaPace.countdown(from: Date(), to: exhaustAt))触及上限，早于续订")
+                                text: "按当前速度\(QuotaPace.countdown(from: now, to: exhaustAt))触及上限，早于续订")
                         } else {
                             Text("按当前速度，续订时约花掉上限的 \(QuotaPace.percent(1 - pace.projectedRemainingAtReset))")
                                 .font(Theme.footnoteFont).foregroundStyle(.secondary)

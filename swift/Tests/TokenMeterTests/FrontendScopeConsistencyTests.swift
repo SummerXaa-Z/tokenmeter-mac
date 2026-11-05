@@ -203,4 +203,14 @@ final class FrontendScopeConsistencyTests: XCTestCase {
         XCTAssertEqual(SourceHistoryTrendCard.captionLabel(granularity: .week, date: "2026-09-14"), "9/14周")
         XCTAssertEqual(SourceHistoryTrendCard.captionLabel(granularity: .month, date: "2026-09-01"), "2026/9")
     }
+
+    func testRenderClockPinsToNoonOfCurrentDay() {
+        // 渲染钟契约：与真实今天同日（按天口径与 DateUtil.today() 对齐、
+        // 夹具永不过期），时分秒固定在中午（同构建两轮渲染逐字节可比）。
+        let clock = PreviewData.renderNow
+        let cal = Calendar.current
+        XCTAssertEqual(cal.dateComponents([.hour, .minute, .second], from: clock),
+                       DateComponents(hour: 12, minute: 0, second: 0))
+        XCTAssertEqual(cal.startOfDay(for: clock), cal.startOfDay(for: Date()))
+    }
 }

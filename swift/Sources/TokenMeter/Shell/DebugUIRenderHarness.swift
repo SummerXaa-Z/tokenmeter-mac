@@ -436,7 +436,7 @@ enum DebugUIRenderHarness {
     }
 
     private static func paceFixture() -> some View {
-        let now = Date()
+        let now = PreviewData.renderNow
         let hour: TimeInterval = 3600
         let codex = CodexRateLimits(
             limitId: "codex", limitName: nil,
@@ -487,7 +487,7 @@ enum DebugUIRenderHarness {
     // 已过期的低余额不得继续显示百分比或触发节奏告警，且保留观测时间。
     // 仅使用合成快照，不查询账号或本地真实会话。
     private static func expiredQuotaFixture() -> some View {
-        let now = Date()
+        let now = PreviewData.renderNow
         let limits = CodexRateLimits(
             limitId: "codex", limitName: nil,
             primary: CodexRateWindow(
@@ -1007,8 +1007,11 @@ enum DebugUIRenderHarness {
         func hosting<V: View>(_ view: V, height: CGFloat = Theme.panelHeight) -> NSView {
             // cacheDisplay 只渲染视图树本身，页面不自带底色（真实 app 里由
             // popover 窗口背景提供），离屏导出必须在这里补上等价底色。
+            // usageNow 用渲染时钟：真实 app 由 RootView 注入，漏注时视图
+            // 会各自落回 Date() 默认值，同构建两轮渲染就不可比。
             let host = NSHostingView(rootView: view
                 .background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.usageNow, PreviewData.renderNow)
                 .environmentObject(appState)
                 .environmentObject(historyReader))
             host.setFrameSize(NSSize(width: Theme.panelWidth, height: height))
@@ -1020,7 +1023,7 @@ enum DebugUIRenderHarness {
             UserDefaults(suiteName: "tokenmeter.ui-render") ?? .standard)
         // 健康面板「最近一次采集」行:合成成功与失败两条夹具,只进内存、
         // 绝不写真实 UserDefaults(渲染进程与正式 App 共用同一域)。
-        let fixtureNow = Date()
+        let fixtureNow = PreviewData.renderNow
         CollectAttemptLog.seedForPreview(.init(
             source: .claude, startedAt: fixtureNow.addingTimeInterval(-4),
             finishedAt: fixtureNow.addingTimeInterval(-2.2), failure: nil))

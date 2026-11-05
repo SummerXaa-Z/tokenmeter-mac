@@ -199,7 +199,6 @@ struct OverviewView: View {
             return "近 7 天 \(Fmt.int(result.weekSessions)) 会话 · \(Fmt.int(result.weekMessages)) 请求"
         case .codex:
             if let limits = state.codexRateLimits {
-                let now = Date()
                 let values = [limits.primary, limits.secondary].compactMap { window -> String? in
                     guard let window else { return nil }
                     guard let remaining = QuotaWindowFreshness.remainingPercent(window, now: now) else {
@@ -319,7 +318,7 @@ struct OverviewView: View {
             return nil
         }
         guard let succeededAt = state.kimiQuota.succeededAt else { return error }
-        let age = max(Int(Date().timeIntervalSince(succeededAt) / 60), 0)
+        let age = max(Int(now.timeIntervalSince(succeededAt) / 60), 0)
         return "\(error) · 上次成功 \(age) 分钟前"
     }
 
@@ -328,7 +327,7 @@ struct OverviewView: View {
             return nil
         }
         guard let succeededAt = state.zhipuQuota.succeededAt else { return error }
-        let age = max(Int(Date().timeIntervalSince(succeededAt) / 60), 0)
+        let age = max(Int(now.timeIntervalSince(succeededAt) / 60), 0)
         return "\(error) · 上次成功 \(age) 分钟前"
     }
 }
