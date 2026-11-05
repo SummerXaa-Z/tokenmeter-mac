@@ -25,9 +25,12 @@ GitHub Actions 在 PR 和 `main` 的 push 上执行 `make release-check`。它�
 make ui-smoke
 make ui-render
 make ui-render-overview
+make ui-render-determinism
 ```
 
 `ui-smoke` 打开 420×600 的普通窗口并填充示例数据。`ui-render` 同样填充示例用量，在屏幕外渲染浅色、深色夹具后退出，默认写入 `.ui-review/render/`；`ui-render-overview` 只渲染总览，默认写入 `.ui-review/overview/`。无真实采集结果的来源仍用于加载/空态检查，不表示已验证真实账户。
+
+`ui-render-determinism` 是 CI 渲染确定性闸门：同一构建渲染两轮，逐字节一致的夹具直接通过；不一致的夹具补跑第三轮仲裁——与任一前跑吻合判为 macOS 字形光栅抖动（字体服务匹配竞态，每进程独立的有限状态），三跑互异才判失败。渲染展示时钟冻结在 `PreviewData.renderNow`（真实今天的中午）；把活钟带回渲染路径的改动会让时间文本随渲染时刻单调漂移、三跑互异，在此被抓。跨午夜的两轮渲染会因日历翻页而不同，属预期。
 
 原生交互边界可选择合成场景；关闭前一个示例窗口后分别运行：
 

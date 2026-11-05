@@ -17,7 +17,7 @@ DEBUG_APP := $(DERIVED_DATA_PATH)/Build/Products/Debug/TokenMeter.app
 RELEASE_APP := $(DERIVED_DATA_PATH)/Build/Products/Release/TokenMeter.app
 
 .DEFAULT_GOAL := help
-.PHONY: help project build debug-build test ui-smoke ui-render ui-render-overview release-check package price-check clean
+.PHONY: help project build debug-build test ui-smoke ui-render ui-render-overview ui-render-determinism release-check package price-check clean
 
 help:
 	@printf '%s\n' \
@@ -27,6 +27,7 @@ help:
 		'ui-smoke            Open an isolated Debug window with example data' \
 		'ui-render           Render isolated light/dark fixtures to .ui-review/render' \
 		'ui-render-overview  Render example overview pages to .ui-review/overview' \
+		'ui-render-determinism  CI gate: two same-build renders must be byte-identical' \
 		'project             Regenerate the checked-in Xcode project' \
 		'price-check         Compare the price catalog with a public remote API' \
 		'package             Build/sign a DMG; see docs/release.md' \
@@ -70,6 +71,11 @@ ui-render: debug-build
 ui-render-overview: debug-build
 	"$(DEBUG_APP)/Contents/MacOS/TokenMeter" --ui-render="$(call absolute-path,$(UI_OVERVIEW_DIR))" \
 		--ui-render-overview-only
+
+# 渲染确定性闸门（CI 用）：同构建暖场一轮后两轮渲染必须逐字节一致，
+# 防止活钟或非确定布局回流渲染路径
+ui-render-determinism:
+	./swift/scripts/ui-render-determinism.sh
 
 release-check: test
 	cd $(SWIFT_DIR) && xcodebuild \

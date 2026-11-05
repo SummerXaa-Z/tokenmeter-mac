@@ -778,14 +778,18 @@ private struct ModelSparkline: View {
 
     var body: some View {
         let active = highlightOverride ?? hoveredIndex
-        return Canvas { context, size in
-            for (index, rect) in OverviewRankingsCard.sparklineBars(
-                values: values, width: size.width, height: size.height)
-            .enumerated()
-            {
-                context.fill(
-                    Path(rect),
-                    with: .color(color.opacity(active == index ? 1.0 : 0.65)))
+        // 用 Shape 逐柱绘制而不是 Canvas：Canvas 走 Metal 光栅化，跨进程的
+        // 抗锯齿结果不确定，会间歇性打破「同构建两轮渲染逐字节一致」的
+        // 渲染确定性闸门；Shape 路径渲染是确定的。几何仍出自 sparklineBars，
+        // 与 sparklineIndex 的命中判定保持同一套宽度分配。
+        return ZStack(alignment: .bottomLeading) {
+            ForEach(Array(OverviewRankingsCard.sparklineBars(
+                values: values, width: 44, height: 14
+            ).enumerated()), id: \.offset) { index, rect in
+                Rectangle()
+                    .fill(color.opacity(active == index ? 1.0 : 0.65))
+                    .frame(width: rect.width, height: rect.height)
+                    .offset(x: rect.minX, y: 0)
             }
         }
         .frame(width: 44, height: 14)
