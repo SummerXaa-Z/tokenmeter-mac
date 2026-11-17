@@ -177,7 +177,10 @@ final class CodingModelDetailTests: XCTestCase {
 final class ModelDetailInteractionTests: XCTestCase {
     @MainActor
     func testRangeControlRecoversFromEmptyStateAndCanReturnToIt() async throws {
-        XCTAssertTrue(RuntimeEnvironment.isIsolated)
+        guard RuntimeEnvironment.isIsolated else {
+            XCTFail("UI interaction test requires isolated storage")
+            return
+        }
         let state = AppState()
         let reader = HistorySnapshotReader(initial: .init(), read: { .init() })
         let content = CodingModelDetailView(
@@ -195,7 +198,8 @@ final class ModelDetailInteractionTests: XCTestCase {
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
-        window.orderFront(nil)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
         defer { window.close() }
 
         try await waitForText("近 30 天暂无该模型明细", in: host)
@@ -215,7 +219,8 @@ final class ModelDetailInteractionTests: XCTestCase {
     @MainActor
     private func elements(in root: Any) -> [any NSAccessibilityProtocol] {
         guard let element = root as? any NSAccessibilityProtocol else { return [] }
-        return [element] + (element.accessibilityChildren() ?? []).flatMap { elements(in: $0) }
+        let children = (element.accessibilityChildren() ?? []) + ((root as? NSView)?.subviews ?? [])
+        return [element] + children.flatMap { elements(in: $0) }
     }
 
     @MainActor
