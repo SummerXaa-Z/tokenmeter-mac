@@ -22,11 +22,14 @@ GitHub Actions 在 PR 和 `main` 的 push 上执行 `make release-check`。它�
 ## 隔离 UI 验证
 
 ```bash
+make ui-test
 make ui-smoke
 make ui-render
 make ui-render-overview
 make ui-render-determinism
 ```
+
+`ui-test` 使用独立进程 XCUITest 驱动 Debug 示例窗口，验证模型范围切换的空态恢复及反复返回。CI 同样运行此检查；它不访问真实账号，也不代表完整安装、全部导航或 VoiceOver 验收。失败时保留 `.xcresult`。
 
 `ui-smoke` 打开 420×600 的普通窗口并填充示例数据。`ui-render` 同样填充示例用量，在屏幕外渲染浅色、深色夹具后退出，默认写入 `.ui-review/render/`；`ui-render-overview` 只渲染总览，默认写入 `.ui-review/overview/`。无真实采集结果的来源仍用于加载/空态检查，不表示已验证真实账户。
 

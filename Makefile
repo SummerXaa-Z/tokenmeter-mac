@@ -24,6 +24,7 @@ help:
 		'build               Build the app (CONFIGURATION=Debug by default)' \
 		'test                Generate the project and run XCTest' \
 		'release-check       Run XCTest, build Release and verify metadata' \
+		'ui-test             Run isolated Debug app interaction tests' \
 		'ui-smoke            Open an isolated Debug window with example data' \
 		'ui-render           Render isolated light/dark fixtures to .ui-review/render' \
 		'ui-render-overview  Render example overview pages to .ui-review/overview' \

@@ -2,6 +2,7 @@ import XCTest
 
 final class ModelDetailUITests: XCTestCase {
     func testRangeRecoversFromEmptyStateAndCanReturnToIt() {
+#if DEBUG
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["--ui-smoke-window", "--ui-smoke-scenario=model-empty"]
@@ -23,5 +24,8 @@ final class ModelDetailUITests: XCTestCase {
             XCTAssertTrue(empty.waitForExistence(timeout: 5))
             XCTAssertFalse(window.staticTexts["2M"].exists)
         }
+#else
+        XCTFail("UI interaction validation requires a Debug build")
+#endif
     }
 }

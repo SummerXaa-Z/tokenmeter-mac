@@ -45,6 +45,7 @@
 		2BE7B7BEDF8FF9ED67CDE62B /* RuntimeEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74B056201EA4C35338D84CF2 /* RuntimeEnvironment.swift */; };
 		2CF639B933D9E249A7AC60D5 /* DiagnosticReportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 847F5B5A0A9B9ECF7B3C10D1 /* DiagnosticReportTests.swift */; };
 		2F6BD79BC52395DECA6008AE /* DiagnosticReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DAF299FEE12F36C6B484D3 /* DiagnosticReport.swift */; };
+		30CDB08E6EC150663CE4C011 /* ModelDetailUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A86094900C832114AB1B2EF0 /* ModelDetailUITests.swift */; };
 		3307E2D933C830D51E798197 /* SourceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA99E646832D0832DDCFECD /* SourceCatalog.swift */; };
 		335B8DED41549535E1A192E7 /* SourceUsageContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8621CC7C6BBC05BE30FC6C9D /* SourceUsageContext.swift */; };
 		343F26A7438313DA49C6A110 /* PersonalUsageRankings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E13A57349BE9B8FC76B5A9D2 /* PersonalUsageRankings.swift */; };
@@ -243,6 +244,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		4AF0C04CE2FBF501C96BB062 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6065B55CAEDD767CB1C45E62 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7E800DD131D373E72747C225;
+			remoteInfo = TokenMeter;
+		};
 		C50037A0FCEA1A5D5E47CA59 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 6065B55CAEDD767CB1C45E62 /* Project object */;
@@ -331,6 +339,7 @@
 		56793DA64ED1628C4958EEB6 /* ProcessStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessStatus.swift; sourceTree = "<group>"; };
 		5A503D484822E8B888AA1852 /* SourceHourCSVExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceHourCSVExportTests.swift; sourceTree = "<group>"; };
 		5A5F79EE5C482906CB8449E7 /* LocalTextExportPresenterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTextExportPresenterTests.swift; sourceTree = "<group>"; };
+		5B996B13D6D1DA90F87F3BFA /* TokenMeterUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TokenMeterUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5D713A0E68D4B58162A0CCC6 /* SkillRankingCSVExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillRankingCSVExportTests.swift; sourceTree = "<group>"; };
 		5DFC07D8517606EDB9E692DC /* GeminiUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiUsageTests.swift; sourceTree = "<group>"; };
 		5E96A9226B609894C5F1B017 /* SourceTrendCSVExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceTrendCSVExport.swift; sourceTree = "<group>"; };
@@ -403,6 +412,7 @@
 		A70E43E13BEA845657231637 /* SettingsRuntimeSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsRuntimeSection.swift; sourceTree = "<group>"; };
 		A7D90920C473540BCB20FA68 /* StatusRefreshCoalescer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusRefreshCoalescer.swift; sourceTree = "<group>"; };
 		A7FB6BC7D9242E4FD51646DE /* HistoryPersistenceCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryPersistenceCoordinator.swift; sourceTree = "<group>"; };
+		A86094900C832114AB1B2EF0 /* ModelDetailUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDetailUITests.swift; sourceTree = "<group>"; };
 		A935723495AD8205E3F66A75 /* SettingsInteractionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsInteractionState.swift; sourceTree = "<group>"; };
 		A9E795F80C05C3DA8DED3D2E /* HistorySnapshotReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistorySnapshotReader.swift; sourceTree = "<group>"; };
 		AA044209B655A0E78CEA3150 /* CollectAttemptLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectAttemptLogTests.swift; sourceTree = "<group>"; };
@@ -493,12 +503,21 @@
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		1717583DAC3B8FCBC38A64EC /* UITests */ = {
+			isa = PBXGroup;
+			children = (
+				A86094900C832114AB1B2EF0 /* ModelDetailUITests.swift */,
+			);
+			path = UITests;
+			sourceTree = "<group>";
+		};
 		3A99CA0BE80DD5D9F064B1F9 = {
 			isa = PBXGroup;
 			children = (
 				B434174A9584C82CA1D2C56D /* Resources */,
 				70536321BF6D446193D75C7A /* Sources */,
 				6E62E3E7A7236542F9234682 /* Tests */,
+				1717583DAC3B8FCBC38A64EC /* UITests */,
 				3FEDF65C37A096533B10206C /* Products */,
 			);
 			sourceTree = "<group>";
@@ -508,6 +527,7 @@
 			children = (
 				89096F146AC2E7E7E5F0ADFE /* TokenMeter.app */,
 				2B59876F53BE2581617A36DA /* TokenMeterTests.xctest */,
+				5B996B13D6D1DA90F87F3BFA /* TokenMeterUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -835,6 +855,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		2E740A067442E09EE0454679 /* TokenMeterUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4FBBBC3DB814564EDF7B1A68 /* Build configuration list for PBXNativeTarget "TokenMeterUITests" */;
+			buildPhases = (
+				A5D066F964B07AABB3A77CE3 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				42FE42B26685D7860645F2AC /* PBXTargetDependency */,
+			);
+			name = TokenMeterUITests;
+			packageProductDependencies = (
+			);
+			productName = TokenMeterUITests;
+			productReference = 5B996B13D6D1DA90F87F3BFA /* TokenMeterUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		7E800DD131D373E72747C225 /* TokenMeter */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 4E8E3C212764F9B29963B3A8 /* Build configuration list for PBXNativeTarget "TokenMeter" */;
@@ -880,6 +918,11 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					2E740A067442E09EE0454679 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+						TestTargetID = 7E800DD131D373E72747C225;
+					};
 					7E800DD131D373E72747C225 = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
@@ -906,6 +949,7 @@
 			targets = (
 				7E800DD131D373E72747C225 /* TokenMeter */,
 				85232179A4C08F8C493C5591 /* TokenMeterTests */,
+				2E740A067442E09EE0454679 /* TokenMeterUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -1021,6 +1065,14 @@
 				9957F1096259B26DC83AA98D /* WeeklyDigestCompletenessTests.swift in Sources */,
 				A5D75D459E59FAF73A9CF0D6 /* WeeklyDigestTests.swift in Sources */,
 				8F0C6B1D77FB3247BF010F05 /* ZhipuQuotaServiceTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A5D066F964B07AABB3A77CE3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				30CDB08E6EC150663CE4C011 /* ModelDetailUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1171,6 +1223,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		42FE42B26685D7860645F2AC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7E800DD131D373E72747C225 /* TokenMeter */;
+			targetProxy = 4AF0C04CE2FBF501C96BB062 /* PBXContainerItemProxy */;
+		};
 		AE351EDA5F2763B4CF0AD8B2 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 7E800DD131D373E72747C225 /* TokenMeter */;
@@ -1258,6 +1315,22 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.deepseek.monitor.mac.tests;
 				SDKROOT = macosx;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TokenMeter.app/Contents/MacOS/TokenMeter";
+			};
+			name = Release;
+		};
+		50C047C116F94D70FDFCF0E6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.deepseek.monitor.mac.uitests;
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = TokenMeter;
 			};
 			name = Release;
 		};
@@ -1365,6 +1438,22 @@
 			};
 			name = Debug;
 		};
+		DE945E0F7E7753D8709D2067 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.deepseek.monitor.mac.uitests;
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = TokenMeter;
+			};
+			name = Debug;
+		};
 		F593C2927808808A14272897 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1397,6 +1486,15 @@
 			buildConfigurations = (
 				F593C2927808808A14272897 /* Debug */,
 				5B527D7F2DC7CA7B11CD5BF3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		4FBBBC3DB814564EDF7B1A68 /* Build configuration list for PBXNativeTarget "TokenMeterUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DE945E0F7E7753D8709D2067 /* Debug */,
+				50C047C116F94D70FDFCF0E6 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

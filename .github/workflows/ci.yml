@@ -22,12 +22,8 @@ jobs:
       - name: UI interaction regression
         run: make ui-test
 
-      - name: Upload generated project for validation
-        if: always()
-        uses: actions/upload-artifact@v5
-        with:
-          name: generated-project
-          path: swift/TokenMeter.xcodeproj/
+      - name: Verify generated project is committed
+        run: git diff --exit-code -- swift/TokenMeter.xcodeproj
 
       - name: Render determinism gate
         run: make ui-render-determinism
@@ -38,4 +34,12 @@ jobs:
         with:
           name: render-determinism-failure
           path: .ui-review/render-determinism-failure/
+          if-no-files-found: ignore
+
+      - name: Upload failed UI test results
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: ui-test-failure
+          path: swift/build/Logs/Test/*.xcresult
           if-no-files-found: ignore

@@ -1,6 +1,6 @@
 # 架构与目录
 
-TokenMeter 是单一 macOS App target，加一个 XCTest target。SwiftUI 负责页面，AppKit 提供菜单栏与弹出面板；未启用 App Sandbox，本地读取与账户访问由各来源开关及服务边界控制。
+TokenMeter 是单一 macOS App target，加单元测试与独立进程 UI 测试 target。SwiftUI 负责页面，AppKit 提供菜单栏与弹出面板；未启用 App Sandbox，本地读取与账户访问由各来源开关及服务边界控制。
 
 ```text
 Makefile                         开发与验证入口
@@ -12,6 +12,7 @@ swift/
 ├── Resources/                   图标资源
 ├── scripts/                     打包、发布元数据和价格核对
 ├── Tests/TokenMeterTests/       按领域分组的 XCTest
+├── UITests/                    隔离 Debug 窗口的 XCUITest
 └── Sources/TokenMeter/
     ├── Shell/                   启动、菜单栏、弹出面板与 Debug 渲染入口
     ├── Models/                  AppState、统计口径、价格与 CSV 纯数据逻辑
