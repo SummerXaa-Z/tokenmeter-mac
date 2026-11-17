@@ -969,7 +969,9 @@ enum DebugUIRenderHarness {
     }
 
     static func makeViewportHost<V: View>(_ view: V, height: CGFloat) -> NSView {
-        let host = NSHostingView(rootView: view)
+        let host = NSHostingView(rootView: view.frame(width: Theme.panelWidth, height: height))
+        // Fixture dimensions must not become a content-driven window minimum.
+        host.sizingOptions = []
         host.setFrameSize(NSSize(width: Theme.panelWidth, height: height))
         return host
     }

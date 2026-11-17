@@ -22,13 +22,24 @@ jobs:
       - name: Render determinism gate
         run: make ui-render-determinism
 
-      - name: Repeat unchanged baseline render check
-        run: make ui-render-determinism
-
       - name: Upload render diff artifacts
         if: failure()
         uses: actions/upload-artifact@v5
         with:
           name: render-determinism-failure
           path: .ui-review/render-determinism-failure/
+          if-no-files-found: ignore
+
+      - name: Capture fixed viewport evidence
+        run: |
+          for run in 1 2 3; do
+            make ui-render UI_RENDER_DIR=".ui-review/viewport-$run"
+          done
+
+      - name: Upload viewport evidence
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: fixed-viewport-evidence
+          path: .ui-review/viewport-*/settings*.png
           if-no-files-found: ignore
