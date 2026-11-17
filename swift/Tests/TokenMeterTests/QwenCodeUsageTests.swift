@@ -105,6 +105,79 @@ final class QwenCodeUsageTests: XCTestCase {
         XCTAssertEqual(result.todayHours[11].totalTokens, 34)
     }
 
+    func testInvalidDuplicateCannotEraseLastValidSessionRecord() throws {
+        let valid = record(
+            sessionID: "same-session",
+            timestamp: milliseconds("2026-08-12T09:00:00Z"),
+            models: ["qwen3": model(requests: 2, input: 30, output: 4)]
+        )
+        let invalidFields: [[String: Any]] = [
+            ["version": 2],
+            ["version": NSNull()],
+            ["timestamp": NSNull()],
+            ["timestamp": 0],
+            ["timestamp": -1],
+        ]
+        for fields in invalidFields {
+            var object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: Data(valid.utf8)) as? [String: Any])
+            for (key, value) in fields { object[key] = value }
+            let invalid = try XCTUnwrap(String(
+                data: JSONSerialization.data(withJSONObject: object), encoding: .utf8))
+            let fixture = try makeFixture(lines: [valid, invalid], finalNewline: false)
+            defer { try? FileManager.default.removeItem(at: fixture.deletingLastPathComponent()) }
+
+            let result = try QwenCodeUsage.load(
+                usageRecordURL: fixture, now: date("2026-08-12T12:00:00Z"),
+                calendar: utcCalendar())
+
+            XCTAssertEqual(result.weekTotal, 34, "Invalid duplicate: \(fields)")
+            XCTAssertEqual(result.weekMessages, 2)
+            XCTAssertEqual(result.weekSessions, 1)
+            XCTAssertEqual(result.models.first?.totalTokens, 34)
+            XCTAssertEqual(result.todayHours[9].totalTokens, 34)
+            XCTAssertEqual(result.dayModels["2026-08-12"]?["qwen3"]?.total, 34)
+        }
+    }
+
+    func testLastValidEmptyRecordStillReplacesEarlierUsage() throws {
+        let fixture = try makeFixture(lines: [
+            record(sessionID: "same-session", timestamp: milliseconds("2026-08-12T09:00:00Z"),
+                   models: ["qwen3": model(requests: 2, input: 30, output: 4)]),
+            record(sessionID: "same-session", timestamp: milliseconds("2026-08-12T10:00:00Z"),
+                   models: [:]),
+        ])
+        defer { try? FileManager.default.removeItem(at: fixture.deletingLastPathComponent()) }
+
+        let result = try QwenCodeUsage.load(
+            usageRecordURL: fixture, now: date("2026-08-12T12:00:00Z"), calendar: utcCalendar())
+
+        XCTAssertEqual(result.weekTotal, 0)
+        XCTAssertEqual(result.weekMessages, 0)
+        XCTAssertEqual(result.weekSessions, 1)
+        XCTAssertTrue(result.models.isEmpty)
+        XCTAssertTrue(result.dayModels.isEmpty)
+    }
+
+    func testValidDuplicateOutsideWindowDoesNotResurrectEarlierUsage() throws {
+        for timestamp in ["2026-08-01T09:00:00Z", "2026-08-13T09:00:00Z"] {
+            let fixture = try makeFixture(lines: [
+                record(sessionID: "same-session", timestamp: milliseconds("2026-08-12T09:00:00Z"),
+                       models: ["qwen3": model(requests: 2, input: 30, output: 4)]),
+                record(sessionID: "same-session", timestamp: milliseconds(timestamp),
+                       models: ["qwen3": model(requests: 3, input: 40, output: 5)]),
+            ])
+            defer { try? FileManager.default.removeItem(at: fixture.deletingLastPathComponent()) }
+
+            let result = try QwenCodeUsage.load(
+                usageRecordURL: fixture, now: date("2026-08-12T12:00:00Z"), calendar: utcCalendar())
+
+            XCTAssertEqual(result.weekTotal, 0)
+            XCTAssertEqual(result.weekSessions, 0)
+            XCTAssertTrue(result.dayModels.isEmpty)
+        }
+    }
+
     func testFiltersOtherVersionsAndDatesAndFillsEmptyDays() throws {
         let fixture = try makeFixture(lines: [
             record(
