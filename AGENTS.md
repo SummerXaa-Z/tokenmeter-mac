@@ -16,6 +16,22 @@
 - Keep meaningful tests for windows, source filters, read failures, asynchronous refresh results and update trust/rollback. Mechanical moves do not need tests that merely duplicate code.
 - Build/test/fixture success does not establish signing, notarization, real installation, updates or account behavior. Follow `docs/release.md` for those checks.
 
+## Engineering contract
+
+- Prefer the smallest change that makes an invalid state or dependency impossible. Turn repeated, objectively detectable mistakes into focused tests or static checks; do not grow prose rules as a substitute for enforcement.
+- Keep UI code behind the existing service boundaries for history, credentials and account IO. Do not add parallel access paths or abstractions solely to satisfy a check.
+- Before implementation, identify the observable behavior and how to verify it. Parser changes should replay representative synthetic inputs; persistence changes should read back results; UI changes should operate the affected controls in an isolated Debug window, including relevant empty/error, repeated and return flows.
+- A same-build render consensus proves repeatability only, not correct layout, copy or interaction. Inspect changed renders against the intended design or baseline; use behavior assertions for values and state transitions. Do not replace failed UI interaction checks with model-only checks and call the UI verified.
+- For a regression or new validation mechanism, demonstrate that the check detects the target fault before accepting the fix, where feasible. Keep temporary fault injection out of the final branch; if the environment cannot run a check, report it as unverified rather than passed.
+- Review the final diff and validate the final commit. Seek independent review for behavioral changes and changes to tests, CI or safety boundaries. Never skip, soft-fail, relax assertions or widen allowlists merely to obtain green CI; legitimate gate changes need an explicit rationale and independent evidence.
+- Before an authorized merge, confirm checks belong to the exact PR head and no unresolved blocker remains; verify the remote merge afterward. Keep merge and release authorization separate. Report what changed, what was actually verified, and remaining limits without treating test or PR counts as quality evidence.
+
+## Comments and documentation
+
+- Prefer clear names and simple code over narration. Add short comments only for non-obvious reasons, invariants, safety boundaries or compatibility traps; preserve necessary API documentation and attribution.
+- Do not add teaching prose, implementation diaries or task-history markers to code or product UI. Preserve useful errors, operating guidance and accessibility labels.
+- Update the relevant existing guide when behavior or an interface changes; do not create duplicate summaries, plans or reports unless requested. Before committing, remove unnecessary text introduced by this diff, not unrelated existing documentation.
+
 ## Data and compatibility
 
 - Never commit credentials, certificate material, real session logs, personal screenshots or private diagnostics. Public UI examples use synthetic data.
