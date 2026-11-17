@@ -108,7 +108,7 @@ struct CodingModelDetailView: View {
                     Label("模型用量", systemImage: "chart.bar.fill")
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
-                    Picker("范围", selection: $span) {
+                    Picker("范围", selection: .constant(Span.month)) {
                         ForEach(Span.allCases, id: \.self) { item in
                             Text(item.title).tag(item)
                         }
