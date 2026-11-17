@@ -140,6 +140,58 @@ final class QwenCodeUsageTests: XCTestCase {
         }
     }
 
+    func testMissingOrNullModelsCannotEraseValidUsage() throws {
+        let valid = record(
+            sessionID: "same-session",
+            timestamp: milliseconds("2026-08-12T09:00:00Z"),
+            models: ["qwen3": model(requests: 2, input: 30, output: 4)]
+        )
+        for nullModels in [false, true] {
+            var object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: Data(valid.utf8)) as? [String: Any])
+            if nullModels {
+                object["models"] = NSNull()
+            } else {
+                object.removeValue(forKey: "models")
+            }
+            object["timestamp"] = milliseconds("2026-08-12T10:00:00Z")
+            let invalid = try XCTUnwrap(String(
+                data: JSONSerialization.data(withJSONObject: object), encoding: .utf8))
+            for finalNewline in [false, true] {
+                let fixture = try makeFixture(lines: [valid, invalid], finalNewline: finalNewline)
+                defer { try? FileManager.default.removeItem(at: fixture.deletingLastPathComponent()) }
+                let result = try QwenCodeUsage.load(
+                    usageRecordURL: fixture, now: date("2026-08-12T12:00:00Z"),
+                    calendar: utcCalendar())
+
+                XCTAssertEqual(result.weekTotal, 34)
+                XCTAssertEqual(result.weekMessages, 2)
+                XCTAssertEqual(result.weekSessions, 1)
+                XCTAssertEqual(result.models.first?.totalTokens, 34)
+                XCTAssertEqual(result.todayHours[9].totalTokens, 34)
+                XCTAssertEqual(result.todayHours[10].totalTokens, 0)
+                XCTAssertEqual(result.dayModels["2026-08-12"]?["qwen3"]?.total, 34)
+                XCTAssertEqual(result.daySessions, ["2026-08-12": 1])
+            }
+        }
+    }
+
+    func testMissingOrNullModelsDoesNotCreateSession() throws {
+        for modelsField in ["", #","models":null"#] {
+            let line = #"{"version":1,"sessionId":"incomplete","timestamp":1786525200000"# +
+                modelsField + "}"
+            let fixture = try makeFixture(lines: [line])
+            defer { try? FileManager.default.removeItem(at: fixture.deletingLastPathComponent()) }
+            let result = try QwenCodeUsage.load(
+                usageRecordURL: fixture, now: date("2026-08-12T12:00:00Z"), calendar: utcCalendar())
+
+            XCTAssertEqual(result.weekTotal, 0)
+            XCTAssertEqual(result.weekSessions, 0)
+            XCTAssertTrue(result.daySessions.isEmpty)
+            XCTAssertTrue(result.dayModels.isEmpty)
+        }
+    }
+
     func testLastValidEmptyRecordStillReplacesEarlierUsage() throws {
         let fixture = try makeFixture(lines: [
             record(sessionID: "same-session", timestamp: milliseconds("2026-08-12T09:00:00Z"),
