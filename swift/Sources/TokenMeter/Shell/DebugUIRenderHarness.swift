@@ -968,6 +968,12 @@ enum DebugUIRenderHarness {
         }
     }
 
+    static func makeViewportHost<V: View>(_ view: V, height: CGFloat) -> NSView {
+        let host = NSHostingView(rootView: view)
+        host.setFrameSize(NSSize(width: Theme.panelWidth, height: height))
+        return host
+    }
+
     // 用法：TokenMeter --ui-render=<dir>。为每个页面在亮/暗两种外观下
     // 生成 <page>-<appearance>.png 后退出。窗口放在屏幕外，用户无感。
     static func render(appState: AppState, outputPath: String) {
@@ -1009,13 +1015,11 @@ enum DebugUIRenderHarness {
             // popover 窗口背景提供），离屏导出必须在这里补上等价底色。
             // usageNow 用渲染时钟：真实 app 由 RootView 注入，漏注时视图
             // 会各自落回 Date() 默认值，同构建两轮渲染就不可比。
-            let host = NSHostingView(rootView: view
+            return makeViewportHost(view
                 .background(Color(nsColor: .windowBackgroundColor))
                 .environment(\.usageNow, PreviewData.renderNow)
                 .environmentObject(appState)
-                .environmentObject(historyReader))
-            host.setFrameSize(NSSize(width: Theme.panelWidth, height: height))
-            return host
+                .environmentObject(historyReader), height: height)
         }
 
         // 所有真实采集已在验证入口禁用；配置、历史与采集记录都隔离。
@@ -1166,6 +1170,7 @@ enum DebugUIRenderHarness {
                 Self.exportFinalFixture(), height: 1000)),
         ]
 
+        let expectedSizes = pages.map { $0.view.bounds.size }
         var windows: [NSWindow] = []
         for page in pages {
             let bounds = page.view.bounds
@@ -1190,8 +1195,11 @@ enum DebugUIRenderHarness {
             while Date() < deadline {
                 RunLoop.main.run(until: Date().addingTimeInterval(0.05))
             }
-            for page in pages {
+            for (index, page) in pages.enumerated() {
                 page.view.layoutSubtreeIfNeeded()
+                guard page.view.bounds.size == expectedSizes[index] else {
+                    fatalError("Render viewport changed for \(page.name): \(page.view.bounds.size), expected \(expectedSizes[index])")
+                }
                 guard
                     let rep = page.view.bitmapImageRepForCachingDisplay(in: page.view.bounds)
                 else { continue }
