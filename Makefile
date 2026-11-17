@@ -17,7 +17,7 @@ DEBUG_APP := $(DERIVED_DATA_PATH)/Build/Products/Debug/TokenMeter.app
 RELEASE_APP := $(DERIVED_DATA_PATH)/Build/Products/Release/TokenMeter.app
 
 .DEFAULT_GOAL := help
-.PHONY: help project build debug-build test ui-smoke ui-render ui-render-overview ui-render-determinism release-check package price-check clean
+.PHONY: ui-test help project build debug-build test ui-smoke ui-render ui-render-overview ui-render-determinism release-check package price-check clean
 
 help:
 	@printf '%s\n' \
@@ -95,3 +95,11 @@ price-check:
 
 clean:
 	/bin/bash $(SWIFT_DIR)/scripts/clean-build.sh
+
+ui-test: project
+	cd $(SWIFT_DIR) && xcodebuild test \
+		-project $(XCODE_PROJECT) \
+		-scheme TokenMeterUI \
+		-configuration Debug \
+		-derivedDataPath "$(DERIVED_DATA)" \
+		-parallel-testing-enabled NO

@@ -19,6 +19,16 @@ jobs:
       - name: Run release check
         run: make release-check
 
+      - name: UI interaction regression
+        run: make ui-test
+
+      - name: Upload generated project for validation
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: generated-project
+          path: swift/TokenMeter.xcodeproj/
+
       - name: Render determinism gate
         run: make ui-render-determinism
 
