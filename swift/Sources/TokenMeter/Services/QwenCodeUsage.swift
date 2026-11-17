@@ -212,7 +212,8 @@ enum QwenCodeUsage {
     }
 
     // 官方 loadUsageHistory 用 sessionId -> record 的 Map 去重，后出现的完整记录覆盖
-    // 旧记录。这里保持同一语义，同时支持写入中的非换行 EOF 尾行。
+    // 旧记录。只有支持的版本、非空会话 ID 与有效时间戳才能覆盖旧值；
+    // 时间窗口仍在去重后筛选，避免复活同会话较早的记录。支持非换行 EOF 尾行。
     private static func scan(_ file: URL) throws -> [String: SessionRecord] {
         guard FileManager.default.isReadableFile(atPath: file.path) else {
             throw QwenCodeUsageError.scanFailed
@@ -239,6 +240,10 @@ enum QwenCodeUsage {
             guard !data.isEmpty,
                   data.count <= maximumLineBytes,
                   let record = try? decoder.decode(SessionRecord.self, from: data),
+                  record.version == 1,
+                  let milliseconds = record.timestamp,
+                  milliseconds.isFinite,
+                  milliseconds > 0,
                   let sessionID = record.sessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !sessionID.isEmpty
             else { return }
