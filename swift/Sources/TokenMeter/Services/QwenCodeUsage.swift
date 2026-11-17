@@ -102,7 +102,7 @@ enum QwenCodeUsage {
         let version: Int?
         let sessionId: String?
         let timestamp: Double?
-        let models: [String: ModelRecord]?
+        let models: [String: ModelRecord]
     }
 
     private static let chunkSize = 1 * 1024 * 1024
@@ -157,7 +157,7 @@ enum QwenCodeUsage {
             let dayKey = localDayKey(date, calendar: calendar)
             var day = days[dayKey] ?? QwenCodeDayUsage(date: dayKey)
 
-            for (rawName, rawModel) in record.models ?? [:] {
+            for (rawName, rawModel) in record.models {
                 let modelName = normalizedModel(rawName)
                 let prompt = nonNegative(rawModel.inputTokens)
                 let cached = min(nonNegative(rawModel.cachedTokens), prompt)
@@ -212,7 +212,8 @@ enum QwenCodeUsage {
     }
 
     // 官方 loadUsageHistory 用 sessionId -> record 的 Map 去重，后出现的完整记录覆盖
-    // 旧记录。只有支持的版本、非空会话 ID 与有效时间戳才能覆盖旧值；
+    // 旧记录。只有支持的版本、非空会话 ID、有效时间戳与完整 models 字典才能覆盖旧值；
+    // models 缺失或 null 是损坏记录，显式空字典仍是合法的零用量。
     // 时间窗口仍在去重后筛选，避免复活同会话较早的记录。支持非换行 EOF 尾行。
     private static func scan(_ file: URL) throws -> [String: SessionRecord] {
         guard FileManager.default.isReadableFile(atPath: file.path) else {

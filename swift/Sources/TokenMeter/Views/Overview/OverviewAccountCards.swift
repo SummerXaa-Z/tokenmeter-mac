@@ -161,6 +161,7 @@ struct BalanceRunwayLine: View {
 // 额度会提前用完时的橙色提示行；撑得到重置时不占独立行，
 // 由调用方把 summary 并进灰色明细行。
 struct QuotaPaceLine: View {
+    @Environment(\.usageNow) private var now
     let pace: QuotaPace
     var text: String? = nil
 
@@ -168,7 +169,7 @@ struct QuotaPaceLine: View {
         HStack(alignment: .top, spacing: 4) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(Theme.badgeFont)
-            Text(text ?? pace.summary())
+            Text(text ?? pace.summary(now: now))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .font(Theme.footnoteFont)

@@ -1036,7 +1036,7 @@ enum DebugUIRenderHarness {
             failure: "usage_record.jsonl 解析失败：第 3 行不是合法 JSON"))
 
         let pages: [(name: String, view: NSView)] = overviewOnly ? [
-            ("overview", hosting(RootView())),
+            ("overview", hosting(RootView(fixedNow: fixtureNow))),
             ("overview-full", hosting(OverviewView(
                 range: .month, sources: [.claude, .codex],
                 onOpenSource: { _ in }, onSettings: {}), height: 1800)),
@@ -1045,7 +1045,7 @@ enum DebugUIRenderHarness {
                 onOpenSource: { _ in }, onSettings: {}), height: 1800)),
         ] : [
             ("collection-status-fixture", hosting(Self.collectionStatusFixture(), height: 810)),
-            ("overview", hosting(RootView())),
+            ("overview", hosting(RootView(fixedNow: fixtureNow))),
             ("dashboard", hosting(
                 DashboardView(onBack: {}, onSettings: {}, onDetail: { _ in }))),
             ("claude", hosting(ClaudeView(onBack: {}, onSettings: {}))),

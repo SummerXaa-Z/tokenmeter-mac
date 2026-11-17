@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct RootView: View {
+    // 离屏验证显式固定时钟；真实 App 默认保持周期刷新。
+    var fixedNow: Date? = nil
     @EnvironmentObject var state: AppState
     @StateObject private var historyReader = HistorySnapshotReader()
     @State private var navigation = DashboardNavigation()
@@ -17,8 +19,12 @@ struct RootView: View {
     }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { clock in
-            content.environment(\.usageNow, clock.date)
+        if let fixedNow {
+            content.environment(\.usageNow, fixedNow)
+        } else {
+            TimelineView(.periodic(from: .now, by: 30)) { clock in
+                content.environment(\.usageNow, clock.date)
+            }
         }
     }
 
