@@ -33,7 +33,7 @@ jobs:
       - name: Capture fixed viewport evidence
         run: |
           for run in 1 2 3; do
-            make ui-render UI_RENDER_DIR=".ui-review/viewport-$run"
+            make ui-render UI_RENDER_DIR="viewport-evidence/run-$run"
           done
 
       - name: Upload viewport evidence
@@ -41,5 +41,5 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: fixed-viewport-evidence
-          path: .ui-review/viewport-*/settings*.png
-          if-no-files-found: ignore
+          path: viewport-evidence/
+          if-no-files-found: error
