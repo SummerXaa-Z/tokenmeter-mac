@@ -56,3 +56,31 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.deepseek.monitor.mac.tests
+
+  TokenMeterUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: TokenMeter
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.deepseek.monitor.mac.uitests
+
+schemes:
+  TokenMeter:
+    build:
+      targets:
+        TokenMeter: all
+    test:
+      targets:
+        - TokenMeterTests
+  TokenMeterUI:
+    build:
+      targets:
+        TokenMeter: all
+    test:
+      config: Debug
+      targets:
+        - TokenMeterUITests
