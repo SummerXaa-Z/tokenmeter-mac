@@ -47,9 +47,14 @@ final class StatusPopoverUITests: XCTestCase {
         XCTAssertTrue(statusItem.waitForExistence(timeout: 10), app.debugDescription)
         let range = app.buttons["TokenMeter.Range.30D"]
         XCTAssertFalse(range.exists)
-        for _ in 0..<3 {
+        for cycle in 0..<3 {
             statusItem.click()
             XCTAssertTrue(range.waitForExistence(timeout: 5), app.debugDescription)
+            XCTAssertTrue(range.isHittable)
+            let screenshot = XCTAttachment(screenshot: app.screenshot())
+            screenshot.name = "Real status popover open cycle \(cycle)"
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
             XCTAssertNotEqual(app.state, .notRunning)
             statusItem.click()
             let closed = XCTNSPredicateExpectation(
