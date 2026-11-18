@@ -591,11 +591,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         if popover.isShown {
-            // Fault injection: intentionally leave the popover open.
+            popover.performClose(sender)
         } else {
             NSApp.activate(ignoringOtherApps: true)
             popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
+            sender.action = nil // Fault injection: prevent reopening after the first use.
             appState.refreshEnabledSources(trigger: .panelOpen)
         }
     }
