@@ -18,6 +18,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 测试 host 仍由 XCTest 驱动，但不挂菜单、不采集、不请求通知或检查更新。
         if RuntimeEnvironment.isTesting { return }
 #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-smoke-popover") {
+            PreviewData.seed(appState)
+            installStatusPopover()
+            return
+        }
         // 菜单栏 popover 很难被 UI 自动化稳定定位。这个显式启动参数只在
         // Debug 构建提供同尺寸普通窗口，跳过通知、更新器和后台计时器；
         // 正常启动与 Release 构建完全不受影响。
@@ -39,25 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             exit(0)
         }
 #endif
-        // 菜单栏应用：不占 Dock、不抢主菜单栏
-        NSApp.setActivationPolicy(.accessory)
-
-        // SwiftUI 根视图塞进 popover
-        popover = NSPopover()
-        popover.contentSize = NSSize(width: 420, height: 600)
-        popover.behavior = .transient   // 点外部自动收起
-        popover.animates = true
-        popover.contentViewController = NSHostingController(
-            rootView: RootView().environmentObject(appState))
-
-        // 状态栏图标
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = statusItem.button {
-            Self.configureStatusButton(button)
-            button.action = #selector(togglePopover(_:))
-            button.target = self
-            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-        }
+        installStatusPopover()
 
         appState.rearmTimer()
 
@@ -107,6 +94,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                queue: .main) { [weak self] _ in
             Task { @MainActor in self?.requestQuotaBadgeRefresh() }
         }
+    }
+
+    private func installStatusPopover() {
+        // 菜单栏应用：不占 Dock、不抢主菜单栏
+        NSApp.setActivationPolicy(.accessory)
+
+        // SwiftUI 根视图塞进 popover
+        popover = NSPopover()
+        popover.contentSize = NSSize(width: 420, height: 600)
+        popover.behavior = .transient   // 点外部自动收起
+        popover.animates = true
+        popover.contentViewController = NSHostingController(
+            rootView: RootView().environmentObject(appState))
+
+        // 状态栏图标
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = statusItem.button {
+            Self.configureStatusButton(button)
+            button.action = #selector(togglePopover(_:))
+            button.target = self
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
+
     }
 
     private var quotaTimer: Timer?
