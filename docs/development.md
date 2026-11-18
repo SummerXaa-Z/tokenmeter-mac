@@ -29,7 +29,7 @@ make ui-render-overview
 make ui-render-determinism
 ```
 
-`ui-test` 使用独立进程 XCUITest 驱动 Debug 示例窗口，验证模型范围切换的空态恢复及反复返回。CI 同样运行此检查；它不访问真实账号，也不代表完整安装、全部导航或 VoiceOver 验收。失败时保留 `.xcresult`。
+`ui-test` 使用独立进程 XCUITest 驱动 Debug 示例窗口，验证模型范围切换的空态恢复及反复返回；另以 `--ui-smoke-popover` 启动合成数据菜单栏模式，真实点击状态项，验证面板可见、关闭和反复重开。菜单栏模式复用正常弹窗路径，但刷新仍由隔离保护跳过。CI 同样运行这些检查；它不访问真实账号，也不代表真实刷新、完整安装、全部导航或 VoiceOver 验收。失败时保留 `.xcresult`。
 
 `ui-smoke` 打开 420×600 的普通窗口并填充示例数据。`ui-render` 同样填充示例用量，在屏幕外渲染浅色、深色夹具后退出，默认写入 `.ui-review/render/`；`ui-render-overview` 只渲染总览，默认写入 `.ui-review/overview/`。无真实采集结果的来源仍用于加载/空态检查，不表示已验证真实账户。
 
