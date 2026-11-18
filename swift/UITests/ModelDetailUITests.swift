@@ -45,7 +45,7 @@ final class StatusPopoverUITests: XCTestCase {
         add(tree)
         let statusItem = app.descendants(matching: .any)["TokenMeter.StatusItem"].firstMatch
         XCTAssertTrue(statusItem.waitForExistence(timeout: 10), app.debugDescription)
-        let range = app.radioButtons["30D"]
+        let range = app.buttons["TokenMeter.Range.30D"]
         XCTAssertFalse(range.exists)
         for _ in 0..<3 {
             statusItem.click()
