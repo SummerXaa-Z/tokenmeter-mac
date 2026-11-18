@@ -23,9 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             installStatusPopover()
             return
         }
-        // 菜单栏 popover 很难被 UI 自动化稳定定位。这个显式启动参数只在
-        // Debug 构建提供同尺寸普通窗口，跳过通知、更新器和后台计时器；
-        // 正常启动与 Release 构建完全不受影响。
+        // 普通 Debug 窗口供页面级交互验证，跳过正常启动的后台服务。
         if ProcessInfo.processInfo.arguments.contains("--ui-smoke-window") {
             showUISmokeWindow()
             return
@@ -116,7 +114,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.target = self
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-
     }
 
     private var quotaTimer: Timer?
