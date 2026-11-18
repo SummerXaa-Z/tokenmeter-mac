@@ -10,6 +10,7 @@ enum RuntimeEnvironment {
     static var isPreview: Bool {
 #if DEBUG
         ProcessInfo.processInfo.arguments.contains("--ui-smoke-window")
+            || ProcessInfo.processInfo.arguments.contains("--ui-smoke-popover")
             || ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("--ui-render=") }
 #else
         false
