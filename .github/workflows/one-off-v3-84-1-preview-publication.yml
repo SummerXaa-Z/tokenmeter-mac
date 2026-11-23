@@ -1,0 +1,144 @@
+name: One-off TokenMeter v3.84.1 preview publication
+on:
+  push:
+    branches: [release-ops/v3.84.1-preview.1]
+permissions: {}
+jobs:
+  preview:
+    if: github.repository == 'SummerXaa-Z/tokenmeter-mac' && github.event.before == '0b1591a35f6a87b7da7f00f393e39c356ea7a74f' && github.ref == 'refs/heads/release-ops/v3.84.1-preview.1' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: SummerXaa-Z/tokenmeter-mac
+      TARGET: 0b1591a35f6a87b7da7f00f393e39c356ea7a74f
+      TARGET_TREE: c34d0761fd75e61fd45b825a06c4f7770a3f21ec
+      TAG: v3.84.1-preview.1
+      STABLE: v3.84.0
+      UNPUBLISHED_STABLE: v3.84.1
+      BUILD_RUN: "45171203534"
+      BUILD_WORKFLOW_HEAD: d84076b52fed25bb5bfacfcc24fc3a8592892591
+      ARTIFACT: "14817571118"
+      ARTIFACT_NAME: TokenMeter-3.84.1-arm64-TEST-ONLY-adhoc
+      ZIP_SHA: 6b5bca336ea42023e119dfcd97e90b2487e194c63b32b59b0aa8c40708181f7e
+      DMG: TokenMeter_3.84.1_aarch64.dmg
+      DMG_SHA: b9959be9c72196c9d27a5cbabca5dc4d5e077fd7edb61fa00f8b8a9e1beb0fea
+    steps:
+      - name: Verify exact source and candidate, stage and publish only the preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          cd "$work"
+          api="repos/$REPO"
+          latest() { gh api "$api/releases/latest" --jq .tag_name; }
+          exact_ref() {
+            gh api "$api/git/matching-refs/tags/$1" |
+              jq -r --arg ref "refs/tags/$1" '.[] | select(.ref == $ref) | [.object.type,.object.sha] | @tsv'
+          }
+          assert_absent() {
+            local ref
+            ref="$(exact_ref "$1")"
+            test -z "$ref"
+          }
+          test "$(latest)" = "$STABLE"
+          assert_absent "$TAG"
+          assert_absent "$UNPUBLISHED_STABLE"
+          gh api --paginate "$api/releases?per_page=100" --jq '.[].tag_name' > existing-releases
+          if grep -qxF -e "$TAG" -e "$UNPUBLISHED_STABLE" existing-releases; then
+            echo "::error::A release with a reserved tag already exists. No changes made."
+            exit 1
+          fi
+          gh api "$api/git/commits/$TARGET" |
+            jq -e --arg target "$TARGET" --arg tree "$TARGET_TREE" '.sha == $target and .tree.sha == $tree' >/dev/null
+          gh api "$api/actions/runs/$BUILD_RUN" |
+            jq -e --arg sha "$BUILD_WORKFLOW_HEAD" '.head_sha == $sha and .conclusion == "success"' >/dev/null
+          gh api "$api/actions/artifacts/$ARTIFACT" |
+            jq -e --arg name "$ARTIFACT_NAME" --arg run "$BUILD_RUN" --arg sha "$BUILD_WORKFLOW_HEAD" \
+              --arg digest "sha256:$ZIP_SHA" '.name == $name and (.workflow_run.id|tostring) == $run and
+                .workflow_run.head_sha == $sha and .digest == $digest and (.expired|not)' >/dev/null
+          gh api "$api/actions/artifacts/$ARTIFACT/zip" > candidate.zip
+          printf '%s  candidate.zip\n' "$ZIP_SHA" | sha256sum --check -
+          python3 - <<'PY'
+          import hashlib
+          import os
+          import zipfile
+
+          dmg = os.environ["DMG"]
+          expected = os.environ["DMG_SHA"]
+          with zipfile.ZipFile("candidate.zip") as archive:
+              assert sorted(archive.namelist()) == sorted([dmg, "SHA256SUMS", "BUILD-INFO.txt"])
+              info = archive.read("BUILD-INFO.txt").decode("utf-8")
+              lines = info.splitlines()
+              for expected_line in (
+                  "commit=" + os.environ["TARGET"], "version=3.84.1",
+                  "app-signature=adhoc", "notarized=no",
+                  "ProductVersion:\t\t26.7.2", "BuildVersion:\t\t25G332", "arm64",
+              ):
+                  assert expected_line in lines, info
+              listed_digest, listed_name = archive.read("SHA256SUMS").decode("utf-8").split()
+              assert listed_digest == expected and listed_name == dmg
+              data = archive.read(dmg)
+              assert hashlib.sha256(data).hexdigest() == expected
+              with open(dmg, "xb") as asset:
+                  asset.write(data)
+          PY
+          printf '%s  %s\n' "$DMG_SHA" "$DMG" | sha256sum --check -
+          cat > preview-notes.md <<'NOTES'
+          ## 本次改动
+
+          - Qwen：摘要缺失或无法识别时，不再用零覆盖上次成功的用量；合法空摘要仍表示零。设置页补充了 Qwen Code 0.x 的刷新提示，1.0 预览版未验证。
+          - DeepSeek：无效计数、金额和超范围合计不会覆盖上次成功数据；历史汇总和图表会安全处理缺值及超范围数值。
+
+          ## 预览版安装与验证范围
+
+          这是自愿手动下载的预览版，不替换稳定版 v3.84.0。App 使用 ad-hoc 签名，未经 Apple 公证。仅在 Apple silicon、macOS 26.7.2 上验证了 DMG 挂载、复制和 App 启动；未验证 Intel、macOS 14 Sonoma 或浏览器下载后首次打开时的 Gatekeeper 行为。若系统拦截，请继续使用稳定版。
+
+          预览包内的版本号是 3.84.1。将来切换到正式版时，请从稳定版发布页手动下载，不要依赖应用自动更新。
+
+          DMG SHA-256: b9959be9c72196c9d27a5cbabca5dc4d5e077fd7edb61fa00f8b8a9e1beb0fea
+          NOTES
+          test "$(latest)" = "$STABLE"
+          gh release create "$TAG" "$DMG" --repo "$REPO" --target "$TARGET" \
+            --title "TokenMeter $TAG" --notes-file preview-notes.md --draft --prerelease --latest=false
+          gh api --paginate "$api/releases?per_page=100" --jq ".[] | select(.tag_name == \"$TAG\") | .id" > preview-id
+          read -r rid < preview-id
+          [[ "$rid" =~ ^[0-9]+$ && "$(wc -l < preview-id)" -eq 1 ]]
+          check_release() {
+            gh api "$api/releases/$rid" |
+              jq -e --arg tag "$TAG" --arg target "$TARGET" --arg dmg "$DMG" \
+                --arg digest "sha256:$DMG_SHA" --argjson draft "$1" '
+                .tag_name == $tag and .target_commitish == $target and .draft == $draft and
+                .prerelease == true and (.assets|length) == 1 and
+                .assets[0].name == $dmg and .assets[0].state == "uploaded" and
+                .assets[0].digest == $digest' >/dev/null
+          }
+          peel_ref() {
+            local type sha
+            IFS=$'\t' read -r type sha <<< "$1"
+            if [[ "$type" == tag ]]; then
+              gh api "$api/git/tags/$sha" | jq -er '.object | select(.type == "commit") | .sha'
+            elif [[ "$type" == commit ]]; then
+              printf '%s\n' "$sha"
+            else
+              return 1
+            fi
+          }
+          check_release true
+          ref="$(exact_ref "$TAG")"
+          if [[ -n "$ref" ]]; then test "$(peel_ref "$ref")" = "$TARGET"; fi
+          test "$(latest)" = "$STABLE"
+          assert_absent "$UNPUBLISHED_STABLE"
+          gh api --method PATCH "$api/releases/$rid" -F draft=false -F prerelease=true -f make_latest=false |
+            jq -e --arg tag "$TAG" '.tag_name == $tag and .draft == false and .prerelease == true' >/dev/null
+          check_release false
+          test "$(peel_ref "$(exact_ref "$TAG")")" = "$TARGET"
+          test "$(latest)" = "$STABLE"
+          assert_absent "$UNPUBLISHED_STABLE"
+          gh api "$api/releases/$rid" |
+            jq '{html_url, tag_name, target_commitish, prerelease, draft, published_at, asset: .assets[0] |
+                {name,state,digest,browser_download_url}}'
+          printf 'Stable latest: %s\n' "$(latest)"
