@@ -1,0 +1,90 @@
+name: Temporary TokenMeter v3.84.1 candidate smoke
+on:
+  push:
+    branches: [test/v3.84.1-ad-hoc-candidate]
+permissions:
+  contents: read
+jobs:
+  candidate:
+    if: github.event.before == '0b1591a35f6a87b7da7f00f393e39c356ea7a74f'
+    runs-on: macos-latest
+    timeout-minutes: 15
+    env:
+      CANDIDATE_SHA: 0b1591a35f6a87b7da7f00f393e39c356ea7a74f
+      EXPECTED_VERSION: 3.84.1
+      SELF_SIGN_IDENTITY: TokenMeter-CI-Intentionally-Unavailable
+      NOTARIZE: skip
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 0b1591a35f6a87b7da7f00f393e39c356ea7a74f
+          persist-credentials: false
+      - run: brew install xcodegen
+      - name: Build and verify the test-only ad-hoc candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          sw_vers
+          uname -m
+          env -u DEVELOPER_ID_APPLICATION -u NOTARY_KEYCHAIN_PROFILE -u NOTARY_PROFILE \
+            -u NOTARY_APPLE_ID -u NOTARY_TEAM_ID -u NOTARY_PASSWORD make package
+          git diff --exit-code -- swift/TokenMeter.xcodeproj
+          original="swift/build/Build/Products/Release/TokenMeter.app"
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$original/Contents/Info.plist")"
+          test "$version" = "$EXPECTED_VERSION"
+          dmg="/tmp/TokenMeter_3.84.1_aarch64.dmg"
+          hdiutil verify "$dmg"
+          work="$(mktemp -d "$RUNNER_TEMP/tokenmeter-candidate.XXXXXXXX")"
+          mkdir "$work/mounted" "$work/installed"
+          hdiutil attach -readonly -nobrowse -mountpoint "$work/mounted" "$dmg"
+          trap 'hdiutil detach "$work/mounted"' EXIT
+          copied="$work/installed/TokenMeter.app"
+          ditto "$work/mounted/TokenMeter.app" "$copied"
+          codesign --verify --deep --strict --verbose=2 "$copied"
+          signature="$(codesign -dvv "$copied" 2>&1)"
+          grep -qx 'Signature=adhoc' <<< "$signature"
+          ./swift/scripts/verify-release-metadata.sh "$copied" arm64
+          cmp "$original/Contents/MacOS/TokenMeter" "$copied/Contents/MacOS/TokenMeter"
+          printf 'TOKENMETER_SMOKE_APP=%s\n' "$copied" >> "$GITHUB_ENV"
+          mkdir candidate
+          cp "$dmg" candidate/
+          (cd candidate && shasum -a 256 TokenMeter_3.84.1_aarch64.dmg > SHA256SUMS && cat SHA256SUMS)
+          {
+            printf 'commit=%s\nversion=%s\n' "$CANDIDATE_SHA" "$version"
+            printf 'app-signature=adhoc\nnotarized=no\n'
+            sw_vers
+            uname -m
+          } | tee candidate/BUILD-INFO.txt
+      - name: Try a native launch only on a clean CI GUI session
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(stat -f %Su /dev/console)" != "$(id -un)" ]] ||
+             ! launchctl print "gui/$(id -u)" >/dev/null 2>&1; then
+            echo "::notice::No active GUI session. Did not test native launch, downloaded Gatekeeper policy, or menu bar."
+            exit 0
+          fi
+          for key in autoUpdateCheckEnabled notificationsEnabled deepseekMonitorEnabled \
+                     claudeMonitorEnabled codexMonitorEnabled kimiMonitorEnabled opencodeMonitorEnabled \
+                     geminiMonitorEnabled copilotMonitorEnabled qwenMonitorEnabled cursorMonitorEnabled; do
+            defaults write com.deepseek.monitor.mac "$key" -bool false
+          done
+          open -n "$TOKENMETER_SMOKE_APP"
+          pid=""
+          for _ in {1..12}; do
+            pid="$(pgrep -f "^$TOKENMETER_SMOKE_APP/Contents/MacOS/TokenMeter([[:space:]]|$)" || true)"
+            [[ -z "$pid" ]] || break
+            sleep 1
+          done
+          test -n "$pid"
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          sleep 3
+          kill -0 "$pid"
+          echo "::notice::Copied ad-hoc app launched and stayed alive. No browser-downloaded Gatekeeper or menu-bar interaction check."
+      - uses: actions/upload-artifact@v5
+        with:
+          name: TokenMeter-3.84.1-arm64-TEST-ONLY-adhoc
+          path: candidate/
+          if-no-files-found: error
+          retention-days: 3
