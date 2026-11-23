@@ -58,6 +58,14 @@ enum Fmt {
         return String(n)
     }
 
+    static func tokenAxisLabel(_ value: Double) -> String {
+        guard value.isFinite else { return "—" }
+        if let count = Int(exactly: value.rounded(.towardZero)) {
+            return tokensShort(count)
+        }
+        return String(format: "%.2g", value)
+    }
+
     // 金额：¥1.45（货币符号外部决定）
     static func money(_ n: Double, symbol: String = "¥") -> String {
         symbol + String(format: "%.2f", n)

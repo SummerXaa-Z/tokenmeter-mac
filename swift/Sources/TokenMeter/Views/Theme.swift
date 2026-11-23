@@ -64,7 +64,7 @@ extension View {
                         Text(Fmt.tokensShort(n))
                             .font(Theme.chartAxisFont).foregroundStyle(Color.secondary)
                     } else if let d = v.as(Double.self) {
-                        Text(Fmt.tokensShort(Int(d)))
+                        Text(Fmt.tokenAxisLabel(d))
                             .font(Theme.chartAxisFont).foregroundStyle(Color.secondary)
                     }
                 }

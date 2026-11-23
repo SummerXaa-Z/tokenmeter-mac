@@ -2,6 +2,13 @@ import XCTest
 @testable import TokenMeter
 
 final class FormatTests: XCTestCase {
+    func testTokenAxisLabelKeepsOrdinaryTicksAndHandlesOutOfRangeTicks() {
+        XCTAssertEqual(Fmt.tokenAxisLabel(2_609.9), "2.6K")
+        XCTAssertEqual(Fmt.tokenAxisLabel(Double(Int.max)), "9.2e+18")
+        XCTAssertEqual(Fmt.tokenAxisLabel(.infinity), "—")
+        XCTAssertEqual(Fmt.tokenAxisLabel(.nan), "—")
+    }
+
     func testTokenAbbreviationsPromoteToBillions() {
         XCTAssertEqual(Fmt.tokensShort(999_499_999), "999M")
         XCTAssertEqual(Fmt.tokensShort(999_500_000), "1B")
