@@ -258,8 +258,9 @@ final class AppState: ObservableObject {
             let prev = DateUtil.previousMonth(now)
             let prevUsage = try await DeepSeekAPI.fetchUsage(
                 token: token, month: prev.month, year: prev.year)
+            let days = try DeepSeekAPI.checkedUsageDays(prevUsage.days + current.days)
             return UsageResult(models: current.models,
-                               days: prevUsage.days + current.days,
+                               days: days,
                                monthCost: current.monthCost)
         } catch {
             return current

@@ -98,7 +98,7 @@ struct DeepSeekAPI {
 
     // MARK: - 用量（网页登录 token，非 API Key）
 
-    private static func getJSON<T: Decodable>(_ type: T.Type, url: String, token: String) async throws -> T {
+    private static func getData(url: String, token: String) async throws -> Data {
         var req = URLRequest(url: URL(string: url)!)
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("1.0.0", forHTTPHeaderField: "x-app-version")
@@ -118,6 +118,10 @@ struct DeepSeekAPI {
         case 429: throw APIError.rateLimited
         default: throw APIError.http(code)
         }
+        return data
+    }
+
+    private static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
         do {
             return try JSONDecoder().decode(T.self, from: data)
         } catch {
@@ -129,7 +133,8 @@ struct DeepSeekAPI {
     static func verifyUsageToken(_ token: String, month: Int, year: Int) async -> Bool {
         let url = "https://platform.deepseek.com/api/v0/usage/amount?month=\(month)&year=\(year)"
         do {
-            _ = try await getJSON(AmountResp.self, url: url, token: token)
+            let data = try await getData(url: url, token: token)
+            _ = try decode(AmountResp.self, from: data)
             return true
         } catch {
             return false
@@ -140,27 +145,62 @@ struct DeepSeekAPI {
     // DeepSeek 口径 prompt_token = cache_hit + cache_miss（输入侧的两种细分）。
     // 三类若同时返回，不能各自累加进 total——否则输入侧翻倍。这里输入侧只取
     // 一次：有 hit/miss 细分就用其和，没有才退回 prompt_token；输出侧单独加。
-    private static func tokenBreakdown(_ usage: [UsageEntry]) -> (Int, Int, Int, Int, Int) {
+    private static func tokenBreakdown(_ usage: [UsageEntry]) throws -> (Int, Int, Int, Int, Int) {
         var request = 0, hit = 0, miss = 0, response = 0, prompt = 0
-        for e in usage {
-            let v = Int((Double(e.amount) ?? 0).rounded())
-            switch e.type {
-            case "REQUEST": request = v
-            case "PROMPT_CACHE_HIT_TOKEN": hit = v
-            case "PROMPT_CACHE_MISS_TOKEN": miss = v
-            case "RESPONSE_TOKEN": response = v
-            case "PROMPT_TOKEN": prompt = v
+        for entry in usage {
+            switch entry.type {
+            case "REQUEST": request = try parseCount(entry.amount)
+            case "PROMPT_CACHE_HIT_TOKEN": hit = try parseCount(entry.amount)
+            case "PROMPT_CACHE_MISS_TOKEN": miss = try parseCount(entry.amount)
+            case "RESPONSE_TOKEN": response = try parseCount(entry.amount)
+            case "PROMPT_TOKEN": prompt = try parseCount(entry.amount)
             default: break
             }
         }
-        let inputSide = (hit + miss) > 0 ? hit + miss : prompt
-        return (inputSide + response, request, hit, miss, response)
+        let splitInput = try addCounts(hit, miss)
+        let inputSide = splitInput > 0 ? splitInput : prompt
+        return (try addCounts(inputSide, response), request, hit, miss, response)
     }
 
-    private static func costSum(_ usage: [UsageEntry]) -> Double {
-        usage.filter { $0.type != "REQUEST" }
-            .compactMap { Double($0.amount) }
-            .reduce(0, +)
+    private static func parseCount(_ raw: String) throws -> Int {
+        if let count = Int(raw), count >= 0 { return count }
+        guard let value = Double(raw), value >= 0,
+              let count = Int(exactly: value.rounded()) else {
+            throw APIError.decode("DeepSeek 用量计数无效")
+        }
+        return count
+    }
+
+    private static func addCounts(_ a: Int, _ b: Int) throws -> Int {
+        let (total, overflow) = a.addingReportingOverflow(b)
+        guard !overflow else { throw APIError.decode("DeepSeek 用量合计超出范围") }
+        return total
+    }
+
+    static func checkedUsageDays(_ days: [UsageDay]) throws -> [UsageDay] {
+        // Cache charts and CSV sum subsets of these nonnegative daily totals.
+        _ = try days.reduce(0) { try addCounts($0, $1.totalTokens) }
+        return days
+    }
+
+    private static func addCosts(_ a: Double, _ b: Double) throws -> Double {
+        let total = a + b
+        guard total.isFinite else { throw APIError.decode("DeepSeek 金额超出范围") }
+        return total
+    }
+
+    private static func costSum(_ usage: [UsageEntry]) throws -> Double {
+        try usage.reduce(0) { total, entry in
+            guard entry.type != "REQUEST" else { return total }
+            guard let cost = Double(entry.amount), cost.isFinite else {
+                throw APIError.decode("DeepSeek 金额无效")
+            }
+            return try addCosts(total, cost)
+        }
+    }
+
+    private static func costSum(_ models: [ModelUsage]) throws -> Double {
+        try models.reduce(0) { try addCosts($0, costSum($1.usage)) }
     }
 
     static func fetchUsage(token: String, month: Int, year: Int) async throws -> UsageResult {
@@ -168,13 +208,23 @@ struct DeepSeekAPI {
         let amountURL = "https://platform.deepseek.com/api/v0/usage/amount?month=\(month)&year=\(year)"
         let costURL = "https://platform.deepseek.com/api/v0/usage/cost?month=\(month)&year=\(year)"
 
-        let amount = try await getJSON(AmountResp.self, url: amountURL, token: token)
-        let cost = try await getJSON(CostResp.self, url: costURL, token: token)
+        let amountData = try await getData(url: amountURL, token: token)
+        let amount = try decode(AmountResp.self, from: amountData)
+        let costData = try await getData(url: costURL, token: token)
+        let cost = try decode(CostResp.self, from: costData)
+        return try buildUsage(amount: amount, cost: cost)
+    }
 
+    static func parseUsage(amount amountData: Data, cost costData: Data) throws -> UsageResult {
+        try buildUsage(amount: decode(AmountResp.self, from: amountData),
+                       cost: decode(CostResp.self, from: costData))
+    }
+
+    private static func buildUsage(amount: AmountResp, cost: CostResp) throws -> UsageResult {
         let costTotal = cost.data.biz_data.first
-        func costForModel(_ model: String) -> Double {
+        func costForModel(_ model: String) throws -> Double {
             guard let m = costTotal?.total.first(where: { $0.model == model }) else { return 0 }
-            return costSum(m.usage)
+            return try costSum(m.usage)
         }
 
         var models: [UsageModelSummary] = []
@@ -186,17 +236,17 @@ struct DeepSeekAPI {
             default: label = nil
             }
             guard let (key, name) = label else { continue }
-            let (total, request, hit, miss, response) = tokenBreakdown(mu.usage)
+            let (total, request, hit, miss, response) = try tokenBreakdown(mu.usage)
             models.append(UsageModelSummary(
                 key: key, name: name, totalTokens: total, requestCount: request,
                 cacheHitTokens: hit, cacheMissTokens: miss, responseTokens: response,
-                cost: costForModel(mu.model)))
+                cost: try costForModel(mu.model)))
         }
 
         var costByDate: [String: Double] = [:]
         if let item = costTotal {
             for day in item.days {
-                costByDate[day.date] = day.data.map { costSum($0.usage) }.reduce(0, +)
+                costByDate[day.date] = try costSum(day.data)
             }
         }
 
@@ -206,8 +256,9 @@ struct DeepSeekAPI {
             var pro = 0, pHit = 0, pMiss = 0, pResp = 0
             var total = 0
             for mu in day.data {
-                let (tokens, _, hit, miss, response) = tokenBreakdown(mu.usage)
-                total += tokens
+                let (tokens, _, hit, miss, response) = try tokenBreakdown(mu.usage)
+                total = try addCounts(total, tokens)
+                // Per-model components are nonnegative subsets of the checked day total.
                 switch mu.model {
                 case "deepseek-v4-flash": flash += tokens; fHit += hit; fMiss += miss; fResp += response
                 case "deepseek-v4-pro": pro += tokens; pHit += hit; pMiss += miss; pResp += response
@@ -220,7 +271,7 @@ struct DeepSeekAPI {
                 proResponse: pResp, totalTokens: total, totalCost: costByDate[day.date] ?? 0))
         }
 
-        let monthCost = costTotal.map { $0.total.map { costSum($0.usage) }.reduce(0, +) } ?? 0
-        return UsageResult(models: models, days: days, monthCost: monthCost)
+        let monthCost = try costTotal.map { try costSum($0.total) } ?? 0
+        return UsageResult(models: models, days: try checkedUsageDays(days), monthCost: monthCost)
     }
 }

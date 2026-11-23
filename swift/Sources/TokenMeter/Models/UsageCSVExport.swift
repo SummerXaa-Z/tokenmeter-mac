@@ -204,12 +204,10 @@ enum UsageCSVExport {
         _ sorted: [HistoryStore.DayPoint], apiValueByDate: [String: Double]
     ) -> [String] {
         var bySource = [HistorySource: Int]()
-        var cost = 0.0
         for day in sorted {
-            for (source, tokens) in day.bySource {
+            for (source, tokens) in day.bySource where source != .deepseek {
                 bySource[source, default: 0] += tokens
             }
-            cost += day.cost
         }
         let codingTotal = HistorySource.codingAgents.reduce(0) {
             $0 + (bySource[$1] ?? 0)
@@ -220,8 +218,8 @@ enum UsageCSVExport {
             + codingColumns.map { String(bySource[$0.source] ?? 0) }
             + [
                 String(codingTotal),
-                String(bySource[.deepseek] ?? 0),
-                String(format: "%.2f", cost),
+                DeepSeekHistoryTotals.tokens(sorted).map { String($0) } ?? "",
+                DeepSeekHistoryTotals.cost(sorted.map(\.cost)).map { String(format: "%.2f", $0) } ?? "",
                 apiValues.isEmpty ? "" : String(format: "%.2f", apiTotal),
             ]
     }

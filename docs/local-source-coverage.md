@@ -29,6 +29,8 @@ Qwen Code 0.x 缺少摘要时，可结束终端会话后刷新；Web Shell 实�
 | 智谱 / GLM | 所选 `open.bigmodel.cn` 或 `api.z.ai` | 设置中启用并配置 Key；两个平台的域名与账户需匹配 |
 | 方舟额度 | 本机 `arkcli` 的套餐查询 | 需要相应工具和登录状态；不是本地会话 Token 解析器 |
 
+DeepSeek 数值无效或合计超出范围时，用量刷新报错并保留上次成功数据，不将异常值当作零。
+
 查询实现见 `DeepSeekAPI`、`CursorUsage`、`CodexUsage` 与对应 `*QuotaService`。启用账户查询前应理解会使用哪个账户；TokenMeter 的示例验证不会访问这些真实服务。
 
 ## 共同限制

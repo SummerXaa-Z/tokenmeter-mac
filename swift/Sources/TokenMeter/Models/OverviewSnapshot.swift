@@ -48,7 +48,7 @@ struct OverviewSnapshot: Equatable {
     // 悬停说明行的金额数据，同价格口径、不随图例隐藏(视图端按可见来源取)
     let apiValueByTrendBucket: [String: [HistorySource: Double]]
     let hourlyUnattributedSources: [HistorySource]
-    let deepSeekPlatformTokens: Int
+    let deepSeekPlatformTokens: Int?
     let deepSeekPlatformCost: Double?
     let deepSeekPlatformHistoryStartDate: String?
     let deepSeekPlatformAvailableHistoryDays: Int
@@ -94,27 +94,22 @@ struct OverviewSnapshot: Equatable {
 
         // DeepSeek 是平台/API 账户，不是 Coding Agent 工具。它的消费在
         // 独立平台卡展示，不参与下面任何 Coding 合计、画像或排行。
-        let recordedPlatformTokens = history.reduce(0) {
-            $0 + ($1.bySource[.deepseek] ?? 0)
-        }
-        let recordedPlatformCost = history.reduce(0.0) {
-            $0 + $1.cost(for: .deepseek)
-        }
         if range == .day, let deepSeek {
             let liveDay = deepSeek.days.first { $0.date == todayKey }
             deepSeekPlatformTokens = liveDay?.totalTokens ?? 0
             let liveCost = liveDay?.totalCost ?? 0
             deepSeekPlatformCost = liveCost > 0 ? liveCost : nil
         } else {
-            deepSeekPlatformTokens = recordedPlatformTokens
-            deepSeekPlatformCost = recordedPlatformCost > 0 ? recordedPlatformCost : nil
+            deepSeekPlatformTokens = DeepSeekHistoryTotals.tokens(history)
+            deepSeekPlatformCost = DeepSeekHistoryTotals.cost(history.map { $0.cost(for: .deepseek) })
+                .flatMap { $0 > 0 ? $0 : nil }
         }
         if let startIndex = streakHistory.firstIndex(where: {
             ($0.bySource[.deepseek] ?? 0) > 0 || $0.cost(for: .deepseek) > 0
         }) {
             deepSeekPlatformHistoryStartDate = streakHistory[startIndex].date
             deepSeekPlatformAvailableHistoryDays = streakHistory.count - startIndex
-        } else if deepSeekPlatformTokens > 0 || deepSeekPlatformCost != nil {
+        } else if (deepSeekPlatformTokens ?? 0) > 0 || deepSeekPlatformCost != nil {
             deepSeekPlatformHistoryStartDate = todayKey
             deepSeekPlatformAvailableHistoryDays = 1
         } else {

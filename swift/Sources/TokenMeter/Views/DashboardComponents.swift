@@ -114,8 +114,8 @@ struct UsageRow: View {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text(data.map { Fmt.money($0.cost) } ?? "—")
                             .font(.system(size: 14, weight: .bold))
-                        if let d = data, d.cost > 0 {
-                            Text("\(Fmt.tokensShort(Int(Double(d.totalTokens) / d.cost))) T/¥")
+                        if let tokensPerYuan = data?.tokensPerYuan {
+                            Text("\(Fmt.tokensShort(tokensPerYuan)) T/¥")
                                 .font(.system(size: 11)).foregroundStyle(.secondary)
                         }
                     }

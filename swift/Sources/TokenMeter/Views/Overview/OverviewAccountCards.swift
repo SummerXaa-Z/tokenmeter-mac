@@ -31,7 +31,7 @@ struct SubscriptionQuotaSourceStatus: Identifiable {
 // 平台消费与本地 Agent session 用量在视觉和计算上都不会混在一起。
 struct OverviewDeepSeekPlatformCard: View {
     let range: UsageHistoryRange
-    let tokens: Int
+    let tokens: Int?
     let cost: Double?
     let balance: Balance?
     let balanceState: LoadState
@@ -61,7 +61,7 @@ struct OverviewDeepSeekPlatformCard: View {
                     }
 
                     HStack(spacing: 0) {
-                        metric(Fmt.tokensShort(tokens), "\(range.scopeTitle) API Token")
+                        metric(tokens.map { Fmt.tokensShort($0) } ?? "—", "\(range.scopeTitle) API Token")
                         metric(cost.map { Fmt.money($0) } ?? "—", "平台实际费用")
                         metric(balanceText, "当前余额")
                     }
