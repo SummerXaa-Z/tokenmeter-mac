@@ -30,6 +30,45 @@ final class ModelDetailUITests: XCTestCase {
     }
 }
 
+final class QwenSourceHealthUITests: XCTestCase {
+    func testMissingQwenSummaryShowsScopedHelpWhenReturningToTools() {
+#if DEBUG
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-smoke-window", "--ui-smoke-scenario=qwen-missing"]
+        app.launch()
+        defer { app.terminate() }
+
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 10))
+        let scroll = window.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 5))
+        let hint = window.staticTexts["若使用 Qwen Code 0.x，请结束终端会话后刷新。"]
+        func revealHint() -> Bool {
+            for _ in 0..<3 {
+                if hint.waitForExistence(timeout: 1) && hint.isHittable { return true }
+                scroll.scroll(byDeltaX: 0, deltaY: -210)
+            }
+            return hint.exists && hint.isHittable
+        }
+        XCTAssertTrue(revealHint(), app.debugDescription)
+        let sections = window.descendants(matching: .any)
+        let dataSources = sections["TokenMeter.Settings.Section.数据来源"]
+        let tools = sections["TokenMeter.Settings.Section.工具与维护"]
+        XCTAssertTrue(dataSources.isHittable, app.debugDescription)
+        dataSources.click()
+        let hidden = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: hint)
+        XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 5), .completed)
+        XCTAssertTrue(tools.isHittable, app.debugDescription)
+        tools.click()
+        XCTAssertTrue(revealHint(), app.debugDescription)
+#else
+        XCTFail("UI interaction validation requires a Debug build")
+#endif
+    }
+}
+
 final class StatusPopoverUITests: XCTestCase {
     func testRealStatusItemOpensClosesAndReopensPopover() {
 #if DEBUG

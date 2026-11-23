@@ -69,6 +69,9 @@ struct QwenCodeUsageResult: Equatable {
 enum QwenCodeUsageError: LocalizedError, Equatable {
     case dataUnavailable
     case scanFailed
+    case invalidSummary
+
+    static let missingSummaryHint = "若使用 Qwen Code 0.x，请结束终端会话后刷新。"
 
     var errorDescription: String? {
         switch self {
@@ -76,6 +79,8 @@ enum QwenCodeUsageError: LocalizedError, Equatable {
             return "未找到 Qwen Code 本地用量记录"
         case .scanFailed:
             return "Qwen Code 本地用量读取失败"
+        case .invalidSummary:
+            return "Qwen Code 找不到可识别的用量摘要记录"
         }
     }
 }
@@ -216,16 +221,15 @@ enum QwenCodeUsage {
     // models 缺失或 null 是损坏记录，显式空字典仍是合法的零用量。
     // 时间窗口仍在去重后筛选，避免复活同会话较早的记录。支持非换行 EOF 尾行。
     private static func scan(_ file: URL) throws -> [String: SessionRecord] {
-        guard FileManager.default.isReadableFile(atPath: file.path) else {
+        let resolvedFile = file.resolvingSymlinksInPath()
+        let values = try resolvedFile.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        guard values.isRegularFile == true else {
             throw QwenCodeUsageError.scanFailed
         }
-        let handle = try FileHandle(forReadingFrom: file)
+        let handle = try FileHandle(forReadingFrom: resolvedFile)
         defer { try? handle.close() }
 
-        let size = UInt64(max(
-            (try file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0,
-            0
-        ))
+        let size = UInt64(max(values.fileSize ?? 0, 0))
         let startOffset = size > maximumScanBytes ? size - maximumScanBytes : 0
         if startOffset > 0 { try handle.seek(toOffset: startOffset) }
 
@@ -235,11 +239,12 @@ enum QwenCodeUsage {
         var records: [String: SessionRecord] = [:]
         var droppingFirstPartialLine = startOffset > 0
         var droppingOversizedLine = false
+        var hasUnusableRecord = startOffset > 0
         var reachedEnd = false
 
         func consume(_ data: Data) {
-            guard !data.isEmpty,
-                  data.count <= maximumLineBytes,
+            guard data.contains(where: { $0 != 0x20 && $0 != 0x09 && $0 != 0x0D }) else { return }
+            guard data.count <= maximumLineBytes,
                   let record = try? decoder.decode(SessionRecord.self, from: data),
                   record.version == 1,
                   let milliseconds = record.timestamp,
@@ -247,7 +252,10 @@ enum QwenCodeUsage {
                   milliseconds > 0,
                   let sessionID = record.sessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !sessionID.isEmpty
-            else { return }
+            else {
+                hasUnusableRecord = true
+                return
+            }
             records[sessionID] = record
         }
 
@@ -273,6 +281,7 @@ enum QwenCodeUsage {
                     let remainder = data[lineStart...]
                     if droppingFirstPartialLine || droppingOversizedLine || remainder.count > maximumLineBytes {
                         droppingOversizedLine = droppingOversizedLine || remainder.count > maximumLineBytes
+                        if droppingOversizedLine { hasUnusableRecord = true }
                         carry.removeAll(keepingCapacity: false)
                     } else {
                         carry = Data(remainder)
@@ -290,6 +299,7 @@ enum QwenCodeUsage {
                 lineStart = data.index(after: end)
             }
         }
+        if records.isEmpty && hasUnusableRecord { throw QwenCodeUsageError.invalidSummary }
         return records
     }
 

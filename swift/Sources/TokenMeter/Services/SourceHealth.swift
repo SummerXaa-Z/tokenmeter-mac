@@ -14,6 +14,10 @@ enum SourceHealth {
         let attempt: CollectAttemptLog.Attempt?
 
         var id: String { source.rawValue }
+
+        var missingSummaryHint: String? {
+            source == .qwen && enabled && !pathExists ? QwenCodeUsageError.missingSummaryHint : nil
+        }
     }
 
     struct Snapshot {

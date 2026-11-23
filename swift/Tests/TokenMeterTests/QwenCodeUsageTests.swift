@@ -176,20 +176,96 @@ final class QwenCodeUsageTests: XCTestCase {
         }
     }
 
-    func testMissingOrNullModelsDoesNotCreateSession() throws {
+    func testMissingOrNullModelsAloneDoesNotConfirmEmptyUsage() throws {
         for modelsField in ["", #","models":null"#] {
             let line = #"{"version":1,"sessionId":"incomplete","timestamp":1786525200000"# +
                 modelsField + "}"
             let fixture = try makeFixture(lines: [line])
             defer { try? FileManager.default.removeItem(at: fixture.deletingLastPathComponent()) }
-            let result = try QwenCodeUsage.load(
-                usageRecordURL: fixture, now: date("2026-08-12T12:00:00Z"), calendar: utcCalendar())
-
-            XCTAssertEqual(result.weekTotal, 0)
-            XCTAssertEqual(result.weekSessions, 0)
-            XCTAssertTrue(result.daySessions.isEmpty)
-            XCTAssertTrue(result.dayModels.isEmpty)
+            XCTAssertThrowsError(try QwenCodeUsage.load(usageRecordURL: fixture)) { error in
+                XCTAssertEqual(error as? QwenCodeUsageError, .invalidSummary)
+            }
         }
+    }
+
+    func testBlankSummaryConfirmsNoUsage() throws {
+        let fixture = try makeFixture(lines: ["", " \t\r", ""], finalNewline: false)
+        defer { try? FileManager.default.removeItem(at: fixture.deletingLastPathComponent()) }
+
+        let result = try QwenCodeUsage.load(usageRecordURL: fixture)
+        XCTAssertEqual(result.weekTotal, 0)
+        XCTAssertEqual(result.weekSessions, 0)
+        XCTAssertTrue(result.daySessions.isEmpty)
+        XCTAssertTrue(result.dayModels.isEmpty)
+    }
+
+    func testUnreadableSummaryIsNotAConfirmedEmptyFile() throws {
+        let fixture = try makeFixture(lines: [])
+        let directory = fixture.deletingLastPathComponent()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        XCTAssertThrowsError(try QwenCodeUsage.load(usageRecordURL: directory)) { error in
+            XCTAssertEqual(error as? QwenCodeUsageError, .scanFailed)
+        }
+    }
+
+    func testOversizedIncompleteSummaryDoesNotConfirmEmptyUsage() throws {
+        let fixture = try makeFixture(lines: [String(repeating: "{", count: 4 * 1024 * 1024 + 1)],
+                                      finalNewline: false)
+        defer { try? FileManager.default.removeItem(at: fixture.deletingLastPathComponent()) }
+
+        XCTAssertThrowsError(try QwenCodeUsage.load(usageRecordURL: fixture)) { error in
+            XCTAssertEqual(error as? QwenCodeUsageError, .invalidSummary)
+        }
+    }
+
+    @MainActor
+    func testMalformedRefreshKeepsLastGoodThenValidEmptyClearsFailure() async throws {
+        guard RuntimeEnvironment.isIsolated else { throw XCTSkip("Requires isolated test host") }
+        let now = Date()
+        let calendar = Calendar.current
+        let timestamp = Int64(calendar.startOfDay(for: now).timeIntervalSince1970 * 1_000)
+        let fixture = try makeFixture(lines: [
+            record(sessionID: "session", timestamp: timestamp,
+                   models: ["qwen": model(requests: 1, input: 30, output: 4)]),
+        ])
+        defer { try? FileManager.default.removeItem(at: fixture.deletingLastPathComponent()) }
+        let state = AppState()
+        state.setQwenEnabled(true)
+        let load: @Sendable () throws -> QwenCodeUsageResult = {
+            try QwenCodeUsage.load(usageRecordURL: fixture, now: now, windowDays: 1, calendar: calendar)
+        }
+        await state.refreshQwen(force: true, load: load)
+        XCTAssertEqual(state.qwen.result?.weekTotal, 34)
+        XCTAssertNil(state.qwen.error)
+        let lastGood = try XCTUnwrap(state.qwen.result)
+        let history = HistoryStore.all()
+        let modelHistory = ModelUsageHistoryStore.shared.all()
+        let day = try XCTUnwrap(lastGood.today?.date)
+        XCTAssertEqual(history.first { $0.date == day }?.bySource[.qwen], 34)
+        XCTAssertEqual(modelHistory.first { $0.date == day }?.bySource[.qwen]?.models["qwen"]?.total, 34)
+        let revision = state.historyRevision
+
+        try Data("{malformed".utf8).write(to: fixture)
+        await state.refreshQwen(force: true, load: load)
+        XCTAssertEqual(state.qwen.result, lastGood)
+        XCTAssertEqual(state.qwen.error, QwenCodeUsageError.invalidSummary.errorDescription)
+        XCTAssertEqual(HistoryStore.all(), history)
+        XCTAssertEqual(ModelUsageHistoryStore.shared.all(), modelHistory)
+        XCTAssertEqual(state.historyRevision, revision)
+        XCTAssertTrue(SourceCollectionPresentation(hasResult: state.qwen.result != nil,
+            loading: state.qwen.loading, error: state.qwen.error).showingLastGood)
+
+        try FileManager.default.removeItem(at: fixture)
+        await state.refreshQwen(force: true, load: load)
+        XCTAssertEqual(state.qwen.result, lastGood)
+        XCTAssertEqual(state.qwen.error, QwenCodeUsageError.dataUnavailable.errorDescription)
+        XCTAssertEqual(state.historyRevision, revision)
+
+        try Data().write(to: fixture)
+        await state.refreshQwen(force: true, load: load)
+        XCTAssertEqual(state.qwen.result?.weekTotal, 0)
+        XCTAssertNil(state.qwen.error)
     }
 
     func testLastValidEmptyRecordStillReplacesEarlierUsage() throws {

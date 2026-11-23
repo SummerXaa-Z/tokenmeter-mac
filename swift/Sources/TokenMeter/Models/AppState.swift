@@ -1090,7 +1090,14 @@ final class AppState: ObservableObject {
 
     func loadQwen(force: Bool = false) async {
         guard !RuntimeEnvironment.isIsolated else { return }
-        guard qwenEnabled, QwenCodeUsage.isAvailable else { return }
+        guard qwenEnabled, QwenCodeUsage.isAvailable || qwen.result != nil else { return }
+        await refreshQwen(force: force, load: { try QwenCodeUsage.load() })
+    }
+
+    func refreshQwen(
+        force: Bool = false, load: @escaping @Sendable () throws -> QwenCodeUsageResult
+    ) async {
+        guard qwenEnabled else { return }
         if !force, !qwenRefresh.isRefreshing, isFresh(qwen.loadedAt) { return }
         guard qwenRefresh.request(force: force) else {
             await qwenRefreshCompletion.wait()
@@ -1103,12 +1110,12 @@ final class AppState: ObservableObject {
         }
 
         while true {
-            qwen.proc = ProcessStatus.qwen()
+            if !RuntimeEnvironment.isIsolated { qwen.proc = ProcessStatus.qwen() }
             let collectStarted = Date()
             let requestRevision = localCollectionRevision(for: .qwen)
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
-                    try QwenCodeUsage.load()
+                    try load()
                 }.value
                 acceptQwenCollection(result, requestRevision: requestRevision)
                 CollectAttemptLog.record(.init(
@@ -1126,7 +1133,7 @@ final class AppState: ObservableObject {
 
             await flushHistoryWrites()
             guard qwenRefresh.finish() else { break }
-            guard qwenEnabled, QwenCodeUsage.isAvailable else {
+            guard qwenEnabled else {
                 qwenRefresh.cancel()
                 break
             }
