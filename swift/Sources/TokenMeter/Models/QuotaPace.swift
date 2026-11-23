@@ -178,9 +178,10 @@ enum BalanceRunway {
         guard let firstRecorded = complete.firstIndex(where: { $0.cost(for: .deepseek) > 0 })
         else { return nil }
         let window = complete[firstRecorded...].suffix(7)
-        let total = window.reduce(0) { $0 + max($1.cost(for: .deepseek), 0) }
-        guard total > 0 else { return nil }
+        guard let total = DeepSeekHistoryTotals.cost(window.map { max($0.cost(for: .deepseek), 0) }),
+              total > 0 else { return nil }
         let average = total / Double(window.count)
+        guard average > 0 else { return nil }
         return Estimate(dailyAverage: average, days: balance / average, sampleDays: window.count)
     }
 

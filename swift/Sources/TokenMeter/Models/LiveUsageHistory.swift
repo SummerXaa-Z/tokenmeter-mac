@@ -83,7 +83,7 @@ struct LiveUsageHistory: Equatable {
         }
         // Keep zero days between observations; do not extend ALL to parser padding
         // before the first actual record.
-        let first = points.values.filter { $0.total > 0 || $0.cost > 0 }.map(\.date).min()
+        let first = points.values.filter { $0.bySource.values.contains { $0 > 0 } || $0.cost > 0 }.map(\.date).min()
             ?? persistedDaily.filter { valid($0.date, through: todayKey) }.map(\.date).min()
         if let first, let start = DateUtil.date(from: first), let end = DateUtil.date(from: todayKey) {
             let count = max(0, Calendar.current.dateComponents([.day], from: start, to: end).day ?? 0)

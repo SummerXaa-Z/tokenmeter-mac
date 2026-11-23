@@ -242,3 +242,113 @@ final class UsageWindowTests: XCTestCase {
         return try XCTUnwrap(formatter.date(from: value))
     }
 }
+
+final class DeepSeekUsageAmountTests: XCTestCase {
+    func testOrdinaryAmountsKeepRoundingCacheBreakdownAndCosts() throws {
+        let flash = model("deepseek-v4-flash", [
+            ("REQUEST", "2"), ("PROMPT_TOKEN", "24"),
+            ("PROMPT_CACHE_HIT_TOKEN", "10.5"), ("PROMPT_CACHE_MISS_TOKEN", "13"),
+            ("RESPONSE_TOKEN", "4"),
+        ])
+        let pro = model("deepseek-v4-pro", [("PROMPT_TOKEN", "50"), ("RESPONSE_TOKEN", "8")])
+        let costRows = [
+            model("deepseek-v4-flash", [("REQUEST", "2"), ("INPUT", "0.70"), ("OUTPUT", "0.30")]),
+            model("deepseek-v4-pro", [("INPUT", "0.60"), ("ADJUSTMENT", "-0.10")]),
+        ]
+        let result = try parse(total: [flash, pro], days: [day([flash, pro])],
+                               costs: costRows, dailyCosts: [day(costRows)])
+
+        let flashSummary = try XCTUnwrap(result.model("flash"))
+        XCTAssertEqual(flashSummary.totalTokens, 28)
+        XCTAssertEqual(flashSummary.requestCount, 2)
+        XCTAssertEqual(flashSummary.cacheHitTokens, 11)
+        XCTAssertEqual(flashSummary.cacheMissTokens, 13)
+        XCTAssertEqual(flashSummary.tokensPerYuan, 28)
+        XCTAssertEqual(result.model("pro")?.totalTokens, 58)
+        XCTAssertEqual(result.days.first?.totalTokens, 86)
+        XCTAssertEqual(result.monthCost, 1.5, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(result.days.first).totalCost, 1.5, accuracy: 0.0001)
+    }
+
+    func testInvalidCountsAndOverflowAreReadFailures() throws {
+        for invalid in ["not available", "-1", String(UInt64.max)] {
+            assertDecodeFailure(try parse(total: [model("deepseek-v4-flash", [("REQUEST", invalid)])]))
+        }
+
+        let largest = model("deepseek-v4-flash", [("PROMPT_TOKEN", String(Int.max / 2 + 1))])
+        assertDecodeFailure(try parse(days: [day([largest, largest])]))
+        assertDecodeFailure(try parse(days: [day([largest]), day([largest], date: "2026-11-22")]))
+    }
+
+    func testInvalidOrNonfiniteCostsAreReadFailures() throws {
+        let largeFinite = String(Double.greatestFiniteMagnitude)
+        assertDecodeFailure(try parse(costs: [model("deepseek-v4-flash", [("INPUT", "not available")])]))
+        assertDecodeFailure(try parse(costs: [model("deepseek-v4-flash", [("INPUT", largeFinite), ("OUTPUT", largeFinite)])]))
+        assertDecodeFailure(try parse(dailyCosts: [day([model("deepseek-v4-flash", [("INPUT", "Infinity")])])]))
+    }
+
+    func testTinyFiniteCostDoesNotPublishUnrepresentableTokensPerYuan() throws {
+        let name = "deepseek-v4-flash"
+        let result = try parse(
+            total: [model(name, [("PROMPT_TOKEN", "1")])],
+            costs: [model(name, [("INPUT", "1e-20")])]
+        )
+        let summary = try XCTUnwrap(result.model("flash"))
+        XCTAssertEqual(summary.cost, 1e-20)
+        XCTAssertNil(summary.tokensPerYuan)
+    }
+
+    func testHistoricalOverflowDoesNotReplaceTotalsWithZero() throws {
+        let count = Int.max
+        let cost = Double.greatestFiniteMagnitude
+        let history = [
+            HistoryStore.DayPoint(date: "2026-11-21", bySource: [.deepseek: count, .claude: 1],
+                                  cost: cost, costBySource: [.deepseek: cost]),
+            HistoryStore.DayPoint(date: "2026-11-22", bySource: [.deepseek: 1],
+                                  cost: cost, costBySource: [.deepseek: cost]),
+        ]
+        let snapshot = OverviewSnapshot(selection: .init(sources: [.claude]), range: .week,
+                                        history: history, streakHistory: history,
+                                        deepSeek: nil, claude: nil, codex: nil, openCode: nil,
+                                        gemini: nil, copilot: nil, cursor: nil, todayKey: "2026-11-23")
+        XCTAssertEqual(snapshot.periodTotal, 1)
+        XCTAssertNil(snapshot.deepSeekPlatformTokens)
+        XCTAssertNil(snapshot.deepSeekPlatformCost)
+        let csv = UsageCSVExport.makeCSV(history, todayKey: "2026-11-23")
+        let total = try XCTUnwrap(csv.split(separator: "\n").first { $0.hasPrefix("汇总,") })
+            .split(separator: ",", omittingEmptySubsequences: false)
+        XCTAssertEqual(Array(total.suffix(4)), ["1", "", "", ""])
+    }
+
+    private func assertDecodeFailure(
+        _ result: @autoclosure () throws -> UsageResult,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        XCTAssertThrowsError(try result(), file: file, line: line) { error in
+            guard case .some(.decode(_)) = error as? APIError else {
+                return XCTFail("Expected a DeepSeek decode failure, got \(error)", file: file, line: line)
+            }
+        }
+    }
+
+    private func model(_ name: String, _ usage: [(String, String)]) -> [String: Any] {
+        ["model": name, "usage": usage.map { ["type": $0.0, "amount": $0.1] }]
+    }
+
+    private func day(_ data: [[String: Any]], date: String = "2026-11-23") -> [String: Any] {
+        ["date": date, "data": data]
+    }
+
+    private func parse(
+        total: [[String: Any]] = [], days: [[String: Any]] = [],
+        costs: [[String: Any]] = [], dailyCosts: [[String: Any]] = []
+    ) throws -> UsageResult {
+        let amount = try JSONSerialization.data(withJSONObject: [
+            "data": ["biz_data": ["total": total, "days": days]],
+        ])
+        let cost = try JSONSerialization.data(withJSONObject: [
+            "data": ["biz_data": [["total": costs, "days": dailyCosts]]],
+        ])
+        return try DeepSeekAPI.parseUsage(amount: amount, cost: cost)
+    }
+}

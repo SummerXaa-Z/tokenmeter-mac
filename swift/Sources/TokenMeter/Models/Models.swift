@@ -49,6 +49,11 @@ struct UsageModelSummary: Equatable, Identifiable {
 
     var id: String { key }
 
+    var tokensPerYuan: Int? {
+        guard cost.isFinite, cost > 0 else { return nil }
+        return Int(exactly: (Double(totalTokens) / cost).rounded(.towardZero))
+    }
+
     var cacheHitRate: Double? {
         let denom = cacheHitTokens + cacheMissTokens
         guard denom > 0 else { return nil }
@@ -87,6 +92,27 @@ struct UsageResult: Equatable {
 
     func model(_ key: String) -> UsageModelSummary? {
         models.first { $0.key == key }
+    }
+}
+
+enum DeepSeekHistoryTotals {
+    static func tokens(_ days: [HistoryStore.DayPoint]) -> Int? {
+        var total = 0
+        for day in days {
+            let (next, overflow) = total.addingReportingOverflow(day.bySource[.deepseek] ?? 0)
+            guard !overflow else { return nil }
+            total = next
+        }
+        return total
+    }
+
+    static func cost(_ costs: [Double]) -> Double? {
+        var total = 0.0
+        for cost in costs {
+            total += cost
+            guard total.isFinite else { return nil }
+        }
+        return total
     }
 }
 
