@@ -14,7 +14,9 @@ struct QwenCodeView: View {
             VStack(spacing: 10) {
                 header
                 ScopedSourceUsageCard(source: .qwen)
-                SourceCollectionContent(cache: state.qwen, emptyMessage: "未找到 Qwen Code 本地数据") { result in
+                SourceCollectionContent(
+                    cache: state.qwen, emptyMessage: "未找到用量摘要。\(QwenCodeUsageError.missingSummaryHint)"
+                ) { result in
                     if usageRange == nil { todayCard(result) }
                     if usageRange != .day { hourlyCard(result) }
                     weekCard(result)

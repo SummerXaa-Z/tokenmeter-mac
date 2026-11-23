@@ -30,6 +30,34 @@ final class ModelDetailUITests: XCTestCase {
     }
 }
 
+final class QwenSourceHealthUITests: XCTestCase {
+    func testMissingQwenSummaryShowsScopedHelpAfterCheckingAgain() {
+#if DEBUG
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-smoke-window", "--ui-smoke-scenario=qwen-missing"]
+        app.launch()
+        defer { app.terminate() }
+
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 10))
+        let scroll = window.scrollViews.firstMatch
+        let recheck = window.buttons["再查一次"]
+        XCTAssertTrue(recheck.waitForExistence(timeout: 5), app.debugDescription)
+        for _ in 0..<3 where !recheck.isHittable {
+            scroll.scroll(byDeltaX: 0, deltaY: -210)
+        }
+        XCTAssertTrue(recheck.isHittable, app.debugDescription)
+        let hint = window.staticTexts["若使用 Qwen Code 0.x，请结束终端会话后刷新。"]
+        XCTAssertTrue(hint.exists)
+        recheck.click()
+        XCTAssertTrue(hint.waitForExistence(timeout: 5))
+#else
+        XCTFail("UI interaction validation requires a Debug build")
+#endif
+    }
+}
+
 final class StatusPopoverUITests: XCTestCase {
     func testRealStatusItemOpensClosesAndReopensPopover() {
 #if DEBUG

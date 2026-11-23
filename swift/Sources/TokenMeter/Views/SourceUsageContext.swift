@@ -54,8 +54,8 @@ struct ScopedSourceUsageCard: View {
             let status = state.usageCollectionStatus(
                 provider: SourceCatalog.provider(for: source), range: range,
                 todayKnown: data.confirmedTodaySources.contains(source))
-            let unknown = OverviewSourceCollectionStatus.totalIsUnknown(
-                data.periodTotal, statuses: [status])
+            let unknown = (source == .qwen && status.phase == .unavailable && data.periodTotal == 0)
+                || OverviewSourceCollectionStatus.totalIsUnknown(data.periodTotal, statuses: [status])
             Card {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("\(range.scopeTitle)用量", systemImage: "calendar")

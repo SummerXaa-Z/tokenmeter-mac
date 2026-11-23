@@ -14,6 +14,8 @@ enum DebugUIRenderHarness {
         switch scenario {
         case "model-empty":
             return AnyView(modelEmptyRangeFixture().environmentObject(reader))
+        case "qwen-missing":
+            return AnyView(SettingsView(onBack: {}, initialSection: .tools).environmentObject(reader))
         case "roi":
             return AnyView(roiSelectionFixture().environmentObject(reader))
         case "eight-sources":

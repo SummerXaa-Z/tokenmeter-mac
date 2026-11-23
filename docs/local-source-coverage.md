@@ -12,9 +12,11 @@
 | OpenCode | `~/.local/share/opencode/opencode.db` | 只读 SQLite，包含 WAL 中可见提交；统计 assistant 消息 Token |
 | Gemini CLI | `~/.gemini/tmp/<project>/chats/` | 支持 JSONL 与旧 JSON 会话格式；旧 JSON 超过 32 MB 或整文件损坏会报错并保留已有快照，不作为确认零消费 |
 | GitHub Copilot CLI | `~/.copilot/session-state/<session>/events.jsonl` | 以 session.shutdown 完结指标为准，处理 rewind 分支；进行中或没有完结指标的会话不等于零消费 |
-| Qwen Code | `~/.qwen/usage_record.jsonl` | 使用会话最终累计值、按结束时间归日与小时；同一会话仅由版本受支持、时间戳有效且包含 models 字典的后续记录覆盖，坏记录（包括 models 缺失或 null）不抹掉此前有效用量，显式空字典仍表示零用量；不扫描原始对话、不推断缓存创建量 |
+| Qwen Code | `~/.qwen/usage_record.jsonl` | 使用会话最终累计值、按结束时间归日与小时；只有完整有效记录可覆盖同一会话的旧记录。文件为空可确认无用量，只有无法识别的记录则保留上次成功数据。不扫描原始对话、不推断缓存创建量 |
 
 注册入口是 [`LocalUsageCollectorRegistry.swift`](../swift/Sources/TokenMeter/Services/LocalUsageCollectorRegistry.swift)，具体解析器位于同级 `Services/`。本地记录只用于聚合统计；用户可按来源控制监控。
+
+Qwen Code 0.x 缺少摘要时，可结束终端会话后刷新；Web Shell 实时统计不一定已写入摘要。1.0 预览版是否生成可读摘要尚未验证。
 
 ## 账户与额度查询
 

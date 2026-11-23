@@ -46,6 +46,18 @@ final class SourceHealthTests: XCTestCase {
         XCTAssertNil(SourceHealth.latestWrite(roots: []))
     }
 
+    func testQwenSummaryHintIsOnlyForEnabledMissingSource() {
+        func hint(source: HistorySource = .qwen, enabled: Bool, exists: Bool) -> String? {
+            SourceHealth.Entry(source: source, enabled: enabled, pathExists: exists,
+                               lastWrite: nil, displayPath: "示例数据", attempt: nil).missingSummaryHint
+        }
+        XCTAssertEqual(hint(enabled: true, exists: false),
+                       "若使用 Qwen Code 0.x，请结束终端会话后刷新。")
+        XCTAssertNil(hint(enabled: false, exists: false))
+        XCTAssertNil(hint(enabled: true, exists: true))
+        XCTAssertNil(hint(source: .codex, enabled: true, exists: false))
+    }
+
     func testLatestWriteZeroBudgetReturnsNil() throws {
         let base = Date(timeIntervalSince1970: 1_750_000_000)
         try makeFile("one.jsonl", modified: base)

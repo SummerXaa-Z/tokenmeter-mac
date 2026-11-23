@@ -162,6 +162,12 @@ struct SettingsMaintenanceSection: View {
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+            if let hint = entry.missingSummaryHint {
+                Text(hint)
+                    .font(Theme.footnoteFont)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let attempt = entry.attempt {
                 let relative = SourceHealth.lastWriteText(attempt.finishedAt, now: now) ?? ""
                 if attempt.succeeded {
