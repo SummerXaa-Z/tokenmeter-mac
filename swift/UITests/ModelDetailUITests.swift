@@ -31,7 +31,7 @@ final class ModelDetailUITests: XCTestCase {
 }
 
 final class QwenSourceHealthUITests: XCTestCase {
-    func testMissingQwenSummaryShowsScopedHelpAfterCheckingAgain() {
+    func testMissingQwenSummaryShowsScopedHelpWhenReturningToTools() {
 #if DEBUG
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -42,16 +42,22 @@ final class QwenSourceHealthUITests: XCTestCase {
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 10))
         let scroll = window.scrollViews.firstMatch
-        let recheck = window.buttons["再查一次"]
-        XCTAssertTrue(recheck.waitForExistence(timeout: 5), app.debugDescription)
-        for _ in 0..<3 where !recheck.isHittable {
-            scroll.scroll(byDeltaX: 0, deltaY: -210)
-        }
-        XCTAssertTrue(recheck.isHittable, app.debugDescription)
+        XCTAssertTrue(scroll.waitForExistence(timeout: 5))
         let hint = window.staticTexts["若使用 Qwen Code 0.x，请结束终端会话后刷新。"]
-        XCTAssertTrue(hint.exists)
-        recheck.click()
-        XCTAssertTrue(hint.waitForExistence(timeout: 5))
+        func revealHint() -> Bool {
+            for _ in 0..<3 {
+                if hint.waitForExistence(timeout: 1) && hint.isHittable { return true }
+                scroll.scroll(byDeltaX: 0, deltaY: -210)
+            }
+            return hint.exists && hint.isHittable
+        }
+        XCTAssertTrue(revealHint(), app.debugDescription)
+        window.buttons["数据来源"].click()
+        let hidden = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: hint)
+        XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 5), .completed)
+        window.buttons["工具与维护"].click()
+        XCTAssertTrue(revealHint(), app.debugDescription)
 #else
         XCTFail("UI interaction validation requires a Debug build")
 #endif

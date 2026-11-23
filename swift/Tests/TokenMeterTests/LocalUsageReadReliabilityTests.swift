@@ -207,7 +207,7 @@ final class LocalUsageReadReliabilityTests: XCTestCase {
         }
     }
 
-    func testAdditionalSourcesKeepEmptyJournalsButRejectMalformedLegacyGeminiJSON() throws {
+    func testAdditionalSourcesDistinguishEmptyAndMalformedInputs() throws {
         let now = try fixedDate("2026-08-06T12:00:00.000Z")
         for source in SyntheticSource.allCases {
             let directory = try makeTemporaryDirectory()
@@ -230,6 +230,10 @@ final class LocalUsageReadReliabilityTests: XCTestCase {
                 try write("{\"sessionId\":\"synthetic-empty\",\"messages\":[]}",
                           to: fixture.file, modificationDate: now)
                 XCTAssertEqual(try fixture.load(), 0, "A valid empty messages array is confirmed zero")
+            } else if source == .qwen {
+                XCTAssertThrowsError(try fixture.load(), "A Qwen summary with no recognizable record is not confirmed zero") {
+                    XCTAssertEqual($0 as? QwenCodeUsageError, .invalidSummary)
+                }
             } else {
                 XCTAssertEqual(try fixture.load(), 0, "Malformed/partial line journals retain the original tolerance")
             }
