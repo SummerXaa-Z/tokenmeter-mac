@@ -52,11 +52,16 @@ final class QwenSourceHealthUITests: XCTestCase {
             return hint.exists && hint.isHittable
         }
         XCTAssertTrue(revealHint(), app.debugDescription)
-        window.buttons["数据来源"].click()
+        let sections = window.descendants(matching: .any)
+        let dataSources = sections["TokenMeter.Settings.Section.数据来源"]
+        let tools = sections["TokenMeter.Settings.Section.工具与维护"]
+        XCTAssertTrue(dataSources.isHittable, app.debugDescription)
+        dataSources.click()
         let hidden = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == false"), object: hint)
         XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 5), .completed)
-        window.buttons["工具与维护"].click()
+        XCTAssertTrue(tools.isHittable, app.debugDescription)
+        tools.click()
         XCTAssertTrue(revealHint(), app.debugDescription)
 #else
         XCTFail("UI interaction validation requires a Debug build")
