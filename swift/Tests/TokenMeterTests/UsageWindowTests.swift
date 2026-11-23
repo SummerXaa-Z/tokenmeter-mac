@@ -310,7 +310,7 @@ final class DeepSeekUsageAmountTests: XCTestCase {
         let snapshot = OverviewSnapshot(selection: .init(sources: [.claude]), range: .week,
                                         history: history, streakHistory: history,
                                         deepSeek: nil, claude: nil, codex: nil, openCode: nil,
-                                        gemini: nil, cursor: nil, todayKey: "2026-11-23")
+                                        gemini: nil, copilot: nil, cursor: nil, todayKey: "2026-11-23")
         XCTAssertEqual(snapshot.periodTotal, 1)
         XCTAssertNil(snapshot.deepSeekPlatformTokens)
         XCTAssertNil(snapshot.deepSeekPlatformCost)
